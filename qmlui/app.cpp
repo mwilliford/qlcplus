@@ -56,6 +56,8 @@
 #include "fixturegroupeditor.h"
 #include "inputoutputmanager.h"
 
+#include "agentconnection.h"
+#include "fixture.h"
 #include "tardis.h"
 #include "networkmanager.h"
 
@@ -93,6 +95,7 @@ App::App()
     , m_fileName(QString())
     , m_importManager(nullptr)
     , m_fixtureEditor(nullptr)
+    , m_agentConnection(nullptr)
 {
     QSettings settings;
 
@@ -237,6 +240,36 @@ void App::startup()
     slotScreenChanged(screen());
     m_uiManager->initialize();
     m_showManager->initialize();
+
+    // AI Agent connection (engine-layer, always exists)
+    m_agentConnection = new AgentConnection(m_doc, this);
+    rootContext()->setContextProperty("agentConnection", m_agentConnection);
+
+    // Bridge agent simple desk commands to the v5 SimpleDesk.
+    // AgentConnection emits absolute DMX addresses (universe << 9 | channel).
+    // v5 SimpleDesk::setValue takes (fixtureID, relativeChannel, value).
+    connect(m_agentConnection, &AgentConnection::simpleDeskRequested,
+            this, [this](uint absChannel, uchar value) {
+        if (!m_simpleDesk) return;
+        uint universe = absChannel >> 9;
+        uint channel = absChannel & 0x1FF;
+        quint32 fxiId = m_doc->fixtureForAddress(universe * 512 + channel);
+        Fixture *fxi = m_doc->fixture(fxiId);
+        if (fxi)
+            m_simpleDesk->setValue(fxiId, channel - fxi->address(), value);
+        else
+            m_simpleDesk->setValue(Fixture::invalidId(), channel, value);
+    });
+    connect(m_agentConnection, &AgentConnection::simpleDeskResetChannelRequested,
+            this, [this](uint channel) {
+        if (m_simpleDesk)
+            m_simpleDesk->resetChannel(channel);
+    });
+    connect(m_agentConnection, &AgentConnection::simpleDeskResetUniverseRequested,
+            this, [this](int universe) {
+        if (m_simpleDesk)
+            m_simpleDesk->resetUniverse(universe);
+    });
 
     // and here we go!
     setSource(QUrl("qrc:/MainView.qml"));
@@ -1171,4 +1204,13 @@ void App::closeFixtureEditor()
     QMetaObject::invokeMethod(rootObject(), "switchToContext",
                               Q_ARG(QVariant, "FIXANDFUNC"),
                               Q_ARG(QVariant, "qrc:/FixturesAndFunctions.qml"));
+}
+
+/*********************************************************************
+ * AI Agent
+ *********************************************************************/
+
+AgentConnection *App::agentConnection() const
+{
+    return m_agentConnection;
 }
