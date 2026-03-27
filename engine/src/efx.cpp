@@ -903,6 +903,9 @@ bool EFX::saveXML(QXmlStreamWriter *doc) const
     /* End the (Y) <Axis> tag */
     doc->writeEndElement();
 
+    /* Agent context */
+    m_agentContext.saveXML(doc);
+
     /* End the <Function> tag */
     doc->writeEndElement();
 
@@ -1000,6 +1003,10 @@ bool EFX::loadXML(QXmlStreamReader &root)
         {
             /* Axes */
             loadXMLAxis(root);
+        }
+        else if (root.name() == KXMLAgentContext)
+        {
+            m_agentContext.loadXML(root);
         }
         else
         {

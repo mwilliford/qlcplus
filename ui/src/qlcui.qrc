@@ -35,6 +35,8 @@
         <file alias="ds_off.png">../../resources/icons/png/ds_off.png</file>
         <file alias="ds_bottom.png">../../resources/icons/png/ds_bottom.png</file>
         <file alias="edit.png">../../resources/icons/png/edit.png</file>
+        <file alias="robot.png">../../resources/icons/png/robot.png</file>
+        <file alias="robot_notes.png">../../resources/icons/png/robot_notes.png</file>
         <file alias="editclear.png">../../resources/icons/png/editclear.png</file>
         <file alias="editcopy.png">../../resources/icons/png/editcopy.png</file>
         <file alias="editcopyall.png">../../resources/icons/png/editcopyall.png</file>

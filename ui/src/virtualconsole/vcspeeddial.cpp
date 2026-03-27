@@ -81,6 +81,9 @@ VCSpeedDial::VCSpeedDial(QWidget* parent, Doc* doc)
     connect(m_dial, SIGNAL(tapped()), this, SLOT(slotDialTapped()));
     connect(m_dial, SIGNAL(tapTimeout()), this, SLOT(slotTapTimeout()));
 
+    connect(m_doc, SIGNAL(functionRemoved(quint32)),
+            this, SLOT(slotFunctionRemoved(quint32)));
+
     m_factoredValue = m_dial->value();
 
     setType(VCWidget::SpeedDialWidget);
@@ -347,6 +350,16 @@ QList <VCSpeedDialFunction> VCSpeedDial::functions() const
 void VCSpeedDial::tap()
 {
     m_dial->tap();
+}
+
+void VCSpeedDial::slotFunctionRemoved(quint32 fid)
+{
+    QMutableListIterator<VCSpeedDialFunction> it(m_functions);
+    while (it.hasNext())
+    {
+        if (it.next().functionId == fid)
+            it.remove();
+    }
 }
 
 void VCSpeedDial::slotDialValueChanged()

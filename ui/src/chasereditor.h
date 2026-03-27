@@ -74,6 +74,8 @@ public slots:
 
 private slots:
     void slotNameEdited(const QString& text);
+    void slotNotes();
+    void slotFunctionRemoved(quint32 fid);
 
 private:
     Doc* m_doc;

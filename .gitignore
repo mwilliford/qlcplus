@@ -53,3 +53,4 @@ coverage/
 # CMake build
 CMakeLists.txt.user
 build*
+CMakeFiles/

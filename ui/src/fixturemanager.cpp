@@ -50,6 +50,7 @@
 #include "fixturemanager.h"
 #include "fixtureremap.h"
 #include "addrgbpanel.h"
+#include "notesdialog.h"
 #include "addfixture.h"
 #include "rdmmanager.h"
 #include "universe.h"
@@ -84,6 +85,7 @@ FixtureManager::FixtureManager(QWidget* parent, Doc* doc)
     , m_addRGBAction(NULL)
     , m_removeAction(NULL)
     , m_propertiesAction(NULL)
+    , m_notesAction(NULL)
     , m_fadeConfigAction(NULL)
     , m_remapAction(NULL)
     , m_groupAction(NULL)
@@ -115,8 +117,12 @@ FixtureManager::FixtureManager(QWidget* parent, Doc* doc)
         grpItem->setExpanded(true);
 
     /* Connect fixture list change signals from the new document object */
+    connect(m_doc, SIGNAL(fixtureAdded(quint32)),
+            this, SLOT(slotFixtureAdded(quint32)));
     connect(m_doc, SIGNAL(fixtureRemoved(quint32)),
             this, SLOT(slotFixtureRemoved(quint32)));
+    connect(m_doc, SIGNAL(fixtureChanged(quint32)),
+            this, SLOT(slotFixtureChanged(quint32)));
 
     connect(m_doc, SIGNAL(channelsGroupRemoved(quint32)),
             this, SLOT(slotChannelsGroupRemoved(quint32)));
@@ -124,6 +130,8 @@ FixtureManager::FixtureManager(QWidget* parent, Doc* doc)
     connect(m_doc, SIGNAL(modeChanged(Doc::Mode)),
             this, SLOT(slotModeChanged(Doc::Mode)));
 
+    connect(m_doc, SIGNAL(fixtureGroupAdded(quint32)),
+            this, SLOT(slotFixtureGroupAdded(quint32)));
     connect(m_doc, SIGNAL(fixtureGroupRemoved(quint32)),
             this, SLOT(slotFixtureGroupRemoved(quint32)));
 
@@ -160,6 +168,20 @@ FixtureManager* FixtureManager::instance()
 /*****************************************************************************
  * Doc signal handlers
  *****************************************************************************/
+
+void FixtureManager::slotFixtureAdded(quint32 id)
+{
+    Q_UNUSED(id)
+    if (m_fixtures_tree != nullptr)
+        m_fixtures_tree->updateTree();
+}
+
+void FixtureManager::slotFixtureChanged(quint32 id)
+{
+    Q_UNUSED(id)
+    if (m_fixtures_tree != nullptr)
+        m_fixtures_tree->updateTree();
+}
 
 void FixtureManager::slotFixtureRemoved(quint32 id)
 {
@@ -221,6 +243,7 @@ void FixtureManager::slotModeChanged(Doc::Mode mode)
             m_addRGBAction->setEnabled(true);
             m_removeAction->setEnabled(false);
             m_propertiesAction->setEnabled(false);
+            m_notesAction->setEnabled(false);
             m_groupAction->setEnabled(false);
             m_unGroupAction->setEnabled(false);
             m_importAction->setEnabled(true);
@@ -232,9 +255,15 @@ void FixtureManager::slotModeChanged(Doc::Mode mode)
             m_addRGBAction->setEnabled(true);
             m_removeAction->setEnabled(true);
             if (selected == 1)
+            {
                 m_propertiesAction->setEnabled(true);
+                m_notesAction->setEnabled(true);
+            }
             else
+            {
                 m_propertiesAction->setEnabled(false);
+                m_notesAction->setEnabled(false);
+            }
             m_groupAction->setEnabled(true);
 
             // Don't allow ungrouping from the "All fixtures" group
@@ -250,6 +279,7 @@ void FixtureManager::slotModeChanged(Doc::Mode mode)
             m_addRGBAction->setEnabled(true);
             m_removeAction->setEnabled(true);
             m_propertiesAction->setEnabled(false);
+            m_notesAction->setEnabled(false);
             m_groupAction->setEnabled(false);
             m_unGroupAction->setEnabled(false);
         }
@@ -260,6 +290,7 @@ void FixtureManager::slotModeChanged(Doc::Mode mode)
             m_addRGBAction->setEnabled(true);
             m_removeAction->setEnabled(false);
             m_propertiesAction->setEnabled(false);
+            m_notesAction->setEnabled(false);
             m_groupAction->setEnabled(false);
             m_unGroupAction->setEnabled(false);
         }
@@ -274,10 +305,19 @@ void FixtureManager::slotModeChanged(Doc::Mode mode)
         m_addRGBAction->setEnabled(false);
         m_removeAction->setEnabled(false);
         m_propertiesAction->setEnabled(false);
+        m_notesAction->setEnabled(false);
         m_fadeConfigAction->setEnabled(false);
         m_groupAction->setEnabled(false);
         m_unGroupAction->setEnabled(false);
     }
+}
+
+void FixtureManager::slotFixtureGroupAdded(quint32 id)
+{
+    Q_UNUSED(id)
+    // Rebuild the tree to show the new group
+    if (m_fixtures_tree != nullptr)
+        m_fixtures_tree->updateTree();
 }
 
 void FixtureManager::slotFixtureGroupRemoved(quint32 id)
@@ -470,6 +510,7 @@ void FixtureManager::updateChannelsGroupView()
     }
     m_addRGBAction->setEnabled(false);
     m_propertiesAction->setEnabled(false);
+    m_notesAction->setEnabled(false);
     m_groupAction->setEnabled(false);
     m_unGroupAction->setEnabled(false);
     m_fadeConfigAction->setEnabled(false);
@@ -484,6 +525,7 @@ void FixtureManager::updateRDMView()
 {
     m_addRGBAction->setEnabled(false);
     m_propertiesAction->setEnabled(false);
+    m_notesAction->setEnabled(false);
     m_groupAction->setEnabled(false);
     m_unGroupAction->setEnabled(false);
     m_fadeConfigAction->setEnabled(false);
@@ -705,6 +747,7 @@ void FixtureManager::slotChannelsGroupSelectionChanged()
         }
         m_removeAction->setEnabled(true);
         m_propertiesAction->setEnabled(true);
+        m_notesAction->setEnabled(true);
         int selIdx = m_channel_groups_tree->currentIndex().row();
         if (selIdx == 0)
             m_moveUpAction->setEnabled(false);
@@ -722,6 +765,7 @@ void FixtureManager::slotChannelsGroupSelectionChanged()
                   " to remove the selected groups.</P></BODY></HTML>"));
         m_removeAction->setEnabled(true);
         m_propertiesAction->setEnabled(false);
+        m_notesAction->setEnabled(false);
     }
     else
     {
@@ -731,6 +775,7 @@ void FixtureManager::slotChannelsGroupSelectionChanged()
                   " to add a new channels group.</P></BODY></HTML>"));
         m_removeAction->setEnabled(false);
         m_propertiesAction->setEnabled(false);
+        m_notesAction->setEnabled(false);
     }
 }
 
@@ -1098,6 +1143,11 @@ void FixtureManager::initActions()
     connect(m_propertiesAction, SIGNAL(triggered(bool)),
             this, SLOT(slotProperties()));
 
+    m_notesAction = new QAction(QIcon(":/robot_notes.png"),
+                                tr("Notes..."), this);
+    connect(m_notesAction, SIGNAL(triggered(bool)),
+            this, SLOT(slotNotes()));
+
     m_fadeConfigAction = new QAction(QIcon(":/fade.png"),
                                      tr("Channels Fade Configuration..."), this);
     connect(m_fadeConfigAction, SIGNAL(triggered(bool)),
@@ -1179,6 +1229,7 @@ void FixtureManager::initToolBar()
     toolbar->addAction(m_addRGBAction);
     toolbar->addAction(m_removeAction);
     toolbar->addAction(m_propertiesAction);
+    toolbar->addAction(m_notesAction);
     toolbar->addAction(m_fadeConfigAction);
     toolbar->addSeparator();
     toolbar->addAction(m_groupAction);
@@ -1714,6 +1765,32 @@ void FixtureManager::slotProperties()
         editFixtureProperties();
 }
 
+void FixtureManager::slotNotes()
+{
+    QTreeWidgetItem* item = m_fixtures_tree->currentItem();
+    if (item == NULL)
+        return;
+
+    QVariant var = item->data(KColumnName, PROP_ID);
+    if (var.isValid() == false)
+        return;
+
+    Fixture *fxi = m_doc->fixture(var.toUInt());
+    if (fxi == NULL)
+        return;
+
+    NotesDialog dlg(this, fxi->name(),
+                    fxi->agentContext().userNote,
+                    fxi->agentContext().agentNote);
+
+    if (dlg.exec() == QDialog::Accepted)
+    {
+        fxi->setUserNote(dlg.userNote());
+        fxi->setAgentNote(dlg.agentNote());
+        m_doc->setModified();
+    }
+}
+
 void FixtureManager::slotFadeConfig()
 {
     ChannelsSelection cfg(m_doc, this, ChannelsSelection::ConfigurationMode);
@@ -2016,6 +2093,7 @@ void FixtureManager::slotContextMenuRequested(const QPoint&)
     menu.addAction(m_addAction);
     menu.addAction(m_addRGBAction);
     menu.addAction(m_propertiesAction);
+    menu.addAction(m_notesAction);
     menu.addAction(m_removeAction);
     menu.addSeparator();
     menu.addAction(m_groupAction);

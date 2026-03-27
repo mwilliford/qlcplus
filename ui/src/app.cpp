@@ -40,6 +40,11 @@
 #include "mastertimer.h"
 #include "addresstool.h"
 #include "simpledesk.h"
+#include "agentchatpanel.h"
+#include "vcserializer.h"
+#include "vccommandhandler.h"
+#include "notesdialog.h"
+#include "agentconnection.h"
 #include "aboutbox.h"
 #include "monitor.h"
 #include "vcframe.h"
@@ -131,6 +136,7 @@ App::App()
 
     , m_dumpProperties(NULL)
     , m_videoProvider(NULL)
+    , m_agentConnection(NULL)
 {
     QCoreApplication::setOrganizationName("qlcplus");
     QCoreApplication::setOrganizationDomain("qlcplus.org");
@@ -146,6 +152,9 @@ App::~App()
         settings.setValue(SETTINGS_GEOMETRY, saveGeometry());
     else
         settings.setValue(SETTINGS_GEOMETRY, QVariant());
+
+    if (AgentChatPanel::instance() != NULL)
+        delete AgentChatPanel::instance();
 
     if (Monitor::instance() != NULL)
         delete Monitor::instance();
@@ -326,6 +335,58 @@ void App::init()
     this->setStyleSheet(AppUtil::getStyleSheet("MAIN"));
 
     m_videoProvider = new VideoProvider(m_doc, this);
+
+    // AI Agent connection (engine-layer, always exists)
+    m_agentConnection = new AgentConnection(m_doc, this);
+
+    // Bridge agent simple desk commands to the SimpleDesk UI singleton
+    connect(m_agentConnection, &AgentConnection::simpleDeskRequested,
+            this, [](uint channel, uchar value) {
+        SimpleDesk *sd = SimpleDesk::instance();
+        if (sd)
+            sd->setAbsoluteChannelValue(channel, value);
+    });
+    connect(m_agentConnection, &AgentConnection::simpleDeskResetChannelRequested,
+            this, [](uint channel) {
+        SimpleDesk *sd = SimpleDesk::instance();
+        if (sd)
+            sd->resetChannel(channel);
+    });
+    connect(m_agentConnection, &AgentConnection::simpleDeskResetUniverseRequested,
+            this, [](int universe) {
+        SimpleDesk *sd = SimpleDesk::instance();
+        if (sd)
+            sd->resetUniverse(universe);
+    });
+
+    // Bridge Virtual Console serialization to the agent (UI→engine callback)
+    m_agentConnection->setVirtualConsoleSerializer([]() -> QJsonObject {
+        VirtualConsole *vc = VirtualConsole::instance();
+        if (vc == nullptr)
+            return QJsonObject();
+        return serializeVirtualConsole(vc);
+    });
+
+    // Bridge Virtual Console commands to the agent (UI→engine callback)
+    m_agentConnection->setVCCommandHandler(
+        [this](const QString &cmd, const QJsonObject &params, QJsonObject &result) -> bool {
+            VirtualConsole *vc = VirtualConsole::instance();
+            if (vc == nullptr)
+            {
+                result["error"] = "VirtualConsole not available";
+                return false;
+            }
+            return handleVCCommand(cmd, params, result, vc, m_doc);
+        });
+
+    // Add AI Agent button to toolbar (opens separate window like Monitor)
+    QAction *agentAction = new QAction(QIcon(":/robot.png"), tr("AI Agent"), this);
+    connect(agentAction, &QAction::triggered, this, &App::slotAgentPanel);
+    QAction *workspaceNotesAction = new QAction(QIcon(":/robot_notes.png"), tr("Workspace Notes"), this);
+    connect(workspaceNotesAction, &QAction::triggered, this, &App::slotWorkspaceNotes);
+    m_toolbar->addSeparator();
+    m_toolbar->addAction(agentAction);
+    m_toolbar->addAction(workspaceNotesAction);
 }
 
 void App::setActiveWindow(const QString& name)
@@ -809,6 +870,8 @@ void App::initToolBar()
     m_toolbar->addSeparator();
     m_toolbar->addAction(m_modeToggleAction);
 
+
+
     QToolButton* btn = qobject_cast<QToolButton*> (m_toolbar->widgetForAction(m_fileOpenAction));
     Q_ASSERT(btn != NULL);
     btn->setPopupMode(QToolButton::DelayedPopup);
@@ -988,7 +1051,9 @@ QFile::FileError App::slotFileOpen()
 
     /* Append file filters to the dialog */
     QStringList filters;
-    filters << tr("Workspaces (*%1)").arg(KExtWorkspace);
+    filters << tr("All Workspaces (*%1 *%2)").arg(KExtAgentWorkspace).arg(KExtWorkspace);
+    filters << tr("Agent Workspaces (*%1)").arg(KExtAgentWorkspace);
+    filters << tr("QLC+ Workspaces (*%1)").arg(KExtWorkspace);
 #if defined(WIN32) || defined(Q_OS_WIN)
     filters << tr("All Files (*.*)");
 #else
@@ -1052,9 +1117,44 @@ QFile::FileError App::slotFileSave()
 
     /* Attempt to save with the existing name. Fall back to Save As. */
     if (fileName().isEmpty() == true)
+    {
         error = slotFileSaveAs();
+    }
+    else if (fileName().endsWith(KExtWorkspace) && m_doc->hasAgentContext())
+    {
+        /* Saving a .qxw that now has agent context — prompt to upgrade */
+        QMessageBox::StandardButton btn = QMessageBox::question(this,
+            tr("Save as Agent Workspace?"),
+            tr("This workspace contains agent notes that will be lost if saved "
+               "as a standard QLC+ file (.qxw).\n\n"
+               "Save as Agent Workspace (.aqw) to preserve them?"),
+            QMessageBox::Yes | QMessageBox::No | QMessageBox::Cancel,
+            QMessageBox::Yes);
+
+        if (btn == QMessageBox::Yes)
+        {
+            /* Replace .qxw extension with .aqw and save */
+            QString aqwName = fileName();
+            aqwName.replace(aqwName.length() - QString(KExtWorkspace).length(),
+                            QString(KExtWorkspace).length(), KExtAgentWorkspace);
+            error = saveXML(aqwName);
+        }
+        else if (btn == QMessageBox::No)
+        {
+            /* Save as .qxw — agent context will be stripped */
+            error = saveXML(fileName());
+        }
+        else
+        {
+            return QFile::NoError;
+        }
+        handleFileError(error);
+        return error;
+    }
     else
+    {
         error = saveXML(fileName());
+    }
 
     if (handleFileError(error))
     {
@@ -1074,11 +1174,20 @@ QFile::FileError App::slotFileSaveAs()
     QFileDialog dialog(this);
     dialog.setWindowTitle(tr("Save Workspace As"));
     dialog.setAcceptMode(QFileDialog::AcceptSave);
-    dialog.selectFile(fileName());
+
+    /* Suggest .aqw version of filename when current file is .qxw */
+    QString suggestedName = fileName();
+    if (suggestedName.endsWith(KExtWorkspace))
+    {
+        suggestedName.replace(suggestedName.length() - QString(KExtWorkspace).length(),
+                              QString(KExtWorkspace).length(), KExtAgentWorkspace);
+    }
+    dialog.selectFile(suggestedName);
 
     /* Append file filters to the dialog */
     QStringList filters;
-    filters << tr("Workspaces (*%1)").arg(KExtWorkspace);
+    filters << tr("Agent Workspaces (*%1)").arg(KExtAgentWorkspace);
+    filters << tr("QLC+ Workspaces (*%1)").arg(KExtWorkspace);
 #if defined(WIN32) || defined(Q_OS_WIN)
     filters << tr("All Files (*.*)");
 #else
@@ -1100,9 +1209,9 @@ QFile::FileError App::slotFileSaveAs()
     if (fn.isEmpty() == true)
         return QFile::NoError;
 
-    /* Always use the workspace suffix */
-    if (fn.right(4) != KExtWorkspace)
-        fn += KExtWorkspace;
+    /* Add extension if missing — default to .aqw (agent format) */
+    if (!fn.endsWith(KExtWorkspace) && !fn.endsWith(KExtAgentWorkspace))
+        fn += KExtAgentWorkspace;
 
     /* Set the workspace path before saving the new XML. In this way local files
        can be loaded even if the workspace file will be moved */
@@ -1130,6 +1239,25 @@ QFile::FileError App::slotFileSaveAs()
 void App::slotControlMonitor()
 {
     Monitor::createAndShow(this, m_doc);
+}
+
+void App::slotAgentPanel()
+{
+    AgentChatPanel::createAndShow(this, m_agentConnection, m_doc);
+}
+
+void App::slotWorkspaceNotes()
+{
+    NotesDialog dlg(this, tr("Workspace"),
+                    m_doc->agentContext().userNote,
+                    m_doc->agentContext().agentNote);
+
+    if (dlg.exec() == QDialog::Accepted)
+    {
+        m_doc->setUserNote(dlg.userNote());
+        m_doc->setAgentNote(dlg.agentNote());
+        m_doc->setModified();
+    }
 }
 
 void App::slotAddressTool()
@@ -1531,6 +1659,9 @@ QFile::FileError App::saveXML(const QString& fileName, bool autosave)
     doc.writeTextElement(KXMLQLCCreatorAuthor, QLCFile::currentUserName());
     doc.writeEndElement(); // close KXMLQLCCreator
 
+    /* Strip agent context when saving as .qxw (upstream-compatible export) */
+    AgentContext::s_stripOnSave = fileName.endsWith(KExtWorkspace);
+
     /* Write engine components to the XML document */
     m_doc->saveXML(&doc);
 
@@ -1539,6 +1670,8 @@ QFile::FileError App::saveXML(const QString& fileName, bool autosave)
 
     /* Write Simple Desk to the XML document */
     SimpleDesk::instance()->saveXML(&doc);
+
+    AgentContext::s_stripOnSave = false;
 
     doc.writeEndElement(); // close KXMLQLCWorkspace
 

@@ -62,6 +62,9 @@ VCMatrix::VCMatrix(QWidget *parent, Doc *doc)
     setObjectName(VCMatrix::staticMetaObject.className());
     setFrameStyle(KVCFrameStyleSunken);
 
+    connect(m_doc, SIGNAL(functionRemoved(quint32)),
+            this, SLOT(slotFunctionRemoved(quint32)));
+
     QHBoxLayout *hBox = new QHBoxLayout(this);
     //hBox->setContentsMargins(3, 3, 3, 10);
     //hBox->setSpacing(5);
@@ -661,6 +664,12 @@ void VCMatrix::notifyFunctionStarting(quint32 fid, qreal functionIntensity, bool
             }
         }
     }
+}
+
+void VCMatrix::slotFunctionRemoved(quint32 fid)
+{
+    if (fid == m_matrixID)
+        setFunction(Function::invalidId());
 }
 
 void VCMatrix::slotFunctionStopped()

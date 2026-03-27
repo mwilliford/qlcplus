@@ -221,6 +221,8 @@ protected:
     void writeScenePositions(MasterTimer* timer, QList<Universe*> universes);
 
 protected slots:
+    /** Clean up when a function is removed from Doc (dangling pointer safety). */
+    void slotFunctionRemoved(quint32 fid);
     void slotPresetClicked(bool checked);
     void slotEFXDurationChanged(uint duration);
 

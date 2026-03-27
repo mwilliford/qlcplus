@@ -65,7 +65,7 @@ public:
 
     Doc *getDoc();
 
-protected:
+public:
     /** Create a new widget ID */
     quint32 newWidgetId();
 
@@ -223,12 +223,6 @@ private:
      */
     void connectWidgetToParent(VCWidget *widget, VCWidget *parent);
 
-    /**
-     * If a widget is moved away from a frame (because of
-     * a deletion or a cut/paste), this shall be called.
-     */
-    void disconnectWidgetFromParent(VCWidget *widget, VCWidget *parent);
-
 public slots:
     void slotAddButton();
     void slotAddButtonMatrix();
@@ -326,7 +320,9 @@ public:
     void resetContents();
 
     void addWidgetInMap(VCWidget* widget);
+    void removeWidgetFromMap(VCWidget* widget);
     void setupWidget(VCWidget *widget, VCWidget *parent);
+    void disconnectWidgetFromParent(VCWidget *widget, VCWidget *parent);
 
     VCWidget *widget(quint32 id);
 

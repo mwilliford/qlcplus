@@ -1580,6 +1580,15 @@ void VirtualConsole::addWidgetInMap(VCWidget* widget)
     m_widgetsMap.insert(wid, widget);
 }
 
+void VirtualConsole::removeWidgetFromMap(VCWidget* widget)
+{
+    if (widget == NULL)
+        return;
+    m_widgetsMap.remove(widget->id());
+    foreach (VCWidget* child, getChildren(widget))
+        m_widgetsMap.remove(child->id());
+}
+
 void VirtualConsole::setupWidget(VCWidget *widget, VCWidget *parent)
 {
     Q_ASSERT(widget != NULL);

@@ -178,6 +178,8 @@ public:
     void tap();
 
 private slots:
+    /** Clean up stale function IDs when a function is removed from Doc. */
+    void slotFunctionRemoved(quint32 fid);
     /** Catch dial value changes and patch them to controlled functions */
     void slotDialValueChanged();
 

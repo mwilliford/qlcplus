@@ -195,6 +195,9 @@ bool Collection::saveXML(QXmlStreamWriter *doc) const
         doc->writeEndElement();
     }
 
+    /* Agent context */
+    m_agentContext.saveXML(doc);
+
     /* End the <Function> tag */
     doc->writeEndElement();
 
@@ -221,6 +224,8 @@ bool Collection::loadXML(QXmlStreamReader &root)
     {
         if (root.name() == KXMLQLCFunctionStep)
             addFunction(root.readElementText().toUInt());
+        else if (root.name() == KXMLAgentContext)
+            m_agentContext.loadXML(root);
         else
         {
             qWarning() << Q_FUNC_INFO << "Unknown collection tag:" << root.name();

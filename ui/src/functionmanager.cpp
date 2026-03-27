@@ -78,6 +78,7 @@ FunctionManager* FunctionManager::s_instance = NULL;
 FunctionManager::FunctionManager(QWidget* parent, Doc* doc)
     : QWidget(parent)
     , m_doc(doc)
+    , m_deletingFromUI(false)
     , m_hsplitter(NULL)
     , m_vsplitter(NULL)
     , m_tree(NULL)
@@ -121,6 +122,7 @@ FunctionManager::FunctionManager(QWidget* parent, Doc* doc)
     connect(m_doc, SIGNAL(loaded()), this, SLOT(slotDocLoaded()));
     connect(m_doc, SIGNAL(functionNameChanged(quint32)), this, SLOT(slotFunctionNameChanged(quint32)));
     connect(m_doc, SIGNAL(functionAdded(quint32)), this, SLOT(slotFunctionAdded(quint32)));
+    connect(m_doc, SIGNAL(functionRemoved(quint32)), this, SLOT(slotFunctionRemoved(quint32)));
 
     QSettings settings;
     QVariant var = settings.value(SETTINGS_SPLITTER);
@@ -157,11 +159,13 @@ void FunctionManager::slotDocClearing()
 void FunctionManager::slotDocLoading()
 {
     disconnect(m_doc, SIGNAL(functionAdded(quint32)), this, SLOT(slotFunctionAdded(quint32)));
+    disconnect(m_doc, SIGNAL(functionRemoved(quint32)), this, SLOT(slotFunctionRemoved(quint32)));
 }
 
 void FunctionManager::slotDocLoaded()
 {
     connect(m_doc, SIGNAL(functionAdded(quint32)), this, SLOT(slotFunctionAdded(quint32)));
+    connect(m_doc, SIGNAL(functionRemoved(quint32)), this, SLOT(slotFunctionRemoved(quint32)));
 
     m_tree->updateTree();
 }
@@ -174,6 +178,15 @@ void FunctionManager::slotFunctionNameChanged(quint32 id)
 void FunctionManager::slotFunctionAdded(quint32 id)
 {
     m_tree->addFunction(id);
+}
+
+void FunctionManager::slotFunctionRemoved(quint32 id)
+{
+    Q_UNUSED(id)
+    // Skip if the UI is handling its own delete (it manages tree items directly)
+    if (m_deletingFromUI)
+        return;
+    m_tree->updateTree();
 }
 
 void FunctionManager::showEvent(QShowEvent* ev)
@@ -745,6 +758,7 @@ void FunctionManager::selectFunction(quint32 id)
 
 void FunctionManager::deleteSelectedFunctions()
 {
+    m_deletingFromUI = true;
     QListIterator <QTreeWidgetItem*> it(m_tree->selectedItems());
     while (it.hasNext() == true)
     {
@@ -790,6 +804,7 @@ void FunctionManager::deleteSelectedFunctions()
                 m_tree->deleteFolder(parent);
         }
     }
+    m_deletingFromUI = false;
 }
 
 void FunctionManager::slotTreeSelectionChanged()
