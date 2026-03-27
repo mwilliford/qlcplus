@@ -37,6 +37,7 @@ class Doc;
 class AgentConnection : public QObject
 {
     Q_OBJECT
+    Q_PROPERTY(int state READ stateInt NOTIFY stateChanged)
 
 public:
     enum State
@@ -53,6 +54,7 @@ public:
     ~AgentConnection();
 
     State state() const;
+    int stateInt() const { return static_cast<int>(state()); }
 
     void setAuthToken(const QString &token);
     QString authToken() const;
