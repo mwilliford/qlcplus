@@ -127,6 +127,9 @@ VCXYPad::VCXYPad(QWidget* parent, Doc* doc) : VCWidget(parent, doc)
 
     m_scene = NULL;
 
+    connect(m_doc, SIGNAL(functionRemoved(quint32)),
+            this, SLOT(slotFunctionRemoved(quint32)));
+
     m_vSlider->setRange(0, 256);
     m_hSlider->setRange(0, 256);
     m_vSlider->setInvertedAppearance(true);
@@ -702,6 +705,51 @@ QMap<quint32,QString> VCXYPad::presetsMap() const
         map.insert(control->m_id, VCXYPadPreset::typeToString(control->m_type));
 
     return map;
+}
+
+void VCXYPad::slotFunctionRemoved(quint32 fid)
+{
+    // Clear raw EFX pointer if it matches the removed function.
+    // Must stopAndWait() first so the MasterTimer thread's writeDMX
+    // cycle completes before we null the pointer.
+    if (m_efx != NULL && m_efx->id() == fid)
+    {
+        disconnect(m_efx, SIGNAL(durationChanged(uint)),
+                   this, SLOT(slotEFXDurationChanged(uint)));
+        m_efx->stopAndWait();
+        m_efx = NULL;
+        m_efxStartXOverrideId = Function::invalidAttributeId();
+        m_efxStartYOverrideId = Function::invalidAttributeId();
+        m_efxWidthOverrideId = Function::invalidAttributeId();
+        m_efxHeightOverrideId = Function::invalidAttributeId();
+    }
+
+    // Clear raw Scene pointer if it matches.
+    // Stop first so writeScenePositions() isn't mid-access.
+    if (m_scene != NULL && m_scene->id() == fid)
+    {
+        m_scene->stop(functionParent());
+        m_scene = NULL;
+    }
+
+    // Remove presets that reference the deleted function
+    QMutableHashIterator<QWidget*, VCXYPadPreset*> it(m_presets);
+    while (it.hasNext())
+    {
+        it.next();
+        VCXYPadPreset* preset = it.value();
+        if ((preset->m_type == VCXYPadPreset::EFX || preset->m_type == VCXYPadPreset::Scene)
+            && preset->m_funcID == fid)
+        {
+            QWidget* widget = it.key();
+            m_presetsLayout->removeWidget(widget);
+            delete widget;
+            if (!preset->m_inputSource.isNull())
+                setInputSource(QSharedPointer<QLCInputSource>(), preset->m_id);
+            delete preset;
+            it.remove();
+        }
+    }
 }
 
 void VCXYPad::slotPresetClicked(bool checked)

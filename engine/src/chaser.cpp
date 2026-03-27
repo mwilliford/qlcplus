@@ -365,6 +365,9 @@ bool Chaser::saveXML(QXmlStreamWriter *doc) const
     for (int i = 0; i < m_steps.count(); i++)
         m_steps.at(i).saveXML(doc, i, false);
 
+    /* Agent context */
+    m_agentContext.saveXML(doc);
+
     /* End the <Function> tag */
     doc->writeEndElement();
 
@@ -450,6 +453,10 @@ bool Chaser::loadXML(QXmlStreamReader &root)
             doc()->appendToErrorLog(QString("<b>Unsupported sequences found</b>. Please convert your project "
                                             "at <a href=https://www.qlcplus.org/sequence_migration.php>https://www.qlcplus.org/sequence_migration.php</a>"));
             root.skipCurrentElement();
+        }
+        else if (root.name() == KXMLAgentContext)
+        {
+            m_agentContext.loadXML(root);
         }
         else
         {

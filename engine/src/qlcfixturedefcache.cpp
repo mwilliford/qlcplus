@@ -205,7 +205,8 @@ bool QLCFixtureDefCache::load(const QDir& dir)
     {
         QString path(dir.absoluteFilePath(it.next()));
 
-        if (path.toLower().endsWith(KExtFixture) == true)
+        if (path.toLower().endsWith(KExtFixture) == true ||
+            path.toLower().endsWith(KExtAgentFixture) == true)
             loadQXF(path, true);
         else if (path.toLower().endsWith(KExtAvolitesFixture) == true)
             loadD4(path);
@@ -364,7 +365,8 @@ bool QLCFixtureDefCache::loadMap(const QDir &dir)
 
         qWarning() << path << "not in" << FIXTURES_MAP_NAME;
 
-        if (path.toLower().endsWith(KExtFixture) == true)
+        if (path.toLower().endsWith(KExtFixture) == true ||
+            path.toLower().endsWith(KExtAgentFixture) == true)
             loadQXF(path);
         else if (path.toLower().endsWith(KExtAvolitesFixture) == true)
             loadD4(path);
@@ -390,6 +392,7 @@ QDir QLCFixtureDefCache::userDefinitionDirectory()
 {
     QStringList filters;
     filters << QString("*%1").arg(KExtFixture);
+    filters << QString("*%1").arg(KExtAgentFixture);
     filters << QString("*%1").arg(KExtAvolitesFixture);
 
     return QLCFile::userDirectory(QString(USERFIXTUREDIR), QString(FIXTUREDIR), filters);

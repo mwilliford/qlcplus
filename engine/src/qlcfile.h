@@ -42,6 +42,8 @@ class QString;
 #define KExtFixture          QStringLiteral(".qxf")  // 'Q'LC+ 'X'ml 'F'ixture
 #define KExtFixtureList      QStringLiteral(".qxfl") // 'Q'LC+ 'X'ml 'F'ixture 'L'ist
 #define KExtWorkspace        QStringLiteral(".qxw")  // 'Q'LC+ 'X'ml 'W'orkspace
+#define KExtAgentWorkspace   QStringLiteral(".aqw")  // 'A'gent 'Q'LC+ 'W'orkspace
+#define KExtAgentFixture     QStringLiteral(".aqf")  // 'A'gent 'Q'LC+ 'F'ixture
 #define KExtInputProfile     QStringLiteral(".qxi")  // 'Q'LC+ 'X'ml 'I'nput profile
 #define KExtModifierTemplate QStringLiteral(".qxmt") // 'Q'LC+ 'X'ml 'M'odifier 'T'emplate
 #define KExtColorFilters     QStringLiteral(".qxcf") // 'Q'LC+ 'X'ml 'C'olor 'F'ilters

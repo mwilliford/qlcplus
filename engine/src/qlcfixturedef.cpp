@@ -403,6 +403,9 @@ QFile::FileError QLCFixtureDef::saveXML(const QString& fileName)
 
     m_physical.saveXML(&doc);
 
+    /* Agent context */
+    m_agentContext.saveXML(&doc);
+
     /* End the document and close all the open elements */
     error = QFile::NoError;
     doc.writeEndDocument();
@@ -544,6 +547,10 @@ bool QLCFixtureDef::loadXML(QXmlStreamReader& doc)
                 QLCPhysical physical;
                 physical.loadXML(doc);
                 setPhysical(physical);
+            }
+            else if (doc.name() == KXMLAgentContext)
+            {
+                m_agentContext.loadXML(doc);
             }
             else
             {

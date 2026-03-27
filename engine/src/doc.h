@@ -103,6 +103,24 @@ public:
 private:
     QString m_workspacePath;
 
+    /*********************************************************************
+     * Agent context
+     *********************************************************************/
+public:
+    const AgentContext &agentContext() const { return m_agentContext; }
+    void setAgentNote(const QString &note) { m_agentContext.agentNote = note; }
+    void setUserNote(const QString &note) { m_agentContext.userNote = note; }
+    bool hasAgentContext() const;
+
+    /** Session management */
+    const QList<AgentSession> &sessions() const { return m_agentContext.sessions; }
+    void addSession(const AgentSession &session);
+    void updateSession(const QString &sessionId, const QString &title, const QStringList &goals);
+    void removeSession(const QString &sessionId);
+
+private:
+    AgentContext m_agentContext;
+
 signals:
     /** Emitted when clearContents() is called, before actually doing anything. */
     void clearing();

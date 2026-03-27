@@ -502,6 +502,9 @@ bool Scene::saveXML(QXmlStreamWriter *doc) const
         doc->writeEndElement();
     }
 
+    /* Agent context */
+    m_agentContext.saveXML(doc);
+
     /* End the <Function> tag */
     doc->writeEndElement();
 
@@ -611,6 +614,10 @@ bool Scene::loadXML(QXmlStreamReader &root)
             quint32 id = root.attributes().value(KXMLQLCPaletteID).toString().toUInt();
             addPalette(id);
             root.skipCurrentElement();
+        }
+        else if (root.name() == KXMLAgentContext)
+        {
+            m_agentContext.loadXML(root);
         }
         else
         {

@@ -190,6 +190,8 @@ public:
     virtual void notifyFunctionStarting(quint32 fid, qreal intensity, bool excludeMonitored) override;
 
 private slots:
+    /** Clean up when a function is removed from Doc. */
+    void slotFunctionRemoved(quint32 fid);
     /** Update slider when function stops. */
     void slotFunctionStopped();
     /** Update widget when function changes. */

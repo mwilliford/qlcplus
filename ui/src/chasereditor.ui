@@ -156,6 +156,23 @@
        </property>
       </widget>
      </item>
+     <item>
+      <widget class="QToolButton" name="m_notesButton">
+       <property name="toolTip">
+        <string>View/edit notes for this chaser</string>
+       </property>
+       <property name="icon">
+        <iconset resource="qlcui.qrc">
+         <normaloff>:/robot_notes.png</normaloff>:/robot_notes.png</iconset>
+       </property>
+       <property name="iconSize">
+        <size>
+         <width>24</width>
+         <height>24</height>
+        </size>
+       </property>
+      </widget>
+     </item>
     </layout>
    </item>
    <item row="12" column="0" colspan="3">

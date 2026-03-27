@@ -44,6 +44,7 @@
 #include "qlcclipboard.h"
 #include "positiontool.h"
 #include "sceneeditor.h"
+#include "notesdialog.h"
 #include "qlcchannel.h"
 #include "chaserstep.h"
 #include "fixture.h"
@@ -202,6 +203,8 @@ void SceneEditor::init(bool applyValues)
                                     tr("Show/Hide speed dial window"), this);
     m_recordAction = new QAction(QIcon(":/record.png"),
                                  tr("Clone this scene and append as a new step to the selected chaser"), this);
+    m_notesAction = new QAction(QIcon(":/robot_notes.png"),
+                                tr("View/edit notes for this scene"), this);
 
     m_nextTabAction = new QAction(QIcon(":/forward.png"), tr("Go to next fixture tab"), this);
     m_nextTabAction->setShortcut(QKeySequence("Alt+Right"));
@@ -268,6 +271,8 @@ void SceneEditor::init(bool applyValues)
             this, SLOT(slotBlindToggled(bool)));
     connect(m_recordAction, SIGNAL(triggered(bool)),
             this, SLOT(slotRecord()));
+    connect(m_notesAction, SIGNAL(triggered(bool)),
+            this, SLOT(slotNotes()));
     connect(m_chaserCombo, SIGNAL(activated(int)),
             this, SLOT(slotChaserComboActivated(int)));
     connect(m_doc, SIGNAL(modeChanged(Doc::Mode)),
@@ -296,6 +301,7 @@ void SceneEditor::init(bool applyValues)
     toolBar->addSeparator();
     toolBar->addAction(m_recordAction);
     toolBar->addWidget(m_chaserCombo);
+    toolBar->addAction(m_notesAction);
     toolBar->addSeparator();
     toolBar->addWidget(nameLabel);
     toolBar->addWidget(m_nameEdit);
@@ -1262,6 +1268,19 @@ void SceneEditor::slotNameEdited(const QString& name)
     m_scene->setName(name);
     if (m_speedDials != NULL)
         m_speedDials->setWindowTitle(m_scene->name());
+}
+
+void SceneEditor::slotNotes()
+{
+    NotesDialog dlg(this, m_scene->name(),
+                    m_scene->agentContext().userNote,
+                    m_scene->agentContext().agentNote);
+
+    if (dlg.exec() == QDialog::Accepted)
+    {
+        m_scene->setUserNote(dlg.userNote());
+        m_scene->setAgentNote(dlg.agentNote());
+    }
 }
 
 void SceneEditor::slotAddFixtureClicked()

@@ -31,6 +31,8 @@
 #include "doc.h"
 
 class QProgressDialog;
+class AgentConnection;
+class AgentChatPanel;
 class VideoProvider;
 class QMessageBox;
 class QToolButton;
@@ -212,6 +214,16 @@ private:
 private:
     DmxDumpFactoryProperties *m_dumpProperties;
     VideoProvider *m_videoProvider;
+
+    /*********************************************************************
+     * Agent
+     *********************************************************************/
+public slots:
+    void slotAgentPanel();
+    void slotWorkspaceNotes();
+
+private:
+    AgentConnection *m_agentConnection;
 
     /*********************************************************************
      * Load & Save

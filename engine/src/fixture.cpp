@@ -1224,6 +1224,10 @@ bool Fixture::loadXML(QXmlStreamReader &xmlDoc, Doc *doc,
                 xmlDoc.skipCurrentElement();
             }
         }
+        else if (xmlDoc.name() == KXMLAgentContext)
+        {
+            m_agentContext.loadXML(xmlDoc);
+        }
         else
         {
             qWarning() << Q_FUNC_INFO << "Unknown fixture tag:" << xmlDoc.name();
@@ -1439,6 +1443,9 @@ bool Fixture::saveXML(QXmlStreamWriter *doc) const
             }
         }
     }
+
+    /* Agent context */
+    m_agentContext.saveXML(doc);
 
     /* End the <Fixture> tag */
     doc->writeEndElement();

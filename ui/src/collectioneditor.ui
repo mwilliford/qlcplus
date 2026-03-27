@@ -87,6 +87,23 @@
      </property>
     </widget>
    </item>
+   <item row="0" column="2">
+    <widget class="QToolButton" name="m_notesButton">
+     <property name="toolTip">
+      <string>View/edit notes for this collection</string>
+     </property>
+     <property name="icon">
+      <iconset resource="qlcui.qrc">
+       <normaloff>:/robot_notes.png</normaloff>:/robot_notes.png</iconset>
+     </property>
+     <property name="iconSize">
+      <size>
+       <width>32</width>
+       <height>32</height>
+      </size>
+     </property>
+    </widget>
+   </item>
    <item row="2" column="3">
     <widget class="QToolButton" name="m_add">
      <property name="toolTip">

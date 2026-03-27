@@ -35,6 +35,7 @@
 #include "fixtureselection.h"
 #include "speeddialwidget.h"
 #include "efxpreviewarea.h"
+#include "notesdialog.h"
 #include "efxeditor.h"
 #include "fixture.h"
 #include "doc.h"
@@ -73,6 +74,7 @@ EFXEditor::EFXEditor(QWidget* parent, EFX* efx, Doc* doc)
 
     connect(m_speedDial, SIGNAL(toggled(bool)),
             this, SLOT(slotSpeedDialToggle(bool)));
+    connect(m_notesButton, SIGNAL(clicked()), this, SLOT(slotNotes()));
 
     initGeneralPage();
     initMovementPage();
@@ -580,6 +582,19 @@ void EFXEditor::slotNameEdited(const QString &text)
     m_efx->setName(text);
     if (m_speedDials)
         m_speedDials->setWindowTitle(text);
+}
+
+void EFXEditor::slotNotes()
+{
+    NotesDialog dlg(this, m_efx->name(),
+                    m_efx->agentContext().userNote,
+                    m_efx->agentContext().agentNote);
+
+    if (dlg.exec() == QDialog::Accepted)
+    {
+        m_efx->setUserNote(dlg.userNote());
+        m_efx->setAgentNote(dlg.agentNote());
+    }
 }
 
 void EFXEditor::slotSpeedDialToggle(bool state)

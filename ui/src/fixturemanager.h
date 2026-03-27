@@ -68,14 +68,23 @@ private:
      * Doc signal handlers
      ********************************************************************/
 public slots:
+    /** Callback for Doc::fixtureAdded() signals */
+    void slotFixtureAdded(quint32 id);
+
     /** Callback for Doc::fixtureRemoved() signals */
     void slotFixtureRemoved(quint32 id);
+
+    /** Callback for Doc::fixtureChanged() signals */
+    void slotFixtureChanged(quint32 id);
 
     /** Callback for Doc::channelsGroupRemoved() signals */
     void slotChannelsGroupRemoved(quint32 id);
 
     /** Callback that listens to mode change signals */
     void slotModeChanged(Doc::Mode mode);
+
+    /** Callback that listens to fixture group additions */
+    void slotFixtureGroupAdded(quint32 id);
 
     /** Callback that listens to fixture group removals */
     void slotFixtureGroupRemoved(quint32 id);
@@ -211,6 +220,7 @@ private slots:
     void slotAddRGBPanel();
     void slotRemove();
     void slotProperties();
+    void slotNotes();
     void slotFadeConfig();
     void slotRemap();
     void slotUnGroup();
@@ -228,6 +238,7 @@ private:
     QAction* m_addRGBAction;
     QAction* m_removeAction;
     QAction* m_propertiesAction;
+    QAction* m_notesAction;
     QAction* m_fadeConfigAction;
     QAction* m_remapAction;
     QAction* m_groupAction;

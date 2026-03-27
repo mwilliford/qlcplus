@@ -27,6 +27,7 @@
 #include <QIcon>
 #include <QMap>
 
+#include "agentcontext.h"
 #include "qlcchannel.h"
 #include "qlcfixturedef.h"
 
@@ -354,6 +355,17 @@ protected:
      *  This is basically the place to store them to be saved/loaded
      *  on the project XML file */
     QMap<quint32, ChannelModifier*> m_channelModifiers;
+
+    /*********************************************************************
+     * Agent context
+     *********************************************************************/
+public:
+    const AgentContext &agentContext() const { return m_agentContext; }
+    void setAgentNote(const QString &note) { m_agentContext.agentNote = note; }
+    void setUserNote(const QString &note) { m_agentContext.userNote = note; }
+
+private:
+    AgentContext m_agentContext;
 
     /*********************************************************************
      * Channel info
