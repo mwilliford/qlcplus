@@ -44,6 +44,7 @@ class ImportManager;
 class NetworkManager;
 class VideoProvider;
 class FixtureEditor;
+class AgentConnection;
 class Tardis;
 class QMouseEvent;
 
@@ -404,5 +405,15 @@ public:
 
 private:
     FixtureEditor *m_fixtureEditor;
+
+    /*********************************************************************
+     * AI Agent
+     *********************************************************************/
+public:
+    /** Return the AgentConnection instance */
+    AgentConnection *agentConnection() const;
+
+private:
+    AgentConnection *m_agentConnection;
 };
 #endif // APP_H
