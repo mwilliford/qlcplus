@@ -26,6 +26,8 @@ add_library(${module_name}
     ../../plugins/interfaces/rdmprotocol.cpp ../../plugins/interfaces/rdmprotocol.h
     aboutbox.cpp aboutbox.h aboutbox.ui
     addchannelsgroup.cpp addchannelsgroup.h addchannelsgroup.ui
+    agentchatpanel.cpp agentchatpanel.h
+    notesdialog.cpp notesdialog.h notesdialog.ui
     addfixture.cpp addfixture.h addfixture.ui
     addresstool.cpp addresstool.h addresstool.ui
     addrgbpanel.cpp addrgbpanel.h addrgbpanel.ui
@@ -129,6 +131,8 @@ add_library(${module_name}
     virtualconsole/vcpropertieseditor.cpp virtualconsole/vcpropertieseditor.h
     virtualconsole/vcslider.cpp virtualconsole/vcslider.h
     virtualconsole/vcsliderproperties.cpp virtualconsole/vcsliderproperties.h virtualconsole/vcsliderproperties.ui
+    virtualconsole/vccommandhandler.cpp virtualconsole/vccommandhandler.h
+    virtualconsole/vcserializer.cpp virtualconsole/vcserializer.h
     virtualconsole/vcsoloframe.cpp virtualconsole/vcsoloframe.h
     virtualconsole/vcsoloframeproperties.cpp virtualconsole/vcsoloframeproperties.h
     virtualconsole/vcspeeddial.cpp virtualconsole/vcspeeddial.h

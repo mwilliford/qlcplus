@@ -72,10 +72,12 @@ protected slots:
     void slotDocLoaded();
     void slotFunctionNameChanged(quint32 id);
     void slotFunctionAdded(quint32 id);
+    void slotFunctionRemoved(quint32 id);
 
 protected:
     static FunctionManager* s_instance;
     Doc* m_doc;
+    bool m_deletingFromUI;  ///< Guard: suppress slotFunctionRemoved during UI delete
 
     /*********************************************************************
      * Function tree

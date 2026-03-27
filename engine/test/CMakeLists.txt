@@ -1,5 +1,7 @@
 project(test)
 
+add_subdirectory(agentcontext)
+add_subdirectory(agentintegration)
 add_subdirectory(bus)
 add_subdirectory(channelsgroup)
 add_subdirectory(channelmodifier)

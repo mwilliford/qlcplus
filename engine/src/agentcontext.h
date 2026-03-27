@@ -1,0 +1,50 @@
+/*
+  Q Light Controller Plus
+  agentcontext.h
+
+  Copyright (c) Marcus Williford
+
+  Licensed under the Apache License, Version 2.0 (the "License");
+  you may not use this file except in compliance with the License.
+  You may obtain a copy of the License at
+
+      http://www.apache.org/licenses/LICENSE-2.0.txt
+
+  Unless required by applicable law or agreed to in writing, software
+  distributed under the License is distributed on an "AS IS" BASIS,
+  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+  See the License for the specific language governing permissions and
+  limitations under the License.
+*/
+
+#ifndef AGENTCONTEXT_H
+#define AGENTCONTEXT_H
+
+#include <QString>
+#include <QList>
+#include <QXmlStreamReader>
+#include <QXmlStreamWriter>
+
+#include "agentsession.h"
+
+#define KXMLAgentContext   QStringLiteral("AgentContext")
+#define KXMLAgentUserNote  QStringLiteral("UserNote")
+#define KXMLAgentAgentNote QStringLiteral("AgentNote")
+
+class AgentContext
+{
+public:
+    QString userNote;
+    QString agentNote;
+    QList<AgentSession> sessions;  // Only used at workspace level
+
+    bool isEmpty() const { return userNote.isEmpty() && agentNote.isEmpty() && sessions.isEmpty(); }
+
+    bool loadXML(QXmlStreamReader &doc);
+    bool saveXML(QXmlStreamWriter *doc) const;
+
+    /** When true, saveXML() writes nothing — used for .qxw export */
+    static bool s_stripOnSave;
+};
+
+#endif // AGENTCONTEXT_H

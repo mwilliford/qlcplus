@@ -105,6 +105,7 @@ private slots:
     void slotChaserComboActivated(int index);
     void slotModeChanged(Doc::Mode mode);
     void slotViewModeChanged(bool tabbed, bool applyValues = true);
+    void slotNotes();
 
 private:
     bool isColorToolAvailable() const;
@@ -124,6 +125,7 @@ private:
     QAction* m_recordAction;
     QAction* m_speedDialAction;
 
+    QAction* m_notesAction;
     QAction* m_nextTabAction;
     QAction* m_prevTabAction;
 

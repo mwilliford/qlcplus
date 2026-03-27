@@ -5,6 +5,11 @@ include(../../variables.cmake)
 add_library(${module_name} SHARED
     ../../plugins/interfaces/qlcioplugin.cpp ../../plugins/interfaces/qlcioplugin.h
     ../../plugins/interfaces/utils.h
+    agentauthmanager.cpp agentauthmanager.h
+    agentconnection.cpp agentconnection.h
+    agentcontext.cpp agentcontext.h
+    agentcredentialstore.cpp agentcredentialstore.h
+    agentsession.cpp agentsession.h
     avolitesd4parser.cpp avolitesd4parser.h
     bus.cpp bus.h
     channelmodifier.cpp channelmodifier.h
@@ -82,9 +87,21 @@ target_link_libraries(${module_name} PUBLIC
     Qt${QT_MAJOR_VERSION}::Core
     Qt${QT_MAJOR_VERSION}::Gui
     Qt${QT_MAJOR_VERSION}::Multimedia
+    Qt${QT_MAJOR_VERSION}::Network
+    Qt${QT_MAJOR_VERSION}::WebSockets
 )
 
 target_link_libraries(${module_name} PRIVATE qlcplusaudio)
+
+# Optional: secure credential storage via OS keychain
+find_package(Qt6Keychain QUIET)
+if(Qt6Keychain_FOUND)
+    target_link_libraries(${module_name} PUBLIC qt6keychain)
+    target_compile_definitions(${module_name} PUBLIC HAVE_QTKEYCHAIN)
+    message(STATUS "Engine: using Qt6Keychain for secure credential storage")
+else()
+    message(STATUS "Engine: Qt6Keychain not found, credentials will use QSettings fallback")
+endif()
 
 if(NOT ANDROID AND NOT IOS)
     target_include_directories(${module_name} PUBLIC ../../hotplugmonitor/src)

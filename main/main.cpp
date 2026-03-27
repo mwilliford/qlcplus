@@ -309,12 +309,36 @@ int main(int argc, char** argv)
     /* At least MIDI plugin requires this so best to declare it here for everyone */
     qRegisterMetaType<QVariant>("QVariant");
 
+    /*
+     * Plugin path setup — required for TLS (wss://) and other Qt backends.
+     *
+     * The original upstream code called setLibraryPaths() with ONLY the
+     * app bundle's plugins/ dir, which wiped QT_PLUGIN_PATH and prevented
+     * Qt from finding the TLS backend (libqsecuretransportbackend on macOS,
+     * libqopensslbackend on Linux, qschannelbackend on Windows).
+     *
+     * Without the TLS plugin, QSslSocket::supportsSsl() returns false and
+     * QWebSocket::open() rejects wss:// URLs with "SSL Sockets are not
+     * supported on this platform."
+     *
+     * NOTE: Production builds that bundle Qt (via macdeployqt, windeployqt,
+     * or linuxdeployqt) should include the tls/ plugin directory alongside
+     * the other plugin dirs. For dev builds, QT_PLUGIN_PATH in run.sh
+     * points to the system Qt plugin directory.
+     *
+     * TODO: Test plugin path resolution on Windows (;-separated, not :)
+     * and Linux when packaging for distribution.
+     */
 #if defined(__APPLE__) || defined(Q_OS_MAC)
-    /* Load plugins from within the bundle ONLY */
     QDir dir(QApplication::applicationDirPath());
     dir.cdUp();
     dir.cd("plugins");
-    QApplication::setLibraryPaths(QStringList(dir.absolutePath()));
+    QStringList pluginPaths;
+    pluginPaths << dir.absolutePath();
+    QString qtPluginPath = qEnvironmentVariable("QT_PLUGIN_PATH");
+    if (!qtPluginPath.isEmpty())
+        pluginPaths << qtPluginPath.split(":");
+    QApplication::setLibraryPaths(pluginPaths);
 #endif
 
     QLCi18n::init();

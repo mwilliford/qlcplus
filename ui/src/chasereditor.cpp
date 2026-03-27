@@ -36,6 +36,7 @@
 #include "chaserstep.h"
 #include "sequence.h"
 #include "apputil.h"
+#include "notesdialog.h"
 #include "chaser.h"
 #include "scene.h"
 #include "doc.h"
@@ -82,6 +83,9 @@ ChaserEditor::ChaserEditor(QWidget* parent, Chaser* chaser, Doc* doc, bool liveM
     m_pasteButton->setDefaultAction(m_pasteAction);
     m_pasteAction->setShortcut(QKeySequence(QKeySequence::Paste));
     connect(m_pasteAction, SIGNAL(triggered(bool)), this, SLOT(slotPasteClicked()));
+
+    /* Notes button */
+    connect(m_notesButton, SIGNAL(clicked()), this, SLOT(slotNotes()));
 
     /* Name edit */
     m_nameEdit->setText(m_chaser->name());
@@ -224,6 +228,7 @@ ChaserEditor::ChaserEditor(QWidget* parent, Chaser* chaser, Doc* doc, bool liveM
     connect(m_testPreviousButton, SIGNAL(clicked()), this, SLOT(slotTestPreviousClicked()));
     connect(m_testNextButton, SIGNAL(clicked()), this, SLOT(slotTestNextClicked()));
     connect(m_doc, SIGNAL(modeChanged(Doc::Mode)), this, SLOT(slotModeChanged(Doc::Mode)));
+    connect(m_doc, SIGNAL(functionRemoved(quint32)), this, SLOT(slotFunctionRemoved(quint32)));
     connect(m_chaser, SIGNAL(currentStepChanged(int)), this, SLOT(slotStepChanged(int)));
 
     updateTree(true);
@@ -299,9 +304,30 @@ void ChaserEditor::slotFunctionManagerActive(bool active)
     }
 }
 
+void ChaserEditor::slotFunctionRemoved(quint32 fid)
+{
+    Q_UNUSED(fid);
+    // The engine-level Chaser::slotFunctionRemoved has already removed the
+    // step from m_chaser->steps(). Just rebuild the tree from the clean data.
+    updateTree(true);
+}
+
 void ChaserEditor::slotNameEdited(const QString& text)
 {
     m_chaser->setName(text);
+}
+
+void ChaserEditor::slotNotes()
+{
+    NotesDialog dlg(this, m_chaser->name(),
+                    m_chaser->agentContext().userNote,
+                    m_chaser->agentContext().agentNote);
+
+    if (dlg.exec() == QDialog::Accepted)
+    {
+        m_chaser->setUserNote(dlg.userNote());
+        m_chaser->setAgentNote(dlg.agentNote());
+    }
 }
 
 void ChaserEditor::slotUpdateCurrentStep(SceneValue sv, bool enabled)
@@ -1215,8 +1241,9 @@ void ChaserEditor::updateTree(bool clear)
 void ChaserEditor::updateItem(QTreeWidgetItem* item, ChaserStep& step)
 {
     Function* function = step.resolveFunction(m_doc);
-    Q_ASSERT(function != NULL);
     Q_ASSERT(item != NULL);
+    if (function == NULL)
+        return;
 
     m_tree->blockSignals(true);
 

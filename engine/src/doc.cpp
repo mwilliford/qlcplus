@@ -189,6 +189,7 @@ void Doc::clearContents()
     m_latestChannelsGroupId = 0;
     m_latestPaletteId = 0;
     m_addresses.clear();
+    m_agentContext = AgentContext();
     m_loadStatus = Cleared;
 
     emit cleared();
@@ -1305,6 +1306,10 @@ bool Doc::loadXML(QXmlStreamReader &doc, bool loadIO)
         {
             monitorProperties()->loadXML(doc, this);
         }
+        else if (doc.name() == KXMLAgentContext)
+        {
+            m_agentContext.loadXML(doc);
+        }
         else
         {
             qWarning() << Q_FUNC_INFO << "Unknown engine tag:" << doc.name();
@@ -1320,6 +1325,61 @@ bool Doc::loadXML(QXmlStreamReader &doc, bool loadIO)
     return true;
 }
 
+bool Doc::hasAgentContext() const
+{
+    if (!m_agentContext.isEmpty())
+        return true;
+
+    foreach (Fixture *fxi, fixtures())
+    {
+        if (!fxi->agentContext().isEmpty())
+            return true;
+    }
+
+    foreach (Function *func, functions())
+    {
+        if (!func->agentContext().isEmpty())
+            return true;
+    }
+
+    return false;
+}
+
+void Doc::addSession(const AgentSession &session)
+{
+    m_agentContext.sessions.append(session);
+    setModified();
+}
+
+void Doc::updateSession(const QString &sessionId, const QString &title, const QStringList &goals)
+{
+    for (int i = 0; i < m_agentContext.sessions.size(); i++)
+    {
+        if (m_agentContext.sessions[i].sessionId == sessionId)
+        {
+            if (!title.isEmpty())
+                m_agentContext.sessions[i].title = title;
+            if (!goals.isEmpty())
+                m_agentContext.sessions[i].goals = goals;
+            setModified();
+            return;
+        }
+    }
+}
+
+void Doc::removeSession(const QString &sessionId)
+{
+    for (int i = 0; i < m_agentContext.sessions.size(); i++)
+    {
+        if (m_agentContext.sessions[i].sessionId == sessionId)
+        {
+            m_agentContext.sessions.removeAt(i);
+            setModified();
+            return;
+        }
+    }
+}
+
 bool Doc::saveXML(QXmlStreamWriter *doc) const
 {
     Q_ASSERT(doc != NULL);
@@ -1331,6 +1391,9 @@ bool Doc::saveXML(QXmlStreamWriter *doc) const
         doc->writeAttribute(KXMLQLCStartupFunction, QString::number(startupFunction()));
 
     m_ioMap->saveXML(doc);
+
+    /* Write agent context (workspace-level notes) */
+    m_agentContext.saveXML(doc);
 
     /* Write fixtures into an XML document */
     QListIterator <Fixture*> fxit(fixtures());

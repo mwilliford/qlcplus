@@ -25,6 +25,7 @@
 #include <QList>
 #include <QFile>
 
+#include "agentcontext.h"
 #include "qlcphysical.h"
 
 /** @addtogroup engine Engine
@@ -222,6 +223,17 @@ public:
 
 protected:
     QLCPhysical m_physical;
+
+    /*********************************************************************
+     * Agent context
+     *********************************************************************/
+public:
+    const AgentContext &agentContext() const { return m_agentContext; }
+    void setAgentNote(const QString &note) { m_agentContext.agentNote = note; }
+    void setUserNote(const QString &note) { m_agentContext.userNote = note; }
+
+protected:
+    AgentContext m_agentContext;
 
     /*********************************************************************
      * Load & Save

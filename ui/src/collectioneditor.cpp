@@ -25,6 +25,7 @@
 
 #include "functionselection.h"
 #include "collectioneditor.h"
+#include "notesdialog.h"
 #include "mastertimer.h"
 #include "collection.h"
 #include "function.h"
@@ -44,12 +45,15 @@ CollectionEditor::CollectionEditor(QWidget* parent, Collection* fc, Doc* doc)
 
     connect(m_nameEdit, SIGNAL(textEdited(const QString&)),
             this, SLOT(slotNameEdited(const QString&)));
+    connect(m_notesButton, SIGNAL(clicked()), this, SLOT(slotNotes()));
     connect(m_add, SIGNAL(clicked()), this, SLOT(slotAdd()));
     connect(m_remove, SIGNAL(clicked()), this, SLOT(slotRemove()));
     connect(m_moveUp, SIGNAL(clicked()), this, SLOT(slotMoveUp()));
     connect(m_moveDown, SIGNAL(clicked()), this, SLOT(slotMoveDown()));
     connect(m_testButton, SIGNAL(clicked()),
             this, SLOT(slotTestClicked()));
+    connect(m_doc, SIGNAL(functionRemoved(quint32)),
+            this, SLOT(slotFunctionRemoved(quint32)));
 
     m_nameEdit->setText(m_collection->name());
     m_nameEdit->setSelection(0, m_nameEdit->text().length());
@@ -66,9 +70,30 @@ CollectionEditor::~CollectionEditor()
         m_collection->stopAndWait ();
 }
 
+void CollectionEditor::slotFunctionRemoved(quint32 fid)
+{
+    Q_UNUSED(fid);
+    // The engine-level Collection::slotFunctionRemoved has already removed
+    // the member. Just rebuild the list from the clean data.
+    updateFunctionList();
+}
+
 void CollectionEditor::slotNameEdited(const QString& text)
 {
     m_collection->setName(text);
+}
+
+void CollectionEditor::slotNotes()
+{
+    NotesDialog dlg(this, m_collection->name(),
+                    m_collection->agentContext().userNote,
+                    m_collection->agentContext().agentNote);
+
+    if (dlg.exec() == QDialog::Accepted)
+    {
+        m_collection->setUserNote(dlg.userNote());
+        m_collection->setAgentNote(dlg.agentNote());
+    }
 }
 
 void CollectionEditor::slotAdd()
@@ -198,7 +223,8 @@ void CollectionEditor::updateFunctionList()
     foreach (QVariant fid, m_collection->functions())
     {
         Function* function = m_doc->function(fid.toUInt());
-        Q_ASSERT(function != NULL);
+        if (function == NULL)
+            continue;
 
         QTreeWidgetItem* item = new QTreeWidgetItem(m_tree);
         item->setText(0, function->name());
