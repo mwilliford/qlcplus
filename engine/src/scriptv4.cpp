@@ -279,6 +279,10 @@ bool Script::loadXML(QXmlStreamReader &root)
             else
                 m_data.append(QUrl::fromPercentEncoding(root.readElementText().toUtf8()) + QString("\n"));
         }
+        else if (root.name() == KXMLAgentContext)
+        {
+            m_agentContext.loadXML(root);
+        }
         else
         {
             qWarning() << Q_FUNC_INFO << "Unknown script tag:" << root.name();
@@ -316,6 +320,9 @@ bool Script::saveXML(QXmlStreamWriter *doc) const
     {
         doc->writeTextElement(KXMLQLCScriptCommand, QUrl::toPercentEncoding(cmd));
     }
+
+    /* Agent context */
+    m_agentContext.saveXML(doc);
 
     /* End the <Function> tag */
     doc->writeEndElement();

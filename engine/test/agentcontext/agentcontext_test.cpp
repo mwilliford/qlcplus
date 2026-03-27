@@ -1220,4 +1220,8 @@ void AgentContext_Test::getRunningFunctionsHandler()
     // No crash = success (actual response verification needs integration test)
 }
 
+#ifdef QMLUI
+QTEST_MAIN(AgentContext_Test)
+#else
 QTEST_APPLESS_MAIN(AgentContext_Test)
+#endif
