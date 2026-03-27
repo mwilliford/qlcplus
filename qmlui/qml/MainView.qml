@@ -276,6 +276,22 @@ Rectangle
                     contextManager.detachContext("IOMGR")
                 }
             }
+            MenuBarEntry
+            {
+                id: agentEntry
+                Layout.alignment: Qt.AlignTop
+                property string ctxName: "AGENT"
+                property string ctxRes: "qrc:/AgentChatPanel.qml"
+
+                imgSource: "qrc:/robot.png"
+                entryText: qsTr("AI Agent")
+                ButtonGroup.group: menuBarGroup
+                onCheckedChanged:
+                {
+                    if (checked === true)
+                        switchToContext(agentEntry.ctxName, agentEntry.ctxRes)
+                }
+            }
             Rectangle
             {
                 // acts like an horizontal spacer

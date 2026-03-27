@@ -3,6 +3,8 @@
     <file alias="2dview.svg">2dview.svg</file>
     <file alias="3dview.svg">3dview.svg</file>
     <file alias="add.svg">add.svg</file>
+    <file alias="robot.png">../png/robot.png</file>
+    <file alias="robot_notes.png">../png/robot_notes.png</file>
     <file alias="algo-flat.svg">algo-flat.svg</file>
     <file alias="algo-linear.svg">algo-linear.svg</file>
     <file alias="algo-saw.svg">algo-saw.svg</file>
