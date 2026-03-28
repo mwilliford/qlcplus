@@ -247,18 +247,11 @@ void App::startup()
 
     // Bridge agent simple desk commands to the v5 SimpleDesk.
     // AgentConnection emits absolute DMX addresses (universe << 9 | channel).
-    // v5 SimpleDesk::setValue takes (fixtureID, relativeChannel, value).
+    // Use setAbsoluteChannelValue — same interface as v4, no fixture lookup needed.
     connect(m_agentConnection, &AgentConnection::simpleDeskRequested,
             this, [this](uint absChannel, uchar value) {
-        if (!m_simpleDesk) return;
-        uint universe = absChannel >> 9;
-        uint channel = absChannel & 0x1FF;
-        quint32 fxiId = m_doc->fixtureForAddress(universe * 512 + channel);
-        Fixture *fxi = m_doc->fixture(fxiId);
-        if (fxi)
-            m_simpleDesk->setValue(fxiId, channel - fxi->address(), value);
-        else
-            m_simpleDesk->setValue(Fixture::invalidId(), channel, value);
+        if (m_simpleDesk)
+            m_simpleDesk->setAbsoluteChannelValue(absChannel, value);
     });
     connect(m_agentConnection, &AgentConnection::simpleDeskResetChannelRequested,
             this, [this](uint channel) {
