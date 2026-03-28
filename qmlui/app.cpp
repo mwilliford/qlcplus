@@ -874,8 +874,8 @@ bool App::saveWorkspace(const QString &fileName)
     if (localFilename.startsWith("file:"))
         localFilename = QUrl(fileName).toLocalFile();
 
-    /* Always use the workspace suffix */
-    if (localFilename.right(4) != KExtWorkspace)
+    /* Always use a workspace suffix */
+    if (!localFilename.endsWith(KExtWorkspace) && !localFilename.endsWith(KExtAgentWorkspace))
         localFilename += KExtWorkspace;
 
     /* Set the workspace path before saving the new XML. In this way local files
@@ -1050,6 +1050,9 @@ QFile::FileError App::saveXML(const QString& fileName, bool autosave)
     doc.writeTextElement(KXMLQLCCreatorAuthor, QLCFile::currentUserName());
     doc.writeEndElement();
 
+    /* Strip agent context when saving as .qxw (upstream-compatible export) */
+    AgentContext::s_stripOnSave = outputFileName.endsWith(KExtWorkspace);
+
     /* Write engine components to the XML document */
     m_doc->saveXML(&doc);
 
@@ -1058,6 +1061,8 @@ QFile::FileError App::saveXML(const QString& fileName, bool autosave)
 
     /* Write Simple Desk to the XML document */
     //SimpleDesk::instance()->saveXML(&doc);
+
+    AgentContext::s_stripOnSave = false;
 
     doc.writeEndElement(); // close KXMLQLCWorkspace
 

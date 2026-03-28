@@ -276,22 +276,6 @@ Rectangle
                     contextManager.detachContext("IOMGR")
                 }
             }
-            MenuBarEntry
-            {
-                id: agentEntry
-                Layout.alignment: Qt.AlignTop
-                property string ctxName: "AGENT"
-                property string ctxRes: "qrc:/AgentChatPanel.qml"
-
-                imgSource: "qrc:/robot.png"
-                entryText: qsTr("AI Agent")
-                ButtonGroup.group: menuBarGroup
-                onCheckedChanged:
-                {
-                    if (checked === true)
-                        switchToContext(agentEntry.ctxName, agentEntry.ctxRes)
-                }
-            }
             Rectangle
             {
                 // acts like an horizontal spacer
@@ -521,6 +505,26 @@ Rectangle
                 color: "transparent"
             }
 
+            // ################## AI AGENT TOGGLE ##################
+            IconButton
+            {
+                id: agentToggleButton
+                implicitWidth: UISettings.iconSizeDefault
+                implicitHeight: UISettings.iconSizeDefault
+                Layout.alignment: Qt.AlignTop
+                bgColor: agentDrawer.visible ? UISettings.highlight : "transparent"
+                imgSource: "qrc:/robot.png"
+                tooltip: qsTr("AI Agent")
+                onClicked: agentDrawer.visible = !agentDrawer.visible
+            }
+
+            // spacer
+            Rectangle
+            {
+                width: UISettings.iconSizeDefault / 2
+                color: "transparent"
+            }
+
             // ################## STOP ALL FUNCTIONS ##################
             IconButton
             {
@@ -588,6 +592,36 @@ Rectangle
             if (qlcplus.accessMask === App.AC_VCControl)
                 ctx = "VC"
             enableContext(ctx, true)
+        }
+    }
+
+    // AI Agent side drawer — overlays on right side of content area
+    Rectangle
+    {
+        id: agentDrawer
+        visible: false
+        width: Math.min(parent.width * 0.35, 450)
+        height: parent.height - (mainToolbar.visible ? mainToolbar.height : 0)
+        y: mainToolbar.visible ? mainToolbar.height : 0
+        anchors.right: parent.right
+        z: 50
+        color: UISettings.bgStrong
+        border.width: 1
+        border.color: UISettings.bgLight
+
+        // Block wheel/scroll events from reaching 2D/3D view behind the drawer.
+        // Only handles wheel — clicks pass through to AgentChatPanel children.
+        MouseArea
+        {
+            anchors.fill: parent
+            acceptedButtons: Qt.NoButton
+            onWheel: (wheel) => { wheel.accepted = true }
+        }
+
+        AgentChatPanel
+        {
+            anchors.fill: parent
+            anchors.margins: 1
         }
     }
 

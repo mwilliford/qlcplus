@@ -58,7 +58,7 @@ Popup
     property string dialogTitle
     property url dialogCurrentFolder: qlcplus.workingPath
     property url dialogSelectedFile
-    property var dialogNameFilters: [ qsTr("QLC+ files") + " (*.qxw *.qxf)", qsTr("All files") + " (*)" ]
+    property var dialogNameFilters: [ qsTr("QLC+ files") + " (*.qxw *.aqw *.qxf *.aqf)", qsTr("All files") + " (*)" ]
     property int dialogFileMode: FileDialog.OpenFile
     property int dialogOpMode: App.OpenMode
 

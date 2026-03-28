@@ -41,6 +41,25 @@ Rectangle
                                          agentConnection.state === 2 ||
                                          agentConnection.state === 3
 
+    function submitToken()
+    {
+        var token = tokenInput.text.trim()
+        if (token.length === 0) return
+        agentConnection.authManager.handlePastedToken(token)
+        tokenInput.text = ""
+    }
+
+    function sendMessage()
+    {
+        var text = inputField.text.trim()
+        if (text.length === 0) return
+
+        appendMessage("user", text)
+        agentConnection.sendChatMessage(text)
+        inputField.text = ""
+        genState = statePending
+    }
+
     function stateText()
     {
         switch (agentConnection.state)
@@ -60,6 +79,28 @@ Rectangle
         chatView.positionViewAtEnd()
     }
 
+    // Auth manager signals — show token paste only when login is required
+    Connections
+    {
+        target: agentConnection.authManager
+
+        function onLoginRequired()
+        {
+            console.log("[AgentQML] loginRequired signal received")
+            appendMessage("system", qsTr("Login required. Opening browser..."))
+            tokenPasteRow.visible = true
+            agentConnection.authManager.login()
+        }
+
+        function onAuthStateChanged(state)
+        {
+            console.log("[AgentQML] authStateChanged:", state)
+            // Unknown=0, LoggedOut=1, Authenticating=2, Authenticated=3
+            if (state === 3)
+                tokenPasteRow.visible = false
+        }
+    }
+
     // Signal handlers for AgentConnection
     Connections
     {
@@ -68,7 +109,10 @@ Rectangle
         function onStateChanged()
         {
             if (agentConnection.state === 4) // Connected
+            {
                 appendMessage("system", qsTr("Connected to agent server"))
+                tokenPasteRow.visible = false
+            }
             else if (agentConnection.state === 0) // Disconnected
             {
                 appendMessage("system", qsTr("Disconnected"))
@@ -165,6 +209,7 @@ Rectangle
 
                 GenericButton
                 {
+                    id: connectButton
                     width: UISettings.bigItemHeight * 1.5
                     height: UISettings.iconSizeMedium
                     label: isConnected ? qsTr("Disconnect") : qsTr("Connect")
@@ -174,6 +219,29 @@ Rectangle
                             agentConnection.disconnectFromServer()
                         else
                             agentConnection.connectToServer()
+                    }
+
+                    MouseArea
+                    {
+                        anchors.fill: parent
+                        acceptedButtons: Qt.RightButton
+                        onClicked: (mouse) => { connectMenu.popup() }
+                    }
+
+                    Menu
+                    {
+                        id: connectMenu
+
+                        MenuItem
+                        {
+                            text: qsTr("Logout")
+                            onTriggered:
+                            {
+                                agentConnection.disconnectFromServer()
+                                agentConnection.authManager.logout()
+                                appendMessage("system", qsTr("Logged out — credentials cleared"))
+                            }
+                        }
                     }
                 }
             }
@@ -279,16 +347,57 @@ Rectangle
                 }
             }
         }
-    }
 
-    function sendMessage()
-    {
-        var text = inputField.text.trim()
-        if (text.length === 0) return
+        // Token paste — only shown when auth flow requires manual token entry
+        Rectangle
+        {
+            id: tokenPasteRow
+            Layout.fillWidth: true
+            Layout.preferredHeight: UISettings.iconSizeDefault * 1.2
+            Layout.minimumHeight: UISettings.iconSizeDefault * 1.2
+            color: UISettings.bgMedium
+            radius: 3
+            visible: false
 
-        appendMessage("user", text)
-        agentConnection.sendChatMessage(text)
-        inputField.text = ""
-        genState = statePending
+            RowLayout
+            {
+                anchors.fill: parent
+                anchors.margins: 4
+                spacing: 4
+
+                RobotoText
+                {
+                    label: qsTr("Paste token:")
+                    fontSize: UISettings.textSizeDefault * 0.9
+                }
+
+                TextArea
+                {
+                    id: tokenInput
+                    Layout.fillWidth: true
+                    Layout.fillHeight: true
+                    placeholderText: "eyJ..."
+                    color: UISettings.fgMain
+                    font.family: UISettings.robotoFontName
+                    font.pixelSize: UISettings.textSizeDefault
+
+                    background: Rectangle
+                    {
+                        color: UISettings.bgStrong
+                        radius: 3
+                    }
+
+                    Keys.onReturnPressed: submitToken()
+                }
+
+                GenericButton
+                {
+                    width: UISettings.bigItemHeight
+                    height: UISettings.iconSizeMedium
+                    label: qsTr("Submit")
+                    onClicked: submitToken()
+                }
+            }
+        }
     }
 }
