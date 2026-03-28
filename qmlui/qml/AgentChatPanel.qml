@@ -54,6 +54,20 @@ Rectangle
         var text = inputField.text.trim()
         if (text.length === 0) return
 
+        // If agent is generating, cancel first (implicit cancel)
+        if (genState !== stateIdle)
+        {
+            agentConnection.sendCancel()
+            // Commit partial streaming text before showing [Stopped]
+            if (streamingText.length > 0)
+            {
+                chatHtml += formatMessage("assistant", streamingText)
+                streamingText = ""
+            }
+            appendMessage("system", qsTr("[Stopped]"))
+            genState = stateIdle
+        }
+
         appendMessage("user", text)
         agentConnection.sendChatMessage(text)
         inputField.text = ""
@@ -73,10 +87,35 @@ Rectangle
         }
     }
 
+    property string chatHtml: ""
+    property int lastRole: -1  // track last role to merge streaming
+
+    function formatMessage(role, text)
+    {
+        var escaped = text.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;")
+        if (role === "user")
+            return "<p align='right'><font color='#ffffff'>" + escaped + "</font></p>"
+        else if (role === "assistant")
+            return "<p><font color='#90caf9'>" + escaped + "</font></p>"
+        else if (role === "error")
+            return "<p><font color='#ff6666'>" + escaped + "</font></p>"
+        else
+            return "<p><i><font color='#888888'>" + escaped + "</font></i></p>"
+    }
+
     function appendMessage(role, text)
     {
-        chatModel.append({"role": role, "text": text})
-        chatView.positionViewAtEnd()
+        chatHtml += formatMessage(role, text)
+        chatText.text = chatHtml
+        lastRole = -1
+    }
+
+    function scrollToBottom()
+    {
+        Qt.callLater(function() {
+            if (chatText.implicitHeight > chatView.height)
+                chatView.contentY = chatText.implicitHeight - chatView.height
+        })
     }
 
     // Auth manager signals — show token paste only when login is required
@@ -124,22 +163,26 @@ Rectangle
         {
             if (genState === statePending)
             {
-                // First token — start a new assistant message
                 genState = stateStreaming
                 streamingText = text
-                chatModel.append({"role": "assistant", "text": text})
             }
             else if (genState === stateStreaming)
             {
-                // Append to current streaming message
                 streamingText += text
-                chatModel.set(chatModel.count - 1, {"role": "assistant", "text": streamingText})
             }
-            chatView.positionViewAtEnd()
+            // Rebuild the last assistant message in the HTML
+            var escaped = streamingText.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;")
+            chatText.text = chatHtml + "<p><font color='#90caf9'>" + escaped + "</font></p>"
+            scrollToBottom()
         }
 
         function onChatStreamEnded()
         {
+            if (streamingText.length > 0)
+            {
+                chatHtml += formatMessage("assistant", streamingText)
+                chatText.text = chatHtml
+            }
             genState = stateIdle
             streamingText = ""
         }
@@ -183,7 +226,8 @@ Rectangle
         Rectangle
         {
             Layout.fillWidth: true
-            height: UISettings.iconSizeDefault
+            Layout.preferredHeight: UISettings.iconSizeDefault
+            Layout.minimumHeight: UISettings.iconSizeDefault
             color: UISettings.bgMedium
             radius: 3
 
@@ -247,42 +291,33 @@ Rectangle
             }
         }
 
-        // Chat messages
-        ListView
+        // Chat messages — single TextEdit for cross-message selection
+        Flickable
         {
             id: chatView
             Layout.fillWidth: true
             Layout.fillHeight: true
             clip: true
-            spacing: 4
+            contentHeight: chatText.implicitHeight + 8
+            contentWidth: width
+            flickableDirection: Flickable.VerticalFlick
+            boundsBehavior: Flickable.StopAtBounds
 
-            model: ListModel { id: chatModel }
-
-            delegate: Rectangle
+            TextEdit
             {
-                width: chatView.width
-                height: msgText.implicitHeight + 12
-                color: model.role === "user" ? "#1a3a5c" :
-                       model.role === "assistant" ? UISettings.bgMedium :
-                       model.role === "error" ? "#5c1a1a" :
-                       UISettings.bgLighter
-                radius: 4
+                id: chatText
+                width: chatView.width - 20
+                readOnly: true
+                selectByMouse: true
+                wrapMode: TextEdit.WordWrap
+                textFormat: TextEdit.RichText
+                font.family: UISettings.robotoFontName
+                font.pixelSize: UISettings.textSizeDefault
+                color: UISettings.fgMain
+                selectedTextColor: UISettings.fgMain
+                selectionColor: UISettings.highlight
 
-                Text
-                {
-                    id: msgText
-                    anchors.fill: parent
-                    anchors.margins: 6
-                    text: (model.role === "user" ? "<b>You:</b> " :
-                           model.role === "assistant" ? "<b>Agent:</b> " :
-                           model.role === "error" ? "<b>Error:</b> " :
-                           "<i>") + model.text + (model.role === "system" ? "</i>" : "")
-                    color: UISettings.fgMain
-                    wrapMode: Text.WordWrap
-                    textFormat: Text.RichText
-                    font.family: UISettings.robotoFontName
-                    font.pixelSize: UISettings.textSizeDefault
-                }
+                onImplicitHeightChanged: scrollToBottom()
             }
 
             ScrollBar.vertical: ScrollBar { }
@@ -292,7 +327,9 @@ Rectangle
         Rectangle
         {
             Layout.fillWidth: true
-            height: Math.max(UISettings.iconSizeDefault * 1.2, inputField.implicitHeight + 8)
+            Layout.preferredHeight: Math.max(UISettings.iconSizeDefault * 1.2, inputField.implicitHeight + 8)
+            Layout.minimumHeight: UISettings.iconSizeDefault * 1.2
+            Layout.maximumHeight: UISettings.iconSizeDefault * 3
             color: UISettings.bgMedium
             radius: 3
 
@@ -308,7 +345,7 @@ Rectangle
                     Layout.fillWidth: true
                     Layout.fillHeight: true
                     placeholderText: isConnected ? qsTr("Ask the AI agent...") : qsTr("Connect to start chatting")
-                    enabled: isConnected && genState === stateIdle
+                    enabled: isConnected
                     color: UISettings.fgMain
                     font.family: UISettings.robotoFontName
                     font.pixelSize: UISettings.textSizeDefault
@@ -340,7 +377,16 @@ Rectangle
                     onClicked:
                     {
                         if (genState !== stateIdle)
+                        {
                             agentConnection.sendCancel()
+                            if (streamingText.length > 0)
+                            {
+                                chatHtml += formatMessage("assistant", streamingText)
+                                streamingText = ""
+                            }
+                            appendMessage("system", qsTr("[Stopped]"))
+                            genState = stateIdle
+                        }
                         else
                             sendMessage()
                     }
