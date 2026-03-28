@@ -38,6 +38,7 @@ class AgentConnection : public QObject
 {
     Q_OBJECT
     Q_PROPERTY(int state READ stateInt NOTIFY stateChanged)
+    Q_PROPERTY(QObject* authManager READ authManagerObj CONSTANT)
 
 public:
     enum State
@@ -56,7 +57,7 @@ public:
     State state() const;
     int stateInt() const { return static_cast<int>(state()); }
 
-    void setAuthToken(const QString &token);
+    Q_INVOKABLE void setAuthToken(const QString &token);
     QString authToken() const;
 
     void setServerUrl(const QUrl &url);
@@ -64,6 +65,7 @@ public:
 
     /** Access the auth manager for login/logout/config. */
     AgentAuthManager *authManager() { return &m_authManager; }
+    QObject *authManagerObj() { return &m_authManager; }
 
     /** Set a callback to serialize Virtual Console data (UI layer bridge) */
     void setVirtualConsoleSerializer(std::function<QJsonObject()> serializer);
