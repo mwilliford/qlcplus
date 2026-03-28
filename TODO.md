@@ -34,9 +34,39 @@
 
 - [x] **Agent updates AgentNote via command**: `update_agent_note` command handler updates AgentNote on fixture, fixtureDef, function, or workspace.
 
+## QLC+ v5 Port — Remaining
+
+### Agent Chat Panel (QML) — done
+- [x] AgentConnection wired in App::startup(), exposed to QML
+- [x] AgentChatPanel.qml — floating window, streaming, auth flow, cancel/queue
+- [x] Script v4/v5 AgentContext save/load
+- [x] .aqw/.aqf file extension support in v5 file dialogs and save logic
+- [x] Destructor crash fix (WebSocket signals during shutdown)
+
+### Session Sidebar — TODO
+- [ ] **Expose sessions to QML**: Add `Q_INVOKABLE QJsonArray getSessions()` to AgentConnection that returns `m_doc->sessions()` as JSON (sessionId, title, createdAt)
+- [ ] **Session list UI**: Collapsible sidebar (or panel) in agent window showing sessions newest-first. Display title (or session ID prefix) + date. Click to resume via `sendSessionResume(sessionId)`.
+- [ ] **New Session button**: Clears chat, disconnects current session so next message creates fresh one
+- [ ] **Refresh on signals**: Connect `sessionCreated` and `sessionMetadataUpdated` signals to refresh the list
+- [ ] **Refresh on file open**: Rebuild list when workspace loads (sessions persisted in .aqw)
+
+### Account Info — TODO
+- [ ] **Show email when connected**: Decode JWT client-side (base64 payload) to extract `email` claim. Display in status bar (e.g., "Connected — user@example.com"). JWT also has `user_id`, `sub`, `groups`.
+- [ ] **No balance display**: Users check the website for billing info. Don't show balance in the client.
+
+### Notes UI — TODO
+- [ ] **Workspace notes**: View/edit UserNote + read-only AgentNote for the workspace. Location TBD (chat panel section, or separate dialog).
+- [ ] **Per-object notes**: Add notes section to fixture/function property editors in v5. Lower priority.
+
+### Tardis Integration — TODO
+- [ ] **Undo for agent mutations**: Call `Tardis::instance()->enqueueAction()` after agent commands (create_scene, etc.) so they're undoable. Requires wiring in App or AgentConnection.
+
+### Virtual Console — TODO
+- [ ] **VC serializer for v5**: v5 has its own VirtualConsole implementation. May need adapted vcserializer/vccommandhandler or new approach using v5's VC API.
+
 ## Bugs: Chat panel
 
-- [ ] **Input disabled during streaming**: Text input field appears to become briefly disabled while the LLM is streaming back responses. User should be able to type at any time (for cancel or next message). Check AgentChatPanel for input-disabling logic tied to stream state.
+- [x] **Input disabled during streaming**: Fixed in v5 QML — input always enabled, send during streaming does implicit cancel.
 
 ## Bugs: UI not refreshing on agent-initiated changes
 
