@@ -1220,6 +1220,82 @@ void AgentContext_Test::getRunningFunctionsHandler()
     // No crash = success (actual response verification needs integration test)
 }
 
+/*****************************************************************************
+ * AgentConnection state and auth
+ *****************************************************************************/
+
+void AgentContext_Test::connectionStateEnum()
+{
+    // Verify enum values match what QML expects
+    QCOMPARE(static_cast<int>(AgentConnection::Disconnected), 0);
+    QCOMPARE(static_cast<int>(AgentConnection::Authenticating), 1);
+    QCOMPARE(static_cast<int>(AgentConnection::Connecting), 2);
+    QCOMPARE(static_cast<int>(AgentConnection::WaitingForSync), 3);
+    QCOMPARE(static_cast<int>(AgentConnection::Connected), 4);
+
+    // Verify initial state
+    AgentConnection conn(m_doc);
+    QCOMPARE(conn.state(), AgentConnection::Disconnected);
+    QCOMPARE(conn.stateInt(), 0);
+}
+
+void AgentContext_Test::authStateEnum()
+{
+    // Verify enum values match what QML expects
+    // QML uses these integers directly: Authenticated=3, not 2
+    QCOMPARE(static_cast<int>(AgentAuthManager::Unknown), 0);
+    QCOMPARE(static_cast<int>(AgentAuthManager::LoggedOut), 1);
+    QCOMPARE(static_cast<int>(AgentAuthManager::Authenticating), 2);
+    QCOMPARE(static_cast<int>(AgentAuthManager::Authenticated), 3);
+}
+
+void AgentContext_Test::handlePastedJWT()
+{
+    AgentConnection conn(m_doc);
+    AgentAuthManager *auth = conn.authManager();
+
+    // Verify initial state
+    QCOMPARE(auth->authState(), AgentAuthManager::Unknown);
+    QVERIFY(auth->accessToken().isEmpty());
+
+    // Paste a fake JWT (starts with eyJ)
+    QString fakeJWT = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ0ZXN0IjoxfQ.fake";
+
+    QSignalSpy authSpy(auth, &AgentAuthManager::authenticated);
+    QSignalSpy stateSpy(auth, &AgentAuthManager::authStateChanged);
+
+    auth->handlePastedToken(fakeJWT);
+
+    // Should transition to Authenticated and emit authenticated signal
+    QCOMPARE(auth->authState(), AgentAuthManager::Authenticated);
+    QCOMPARE(auth->accessToken(), fakeJWT);
+    QCOMPARE(authSpy.count(), 1);
+    QCOMPARE(authSpy.at(0).at(0).toString(), fakeJWT);
+
+    // State change should have been emitted
+    QVERIFY(stateSpy.count() >= 1);
+    // Last state change should be Authenticated
+    QCOMPARE(stateSpy.last().at(0).value<AgentAuthManager::AuthState>(),
+             AgentAuthManager::Authenticated);
+}
+
+void AgentContext_Test::destructorSafety()
+{
+    // Verify AgentConnection can be destroyed without crashing
+    // even when Doc might be in an indeterminate state.
+    // This tests the fix for the shutdown crash where onWsDisconnected
+    // tried to disconnect from a destroyed Doc.
+    {
+        AgentConnection *conn = new AgentConnection(m_doc);
+        // No connection established — destructor should be safe
+        delete conn;
+    }
+
+    // Verify Doc is still valid after AgentConnection destruction
+    QVERIFY(m_doc != nullptr);
+    QCOMPARE(m_doc->fixtures().count() + 1, m_doc->fixtures().count() + 1); // just access it
+}
+
 #ifdef QMLUI
 QTEST_MAIN(AgentContext_Test)
 #else

@@ -87,6 +87,12 @@ private slots:
     // DMX reading and running functions
     void getRunningFunctionsHandler();
 
+    // AgentConnection state and auth
+    void connectionStateEnum();
+    void authStateEnum();
+    void handlePastedJWT();
+    void destructorSafety();
+
 private:
     Doc *m_doc;
 };
