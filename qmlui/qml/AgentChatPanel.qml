@@ -72,6 +72,7 @@ Rectangle
         agentConnection.sendChatMessage(text)
         inputField.text = ""
         genState = statePending
+        appendMessage("system", qsTr("Thinking..."))
     }
 
     function stateText()
@@ -92,7 +93,7 @@ Rectangle
 
     function formatMessage(role, text)
     {
-        var escaped = text.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;")
+        var escaped = text.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/\n/g, "<br>")
         if (role === "user")
             return "<p align='right'><font color='#ffffff'>" + escaped + "</font></p>"
         else if (role === "assistant")
@@ -161,8 +162,9 @@ Rectangle
 
         function onChatTokenReceived(text)
         {
-            if (genState === statePending)
+            if (genState === stateIdle || genState === statePending)
             {
+                // First token — start a new assistant message
                 genState = stateStreaming
                 streamingText = text
             }
@@ -171,7 +173,7 @@ Rectangle
                 streamingText += text
             }
             // Rebuild the last assistant message in the HTML
-            var escaped = streamingText.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;")
+            var escaped = streamingText.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/\n/g, "<br>")
             chatText.text = chatHtml + "<p><font color='#90caf9'>" + escaped + "</font></p>"
             scrollToBottom()
         }
