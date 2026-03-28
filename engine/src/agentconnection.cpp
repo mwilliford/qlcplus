@@ -102,6 +102,10 @@ AgentConnection::~AgentConnection()
     m_reconnectTimer.stop();
     if (m_webSocket)
     {
+        // Disconnect all signals before closing to prevent
+        // onWsDisconnected() from firing during destruction
+        // (m_doc may already be destroyed)
+        m_webSocket->disconnect(this);
         m_webSocket->close();
         delete m_webSocket;
     }
