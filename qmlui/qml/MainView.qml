@@ -20,6 +20,7 @@
 import QtQuick
 import QtQuick.Layouts
 import QtQuick.Controls
+import QtQuick.Window
 
 import org.qlcplus.classes 1.0
 import "."
@@ -512,10 +513,10 @@ Rectangle
                 implicitWidth: UISettings.iconSizeDefault
                 implicitHeight: UISettings.iconSizeDefault
                 Layout.alignment: Qt.AlignTop
-                bgColor: agentDrawer.visible ? UISettings.highlight : "transparent"
+                bgColor: agentWindow.visible ? UISettings.highlight : "transparent"
                 imgSource: "qrc:/robot.png"
                 tooltip: qsTr("AI Agent")
-                onClicked: agentDrawer.visible = !agentDrawer.visible
+                onClicked: agentWindow.visible = !agentWindow.visible
             }
 
             // spacer
@@ -595,34 +596,25 @@ Rectangle
         }
     }
 
-    // AI Agent side drawer — overlays on right side of content area
-    Rectangle
+    // AI Agent floating window — separate window like Monitor in v4
+    Window
     {
-        id: agentDrawer
+        id: agentWindow
         visible: false
-        width: Math.min(parent.width * 0.35, 450)
-        height: parent.height - (mainToolbar.visible ? mainToolbar.height : 0)
-        y: mainToolbar.visible ? mainToolbar.height : 0
-        anchors.right: parent.right
-        z: 50
+        width: 550
+        height: 700
+        minimumWidth: 350
+        minimumHeight: 400
+        title: qsTr("AI Agent")
         color: UISettings.bgStrong
-        border.width: 1
-        border.color: UISettings.bgLight
-
-        // Block wheel/scroll events from reaching 2D/3D view behind the drawer.
-        // Only handles wheel — clicks pass through to AgentChatPanel children.
-        MouseArea
-        {
-            anchors.fill: parent
-            acceptedButtons: Qt.NoButton
-            onWheel: (wheel) => { wheel.accepted = true }
-        }
 
         AgentChatPanel
         {
             anchors.fill: parent
-            anchors.margins: 1
+            anchors.margins: 2
         }
+
+        onClosing: agentToggleButton.checked = false
     }
 
     PopupNetworkConnect { id: clientAccessPopup }
