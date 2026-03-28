@@ -946,6 +946,12 @@ void AgentConnection::handleCreateChaser(const QJsonObject &msg)
         chaser->setFadeInSpeed(msg["fadeIn"].toInt());
     if (msg.contains("fadeOut"))
         chaser->setFadeOutSpeed(msg["fadeOut"].toInt());
+    if (msg.contains("tempoType"))
+    {
+        QString tt = msg["tempoType"].toString();
+        if (tt == "Beats") chaser->setTempoType(Function::Beats);
+        else chaser->setTempoType(Function::Time);
+    }
 
     QJsonArray steps = msg["steps"].toArray();
     for (const QJsonValue &v : steps)
