@@ -716,20 +716,36 @@ void AgentConnection::handleModifyFunction(const QJsonObject &msg)
     {
         Scene *scene = qobject_cast<Scene*>(fn);
 
-        // addValues / setValues — add or update channel values
-        for (const QString &key : {"addValues", "setValues"})
+        // setValues — replace ALL channel values (clear first, then set)
+        if (changes.contains("setValues"))
         {
-            if (changes.contains(key))
+            // Clear all existing values
+            QList<SceneValue> existing = scene->values();
+            for (const SceneValue &sv : existing)
+                scene->unsetValue(sv.fxi, sv.channel);
+
+            QJsonArray vals = changes["setValues"].toArray();
+            for (const QJsonValue &v : vals)
             {
-                QJsonArray vals = changes[key].toArray();
-                for (const QJsonValue &v : vals)
-                {
-                    QJsonObject sv = v.toObject();
-                    quint32 fxi = sv["fixtureId"].toInt();
-                    quint32 ch = sv["channel"].toInt();
-                    uchar val = (uchar)sv["value"].toInt();
-                    scene->setValue(fxi, ch, val);
-                }
+                QJsonObject sv = v.toObject();
+                quint32 fxi = sv["fixtureId"].toInt();
+                quint32 ch = sv["channel"].toInt();
+                uchar val = (uchar)sv["value"].toInt();
+                scene->setValue(fxi, ch, val);
+            }
+        }
+
+        // addValues — add or update channel values (preserves existing)
+        if (changes.contains("addValues"))
+        {
+            QJsonArray vals = changes["addValues"].toArray();
+            for (const QJsonValue &v : vals)
+            {
+                QJsonObject sv = v.toObject();
+                quint32 fxi = sv["fixtureId"].toInt();
+                quint32 ch = sv["channel"].toInt();
+                uchar val = (uchar)sv["value"].toInt();
+                scene->setValue(fxi, ch, val);
             }
         }
 
