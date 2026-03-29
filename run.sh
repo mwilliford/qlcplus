@@ -42,6 +42,16 @@ if [ -d "$FIXTURES_BUILD" ] && [ ! -e "$FIXTURES_BUILD/FixturesMap.xml" ]; then
     done
 fi
 
+# Symlink Gobos directory for 2D view gobo images
+GOBOS_BUILD="$BUILD_DIR/Resources/gobos"
+GOBOS_SRC="$SCRIPT_DIR/resources/gobos"
+if [ -d "$GOBOS_BUILD" ] && [ ! -e "$GOBOS_BUILD/Others" ]; then
+    for gdir in "$GOBOS_SRC"/*/; do
+        base="$(basename "$gdir")"
+        [ ! -e "$GOBOS_BUILD/$base" ] && ln -sf "$gdir" "$GOBOS_BUILD/$base"
+    done
+fi
+
 if [ "$VERSION" = "v4" ]; then
     QT_PLUGIN_PATH="/opt/homebrew/opt/qt/share/qt/plugins" \
     DYLD_LIBRARY_PATH="$BUILD_DIR/engine/src:$BUILD_DIR/ui/src:$BUILD_DIR/webaccess/src" \
