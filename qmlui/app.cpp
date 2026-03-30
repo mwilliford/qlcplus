@@ -57,6 +57,8 @@
 #include "inputoutputmanager.h"
 
 #include "agentconnection.h"
+#include "virtualconsole/vcserializer.h"
+#include "virtualconsole/vccommandhandler.h"
 #include "fixture.h"
 #include "tardis.h"
 #include "networkmanager.h"
@@ -263,6 +265,23 @@ void App::startup()
         if (m_simpleDesk)
             m_simpleDesk->resetUniverse(universe);
     });
+
+    // Bridge Virtual Console serialization for workspace_sync
+    m_agentConnection->setVirtualConsoleSerializer([this]() -> QJsonObject {
+        if (m_virtualConsole == nullptr)
+            return QJsonObject();
+        return serializeVirtualConsole(m_virtualConsole);
+    });
+
+    // Bridge Virtual Console commands from agent
+    m_agentConnection->setVCCommandHandler(
+        [this](const QString &cmd, const QJsonObject &params, QJsonObject &result) -> bool {
+            if (m_virtualConsole == nullptr) {
+                result["error"] = "VirtualConsole not available";
+                return false;
+            }
+            return handleVCCommand(cmd, params, result, m_virtualConsole, m_doc);
+        });
 
     // and here we go!
     setSource(QUrl("qrc:/MainView.qml"));

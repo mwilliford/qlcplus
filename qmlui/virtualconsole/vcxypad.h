@@ -190,6 +190,12 @@ public:
     Q_INVOKABLE void setPresetName(quint8 presetId, QString name);
     Q_INVOKABLE void applyPreset(quint8 presetId);
 
+    /** Get the raw fixture list (for serialization) */
+    const QList<XYPadFixture>& fixtures() const { return m_fixtures; }
+
+    /** Get the preset list (for serialization) */
+    const QList<class VCXYPadPreset*>& presetList() const { return m_presets; }
+
     /** Get the fixture list for the UI */
     QVariant fixtureList() const;
 
