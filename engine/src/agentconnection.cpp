@@ -141,6 +141,28 @@ QString AgentConnection::authToken() const
     return m_authManager.accessToken();
 }
 
+QJsonArray AgentConnection::getSessionList() const
+{
+    QJsonArray result;
+    const QList<AgentSession> &sessions = m_doc->sessions();
+    // Build list newest-first
+    for (int i = sessions.size() - 1; i >= 0; i--)
+    {
+        const AgentSession &s = sessions[i];
+        QJsonObject obj;
+        obj["sessionId"] = s.sessionId;
+        obj["title"] = s.title;
+        obj["createdAt"] = s.createdAt.toString(Qt::ISODate);
+        result.append(obj);
+    }
+    return result;
+}
+
+void AgentConnection::removeSession(const QString &sessionId)
+{
+    m_doc->removeSession(sessionId);
+}
+
 void AgentConnection::setServerUrl(const QUrl &url)
 {
     m_serverUrl = url;

@@ -58,6 +58,8 @@ public:
     int stateInt() const { return static_cast<int>(state()); }
 
     Q_INVOKABLE void setAuthToken(const QString &token);
+    Q_INVOKABLE QJsonArray getSessionList() const;
+    Q_INVOKABLE void removeSession(const QString &sessionId);
     QString authToken() const;
 
     void setServerUrl(const QUrl &url);
