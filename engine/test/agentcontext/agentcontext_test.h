@@ -87,6 +87,10 @@ private slots:
     // DMX reading and running functions
     void getRunningFunctionsHandler();
 
+    // modify_function: set_values vs add_values
+    void modifySceneSetValues();
+    void modifySceneAddValues();
+
     // AgentConnection state and auth
     void connectionStateEnum();
     void authStateEnum();

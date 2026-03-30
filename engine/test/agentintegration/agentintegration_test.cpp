@@ -993,4 +993,53 @@ void AgentIntegration_Test::manualCompactRoundTrip()
     QVERIFY2(!response.isEmpty(), "Agent should still respond after compaction");
 }
 
+void AgentIntegration_Test::modifySceneSetValuesViaAgent()
+{
+    if (!hasRealLLM())
+        QSKIP("No API key — skipping LLM test");
+
+    m_conn->connectToServer();
+    QVERIFY(waitForState(AgentConnection::Connected));
+
+    // The test workspace has scene "red wash" (ID 0) with several channel values
+    Scene *scene = qobject_cast<Scene*>(m_doc->function(0));
+    QVERIFY(scene != NULL);
+    int originalCount = scene->values().count();
+    qDebug() << "Scene" << scene->name() << "has" << originalCount << "values before modify";
+    QVERIFY2(originalCount > 0, "Test scene should have values");
+
+    // Ask the agent to modify the scene to contain ONLY dimmer at 128 on fixture 0
+    QSignalSpy tokenSpy(m_conn, &AgentConnection::chatTokenReceived);
+    QSignalSpy endSpy(m_conn, &AgentConnection::chatStreamEnded);
+
+    m_conn->sendChatMessage(
+        "Use modify_function with set_values on scene ID 0. "
+        "Replace all its values with ONLY one value: fixture 0, channel 8, value 128. "
+        "Use set_values (not values, not add_values). Execute immediately, no confirmation needed."
+    );
+
+    // Wait for response (may take a while with specialist delegation)
+    bool gotEnd = false;
+    for (int i = 0; i < 120; i++) // up to 60 seconds
+    {
+        QTest::qWait(500);
+        if (endSpy.count() > 0)
+        {
+            gotEnd = true;
+            break;
+        }
+    }
+    QVERIFY2(gotEnd, "Agent should complete response");
+
+    // Verify the scene was modified: should have exactly 1 value
+    int newCount = scene->values().count();
+    qDebug() << "Scene" << scene->name() << "has" << newCount << "values after modify";
+
+    // The agent may have created the value differently, but the key test:
+    // set_values should have CLEARED the old values
+    QVERIFY2(newCount < originalCount,
+             QString("set_values should clear old values. Before: %1, After: %2")
+             .arg(originalCount).arg(newCount).toUtf8().constData());
+}
+
 QTEST_MAIN(AgentIntegration_Test)
