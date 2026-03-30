@@ -63,6 +63,8 @@ set(SRC_FILES
     videoeditor.cpp videoeditor.h
     videoprovider.cpp videoprovider.h
     waveformimageprovider.cpp waveformimageprovider.h
+    virtualconsole/vccommandhandler.cpp virtualconsole/vccommandhandler.h
+    virtualconsole/vcserializer.cpp virtualconsole/vcserializer.h
     virtualconsole/vcanimation.cpp virtualconsole/vcanimation.h
     virtualconsole/vcaudiotriggers.cpp virtualconsole/vcaudiotriggers.h
     virtualconsole/vcbutton.cpp virtualconsole/vcbutton.h
