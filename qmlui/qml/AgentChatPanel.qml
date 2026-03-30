@@ -35,11 +35,21 @@ Rectangle
     property int genState: stateIdle
     property string streamingText: ""
 
+    // Session tracking
+    property string activeSessionId: ""
+    property var sessionList: []
+    property bool sidebarVisible: true
+
     // Connection state helpers
     readonly property bool isConnected: agentConnection.state === 4  // Connected
     readonly property bool isConnecting: agentConnection.state === 1 ||
                                          agentConnection.state === 2 ||
                                          agentConnection.state === 3
+
+    function refreshSessions()
+    {
+        sessionList = agentConnection.getSessionList()
+    }
 
     function submitToken()
     {
@@ -119,6 +129,14 @@ Rectangle
         })
     }
 
+    function formatSessionDate(isoDate)
+    {
+        if (!isoDate) return ""
+        var d = new Date(isoDate)
+        var months = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"]
+        return months[d.getMonth()] + " " + d.getDate()
+    }
+
     // Auth manager signals — show token paste only when login is required
     Connections
     {
@@ -152,6 +170,7 @@ Rectangle
             {
                 appendMessage("system", qsTr("Connected to agent server"))
                 tokenPasteRow.visible = false
+                refreshSessions()
             }
             else if (agentConnection.state === 0) // Disconnected
             {
@@ -213,79 +232,173 @@ Rectangle
 
         function onSessionCreated(sessionId)
         {
+            activeSessionId = sessionId
+            refreshSessions()
             appendMessage("system", qsTr("New session: %1").arg(sessionId.substring(0, 8)))
+        }
+
+        function onSessionMetadataUpdated(sessionId)
+        {
+            refreshSessions()
+        }
+
+        function onSessionHistoryReceived(sessionId, messages, expired)
+        {
+            if (expired)
+            {
+                appendMessage("system", qsTr("Session expired — starting fresh."))
+                return
+            }
+
+            activeSessionId = sessionId
+            chatHtml = ""
+
+            for (var i = 0; i < messages.length; i++)
+            {
+                var msg = messages[i]
+                var role = msg.role || "system"
+                var text = msg.text || msg.content || ""
+                if (text.length > 0)
+                    chatHtml += formatMessage(role, text)
+            }
+
+            appendMessage("system", qsTr("Session resumed — %1 messages loaded.").arg(messages.length))
+            scrollToBottom()
         }
     }
 
-    // Main layout
-    ColumnLayout
+    Component.onCompleted: refreshSessions()
+
+    // Main layout — sidebar + chat
+    RowLayout
     {
         anchors.fill: parent
-        anchors.margins: 2
-        spacing: 2
+        spacing: 0
 
-        // Status bar
+        // Session sidebar
         Rectangle
         {
-            Layout.fillWidth: true
-            Layout.preferredHeight: UISettings.iconSizeDefault
-            Layout.minimumHeight: UISettings.iconSizeDefault
-            color: UISettings.bgMedium
-            radius: 3
+            id: sidebar
+            Layout.preferredWidth: sidebarVisible ? 160 : 0
+            Layout.fillHeight: true
+            color: UISettings.bgStrong
+            visible: sidebarVisible
+            clip: true
 
-            RowLayout
+            ColumnLayout
             {
                 anchors.fill: parent
                 anchors.margins: 4
-                spacing: 8
+                spacing: 4
 
-                // Status indicator dot
-                Rectangle
+                // Sidebar header
+                RowLayout
                 {
-                    width: 10; height: 10; radius: 5
-                    color: isConnected ? "limegreen" : isConnecting ? "orange" : "gray"
-                }
-
-                RobotoText
-                {
-                    label: stateText()
                     Layout.fillWidth: true
-                    fontSize: UISettings.textSizeDefault * 0.9
+                    spacing: 4
+
+                    RobotoText
+                    {
+                        label: qsTr("Sessions")
+                        fontSize: UISettings.textSizeDefault
+                        Layout.fillWidth: true
+                    }
+
+                    IconButton
+                    {
+                        width: UISettings.iconSizeMedium
+                        height: UISettings.iconSizeMedium
+                        imgSource: "qrc:/add.svg"
+                        tooltip: qsTr("New Session")
+                        onClicked:
+                        {
+                            activeSessionId = ""
+                            chatHtml = ""
+                            chatText.text = ""
+                            streamingText = ""
+                            genState = stateIdle
+                            appendMessage("system", qsTr("New session — type your first message to begin."))
+                        }
+                    }
                 }
 
-                GenericButton
+                // Session list
+                ListView
                 {
-                    id: connectButton
-                    width: UISettings.bigItemHeight * 1.5
-                    height: UISettings.iconSizeMedium
-                    label: isConnected ? qsTr("Disconnect") : qsTr("Connect")
-                    onClicked:
-                    {
-                        if (isConnected)
-                            agentConnection.disconnectFromServer()
-                        else
-                            agentConnection.connectToServer()
-                    }
+                    id: sessionListView
+                    Layout.fillWidth: true
+                    Layout.fillHeight: true
+                    clip: true
+                    model: sessionList
+                    spacing: 2
 
-                    MouseArea
+                    delegate: Rectangle
                     {
-                        anchors.fill: parent
-                        acceptedButtons: Qt.RightButton
-                        onClicked: (mouse) => { connectMenu.popup() }
-                    }
+                        id: sessionDelegate
+                        width: sessionListView.width
+                        height: sessionTitle.height + sessionDate.height + 14
+                        radius: 3
+                        color: modelData.sessionId === activeSessionId
+                               ? UISettings.highlight
+                               : delegateMouseArea.containsMouse
+                                 ? UISettings.bgMedium
+                                 : "transparent"
 
-                    Menu
-                    {
-                        id: connectMenu
-
-                        MenuItem
+                        Text
                         {
-                            text: qsTr("Logout")
-                            onTriggered:
+                            id: sessionTitle
+                            anchors.top: parent.top
+                            anchors.left: parent.left
+                            anchors.right: parent.right
+                            anchors.margins: 6
+                            text: modelData.title || modelData.sessionId.substring(0, 8)
+                            font.family: UISettings.robotoFontName
+                            font.pixelSize: UISettings.textSizeDefault * 0.9
+                            color: UISettings.fgMain
+                            elide: Text.ElideRight
+                            maximumLineCount: 1
+                        }
+
+                        Text
+                        {
+                            id: sessionDate
+                            anchors.top: sessionTitle.bottom
+                            anchors.left: parent.left
+                            anchors.right: parent.right
+                            anchors.leftMargin: 6
+                            anchors.rightMargin: 6
+                            anchors.topMargin: 2
+                            text: formatSessionDate(modelData.createdAt)
+                            font.family: UISettings.robotoFontName
+                            font.pixelSize: UISettings.textSizeDefault * 0.75
+                            color: "#888888"
+                        }
+
+                        MouseArea
+                        {
+                            id: delegateMouseArea
+                            anchors.fill: parent
+                            hoverEnabled: true
+                            acceptedButtons: Qt.LeftButton | Qt.RightButton
+
+                            onClicked: (mouse) =>
                             {
-                                agentConnection.disconnectFromServer()
-                                agentConnection.authManager.logout()
-                                appendMessage("system", qsTr("Logged out — credentials cleared"))
+                                if (mouse.button === Qt.RightButton)
+                                {
+                                    sessionContextMenu.sessionId = modelData.sessionId
+                                    sessionContextMenu.popup()
+                                }
+                                else
+                                {
+                                    var sid = modelData.sessionId
+                                    if (sid === activeSessionId) return
+
+                                    if (isConnected)
+                                    {
+                                        appendMessage("system", qsTr("Resuming session..."))
+                                        agentConnection.sendSessionResume(sid)
+                                    }
+                                }
                             }
                         }
                     }
@@ -293,158 +406,280 @@ Rectangle
             }
         }
 
-        // Chat messages — single TextEdit for cross-message selection
-        Flickable
+        // Separator line when sidebar is visible
+        Rectangle
         {
-            id: chatView
+            Layout.preferredWidth: sidebarVisible ? 1 : 0
+            Layout.fillHeight: true
+            color: UISettings.bgMedium
+            visible: sidebarVisible
+        }
+
+        // Chat panel (right side)
+        ColumnLayout
+        {
             Layout.fillWidth: true
             Layout.fillHeight: true
-            clip: true
-            contentHeight: chatText.implicitHeight + 8
-            contentWidth: width
-            flickableDirection: Flickable.VerticalFlick
-            boundsBehavior: Flickable.StopAtBounds
+            Layout.margins: 2
+            spacing: 2
 
-            TextEdit
+            // Status bar
+            Rectangle
             {
-                id: chatText
-                width: chatView.width - 20
-                readOnly: true
-                selectByMouse: true
-                wrapMode: TextEdit.WordWrap
-                textFormat: TextEdit.RichText
-                font.family: UISettings.robotoFontName
-                font.pixelSize: UISettings.textSizeDefault
-                color: UISettings.fgMain
-                selectedTextColor: UISettings.fgMain
-                selectionColor: UISettings.highlight
+                Layout.fillWidth: true
+                Layout.preferredHeight: UISettings.iconSizeDefault
+                Layout.minimumHeight: UISettings.iconSizeDefault
+                color: UISettings.bgMedium
+                radius: 3
 
-                onImplicitHeightChanged: scrollToBottom()
-            }
-
-            ScrollBar.vertical: ScrollBar { }
-        }
-
-        // Input area
-        Rectangle
-        {
-            Layout.fillWidth: true
-            Layout.preferredHeight: Math.max(UISettings.iconSizeDefault * 1.2, inputField.implicitHeight + 8)
-            Layout.minimumHeight: UISettings.iconSizeDefault * 1.2
-            Layout.maximumHeight: UISettings.iconSizeDefault * 3
-            color: UISettings.bgMedium
-            radius: 3
-
-            RowLayout
-            {
-                anchors.fill: parent
-                anchors.margins: 4
-                spacing: 4
-
-                TextArea
+                RowLayout
                 {
-                    id: inputField
-                    Layout.fillWidth: true
-                    Layout.fillHeight: true
-                    placeholderText: isConnected ? qsTr("Ask the AI agent...") : qsTr("Connect to start chatting")
-                    enabled: isConnected
-                    color: UISettings.fgMain
-                    font.family: UISettings.robotoFontName
-                    font.pixelSize: UISettings.textSizeDefault
-                    wrapMode: TextArea.Wrap
+                    anchors.fill: parent
+                    anchors.margins: 4
+                    spacing: 8
 
-                    background: Rectangle
+                    // Sidebar toggle (hamburger)
+                    IconButton
                     {
-                        color: UISettings.bgStrong
-                        radius: 3
+                        width: UISettings.iconSizeMedium
+                        height: UISettings.iconSizeMedium
+                        imgSource: "qrc:/cuelist.svg"
+                        tooltip: sidebarVisible ? qsTr("Hide Sessions") : qsTr("Show Sessions")
+                        onClicked: sidebarVisible = !sidebarVisible
                     }
 
-                    Keys.onReturnPressed: function(event)
+                    // Status indicator dot
+                    Rectangle
                     {
-                        if (!(event.modifiers & Qt.ShiftModifier))
+                        width: 10; height: 10; radius: 5
+                        color: isConnected ? "limegreen" : isConnecting ? "orange" : "gray"
+                    }
+
+                    RobotoText
+                    {
+                        label: stateText()
+                        Layout.fillWidth: true
+                        fontSize: UISettings.textSizeDefault * 0.9
+                    }
+
+                    GenericButton
+                    {
+                        id: connectButton
+                        width: UISettings.bigItemHeight * 1.5
+                        height: UISettings.iconSizeMedium
+                        label: isConnected ? qsTr("Disconnect") : qsTr("Connect")
+                        onClicked:
                         {
-                            sendMessage()
-                            event.accepted = true
+                            if (isConnected)
+                                agentConnection.disconnectFromServer()
+                            else
+                                agentConnection.connectToServer()
                         }
-                    }
-                }
 
-                IconButton
-                {
-                    width: UISettings.iconSizeMedium
-                    height: UISettings.iconSizeMedium
-                    imgSource: genState !== stateIdle ? "qrc:/stop.svg" : "qrc:/forward.svg"
-                    tooltip: genState !== stateIdle ? qsTr("Cancel") : qsTr("Send")
-                    enabled: isConnected
-                    onClicked:
-                    {
-                        if (genState !== stateIdle)
+                        MouseArea
                         {
-                            agentConnection.sendCancel()
-                            if (streamingText.length > 0)
+                            anchors.fill: parent
+                            acceptedButtons: Qt.RightButton
+                            onClicked: (mouse) => { connectMenu.popup() }
+                        }
+
+                        Menu
+                        {
+                            id: connectMenu
+
+                            MenuItem
                             {
-                                chatHtml += formatMessage("assistant", streamingText)
-                                streamingText = ""
+                                text: qsTr("Logout")
+                                onTriggered:
+                                {
+                                    agentConnection.disconnectFromServer()
+                                    agentConnection.authManager.logout()
+                                    appendMessage("system", qsTr("Logged out — credentials cleared"))
+                                }
                             }
-                            appendMessage("system", qsTr("[Stopped]"))
-                            genState = stateIdle
                         }
-                        else
-                            sendMessage()
+                    }
+                }
+            }
+
+            // Chat messages — single TextEdit for cross-message selection
+            Flickable
+            {
+                id: chatView
+                Layout.fillWidth: true
+                Layout.fillHeight: true
+                clip: true
+                contentHeight: chatText.implicitHeight + 8
+                contentWidth: width
+                flickableDirection: Flickable.VerticalFlick
+                boundsBehavior: Flickable.StopAtBounds
+
+                TextEdit
+                {
+                    id: chatText
+                    width: chatView.width - 20
+                    readOnly: true
+                    selectByMouse: true
+                    wrapMode: TextEdit.WordWrap
+                    textFormat: TextEdit.RichText
+                    font.family: UISettings.robotoFontName
+                    font.pixelSize: UISettings.textSizeDefault
+                    color: UISettings.fgMain
+                    selectedTextColor: UISettings.fgMain
+                    selectionColor: UISettings.highlight
+
+                    onImplicitHeightChanged: scrollToBottom()
+                }
+
+                ScrollBar.vertical: ScrollBar { }
+            }
+
+            // Input area
+            Rectangle
+            {
+                Layout.fillWidth: true
+                Layout.preferredHeight: Math.max(UISettings.iconSizeDefault * 1.2, inputField.implicitHeight + 8)
+                Layout.minimumHeight: UISettings.iconSizeDefault * 1.2
+                Layout.maximumHeight: UISettings.iconSizeDefault * 3
+                color: UISettings.bgMedium
+                radius: 3
+
+                RowLayout
+                {
+                    anchors.fill: parent
+                    anchors.margins: 4
+                    spacing: 4
+
+                    TextArea
+                    {
+                        id: inputField
+                        Layout.fillWidth: true
+                        Layout.fillHeight: true
+                        placeholderText: isConnected ? qsTr("Ask the AI agent...") : qsTr("Connect to start chatting")
+                        enabled: isConnected
+                        color: UISettings.fgMain
+                        font.family: UISettings.robotoFontName
+                        font.pixelSize: UISettings.textSizeDefault
+                        wrapMode: TextArea.Wrap
+
+                        background: Rectangle
+                        {
+                            color: UISettings.bgStrong
+                            radius: 3
+                        }
+
+                        Keys.onReturnPressed: function(event)
+                        {
+                            if (!(event.modifiers & Qt.ShiftModifier))
+                            {
+                                sendMessage()
+                                event.accepted = true
+                            }
+                        }
+                    }
+
+                    IconButton
+                    {
+                        width: UISettings.iconSizeMedium
+                        height: UISettings.iconSizeMedium
+                        imgSource: genState !== stateIdle ? "qrc:/stop.svg" : "qrc:/forward.svg"
+                        tooltip: genState !== stateIdle ? qsTr("Cancel") : qsTr("Send")
+                        enabled: isConnected
+                        onClicked:
+                        {
+                            if (genState !== stateIdle)
+                            {
+                                agentConnection.sendCancel()
+                                if (streamingText.length > 0)
+                                {
+                                    chatHtml += formatMessage("assistant", streamingText)
+                                    streamingText = ""
+                                }
+                                appendMessage("system", qsTr("[Stopped]"))
+                                genState = stateIdle
+                            }
+                            else
+                                sendMessage()
+                        }
+                    }
+                }
+            }
+
+            // Token paste — only shown when auth flow requires manual token entry
+            Rectangle
+            {
+                id: tokenPasteRow
+                Layout.fillWidth: true
+                Layout.preferredHeight: UISettings.iconSizeDefault * 1.2
+                Layout.minimumHeight: UISettings.iconSizeDefault * 1.2
+                color: UISettings.bgMedium
+                radius: 3
+                visible: false
+
+                RowLayout
+                {
+                    anchors.fill: parent
+                    anchors.margins: 4
+                    spacing: 4
+
+                    RobotoText
+                    {
+                        label: qsTr("Paste token:")
+                        fontSize: UISettings.textSizeDefault * 0.9
+                    }
+
+                    TextArea
+                    {
+                        id: tokenInput
+                        Layout.fillWidth: true
+                        Layout.fillHeight: true
+                        placeholderText: "eyJ..."
+                        color: UISettings.fgMain
+                        font.family: UISettings.robotoFontName
+                        font.pixelSize: UISettings.textSizeDefault
+
+                        background: Rectangle
+                        {
+                            color: UISettings.bgStrong
+                            radius: 3
+                        }
+
+                        Keys.onReturnPressed: submitToken()
+                    }
+
+                    GenericButton
+                    {
+                        width: UISettings.bigItemHeight
+                        height: UISettings.iconSizeMedium
+                        label: qsTr("Submit")
+                        onClicked: submitToken()
                     }
                 }
             }
         }
+    }
 
-        // Token paste — only shown when auth flow requires manual token entry
-        Rectangle
+    // Context menu for session delete
+    Menu
+    {
+        id: sessionContextMenu
+        property string sessionId: ""
+
+        MenuItem
         {
-            id: tokenPasteRow
-            Layout.fillWidth: true
-            Layout.preferredHeight: UISettings.iconSizeDefault * 1.2
-            Layout.minimumHeight: UISettings.iconSizeDefault * 1.2
-            color: UISettings.bgMedium
-            radius: 3
-            visible: false
-
-            RowLayout
+            text: qsTr("Delete Session")
+            onTriggered:
             {
-                anchors.fill: parent
-                anchors.margins: 4
-                spacing: 4
-
-                RobotoText
+                var sid = sessionContextMenu.sessionId
+                if (sid === activeSessionId)
                 {
-                    label: qsTr("Paste token:")
-                    fontSize: UISettings.textSizeDefault * 0.9
+                    activeSessionId = ""
+                    chatHtml = ""
+                    chatText.text = ""
+                    appendMessage("system", qsTr("Session deleted. Type a message to start a new one."))
                 }
-
-                TextArea
-                {
-                    id: tokenInput
-                    Layout.fillWidth: true
-                    Layout.fillHeight: true
-                    placeholderText: "eyJ..."
-                    color: UISettings.fgMain
-                    font.family: UISettings.robotoFontName
-                    font.pixelSize: UISettings.textSizeDefault
-
-                    background: Rectangle
-                    {
-                        color: UISettings.bgStrong
-                        radius: 3
-                    }
-
-                    Keys.onReturnPressed: submitToken()
-                }
-
-                GenericButton
-                {
-                    width: UISettings.bigItemHeight
-                    height: UISettings.iconSizeMedium
-                    label: qsTr("Submit")
-                    onClicked: submitToken()
-                }
+                agentConnection.removeSession(sid)
+                refreshSessions()
             }
         }
     }

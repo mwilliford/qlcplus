@@ -67,6 +67,9 @@ private slots:
     // Compaction (requires API key)
     void manualCompactRoundTrip();
 
+    // modify_function set_values (requires API key)
+    void modifySceneSetValuesViaAgent();
+
 private:
     bool loadWorkspace(const QString &path);
     bool waitForState(int expectedState, int timeoutMs = 5000);

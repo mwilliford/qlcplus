@@ -1221,6 +1221,77 @@ void AgentContext_Test::getRunningFunctionsHandler()
 }
 
 /*****************************************************************************
+ * modify_function: set_values vs add_values
+ *****************************************************************************/
+
+void AgentContext_Test::modifySceneSetValues()
+{
+    // Create a scene with 3 values
+    Scene *scene = new Scene(m_doc);
+    scene->setName("Test Scene");
+    scene->setValue(0, 0, 100);  // fixture 0, ch 0
+    scene->setValue(0, 1, 200);  // fixture 0, ch 1
+    scene->setValue(0, 2, 50);   // fixture 0, ch 2
+    m_doc->addFunction(scene);
+    QCOMPARE(scene->values().count(), 3);
+
+    // Simulate modify_function with setValues — should REPLACE all values
+    AgentConnection conn(m_doc);
+    QJsonObject msg;
+    msg["type"] = "modify_function";
+    msg["requestId"] = "test-set-1";
+    msg["functionId"] = (int)scene->id();
+    QJsonObject changes;
+    QJsonArray setVals;
+    QJsonObject v1; v1["fixtureId"] = 0; v1["channel"] = 5; v1["value"] = 128;
+    setVals.append(v1);
+    changes["setValues"] = setVals;
+    msg["changes"] = changes;
+
+    conn.handleModifyFunction(msg);
+
+    // Should have exactly 1 value (the old 3 were cleared)
+    QCOMPARE(scene->values().count(), 1);
+    QCOMPARE((int)scene->value(0, 5), 128);
+    // Old values should be gone
+    QCOMPARE((int)scene->value(0, 0), 0);
+    QCOMPARE((int)scene->value(0, 1), 0);
+    QCOMPARE((int)scene->value(0, 2), 0);
+}
+
+void AgentContext_Test::modifySceneAddValues()
+{
+    // Create a scene with 2 values
+    Scene *scene = new Scene(m_doc);
+    scene->setName("Test Scene 2");
+    scene->setValue(0, 0, 100);  // fixture 0, ch 0
+    scene->setValue(0, 1, 200);  // fixture 0, ch 1
+    m_doc->addFunction(scene);
+    QCOMPARE(scene->values().count(), 2);
+
+    // Simulate modify_function with addValues — should ADD without clearing
+    AgentConnection conn(m_doc);
+    QJsonObject msg;
+    msg["type"] = "modify_function";
+    msg["requestId"] = "test-add-1";
+    msg["functionId"] = (int)scene->id();
+    QJsonObject changes;
+    QJsonArray addVals;
+    QJsonObject v1; v1["fixtureId"] = 0; v1["channel"] = 5; v1["value"] = 128;
+    addVals.append(v1);
+    changes["addValues"] = addVals;
+    msg["changes"] = changes;
+
+    conn.handleModifyFunction(msg);
+
+    // Should have 3 values (original 2 + 1 added)
+    QCOMPARE(scene->values().count(), 3);
+    QCOMPARE((int)scene->value(0, 0), 100);  // preserved
+    QCOMPARE((int)scene->value(0, 1), 200);  // preserved
+    QCOMPARE((int)scene->value(0, 5), 128);  // added
+}
+
+/*****************************************************************************
  * AgentConnection state and auth
  *****************************************************************************/
 
