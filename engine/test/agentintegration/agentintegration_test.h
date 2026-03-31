@@ -100,6 +100,27 @@ private slots:
     // v2 session resume
     void v2SessionResume();
 
+    // --- v2 prompt quality tests ---
+    // These test the agent's creative decision-making, not just graph mechanics.
+
+    // Vague scene request → agent should ask about show-ready vs foundational
+    void v2VagueSceneAsksClarification();
+
+    // Explicit show-ready → scene includes dimmer + shutter + color
+    void v2ShowReadySceneHasDimmerAndShutter();
+
+    // Explicit foundational → scene only has color channel
+    void v2FoundationalSceneColorOnly();
+
+    // DMX correctness — color value in correct range
+    void v2RedSceneCorrectColorValue();
+
+    // DMX correctness — gobo by name, correct channel value
+    void v2GoboByNameCorrectValue();
+
+    // DMX correctness — nonexistent gobo name → agent lists available gobos
+    void v2UnknownGoboListsOptions();
+
 private:
     bool loadWorkspace(const QString &path);
     bool waitForState(int expectedState, int timeoutMs = 5000);
