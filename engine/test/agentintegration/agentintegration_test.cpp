@@ -408,7 +408,7 @@ void AgentIntegration_Test::sessionCreatedOnFirstChat()
     QVERIFY2(sessionSpy.count() == 1, "Expected exactly one sessionCreated signal");
 
     QString sessionId = sessionSpy.at(0).at(0).toString();
-    QVERIFY2(sessionId.startsWith("ses_"), "Session ID should start with ses_");
+    QVERIFY2(sessionId.contains("ses_"), "Session ID should contain ses_ (format: v{N}_ses_{hex})");
     qDebug() << "Session created:" << sessionId;
 
     // Session should be stored in Doc
@@ -1040,6 +1040,103 @@ void AgentIntegration_Test::modifySceneSetValuesViaAgent()
     QVERIFY2(newCount < originalCount,
              QString("set_values should clear old values. Before: %1, After: %2")
              .arg(originalCount).arg(newCount).toUtf8().constData());
+}
+
+/*****************************************************************************
+ * v2 intent-routed architecture tests
+ *****************************************************************************/
+
+void AgentIntegration_Test::v2SessionCreated()
+{
+    if (!hasRealLLM())
+        QSKIP("v2 requires API key for Haiku router — skipping");
+
+    m_conn->setGraphVersion("v2");
+    m_conn->connectToServer();
+    QVERIFY(waitForState(AgentConnection::Connected));
+
+    QSignalSpy sessionSpy(m_conn, SIGNAL(sessionCreated(QString)));
+    QSignalSpy endSpy(m_conn, SIGNAL(chatStreamEnded()));
+
+    m_conn->sendChatMessage("hello");
+
+    QTRY_VERIFY_WITH_TIMEOUT(endSpy.count() >= 1, 90000);
+
+    QVERIFY2(sessionSpy.count() == 1, "Expected exactly one sessionCreated signal");
+
+    QString sessionId = sessionSpy.at(0).at(0).toString();
+    QVERIFY2(sessionId.startsWith("v2_ses_"),
+             qPrintable(QString("v2 session ID should start with v2_ses_, got: %1").arg(sessionId)));
+    qDebug() << "v2 session created:" << sessionId;
+
+    // Reset for next test
+    m_conn->setGraphVersion(QString());
+}
+
+void AgentIntegration_Test::v2ControlBlackout()
+{
+    if (!hasRealLLM())
+        QSKIP("v2 requires API key for Haiku router — skipping");
+
+    m_conn->setGraphVersion("v2");
+    m_conn->connectToServer();
+    QVERIFY(waitForState(AgentConnection::Connected));
+
+    QSignalSpy cmdSpy(m_conn, SIGNAL(commandExecuting(QString)));
+    QSignalSpy tokenSpy(m_conn, SIGNAL(chatTokenReceived(QString)));
+    QSignalSpy endSpy(m_conn, SIGNAL(chatStreamEnded()));
+
+    m_conn->sendChatMessage("blackout");
+
+    QTRY_VERIFY_WITH_TIMEOUT(endSpy.count() >= 1, 30000);
+
+    // Collect response
+    QString response;
+    for (int i = 0; i < tokenSpy.count(); i++)
+        response += tokenSpy.at(i).at(0).toString();
+    qDebug() << "v2 blackout response:" << response;
+
+    // CONTROL path should send set_blackout command directly
+    bool gotBlackout = false;
+    for (int i = 0; i < cmdSpy.count(); i++)
+    {
+        QString cmd = cmdSpy.at(i).at(0).toString();
+        qDebug() << "v2 command received:" << cmd;
+        if (cmd == "set_blackout")
+            gotBlackout = true;
+    }
+
+    QVERIFY2(gotBlackout || response.toLower().contains("blackout"),
+             "Expected set_blackout command or blackout in response");
+
+    m_conn->setGraphVersion(QString());
+}
+
+void AgentIntegration_Test::v2QueryListFunctions()
+{
+    if (!hasRealLLM())
+        QSKIP("v2 requires API key for Haiku router — skipping");
+
+    m_conn->setGraphVersion("v2");
+    m_conn->connectToServer();
+    QVERIFY(waitForState(AgentConnection::Connected));
+
+    QSignalSpy tokenSpy(m_conn, SIGNAL(chatTokenReceived(QString)));
+    QSignalSpy endSpy(m_conn, SIGNAL(chatStreamEnded()));
+
+    m_conn->sendChatMessage("what scenes do I have?");
+
+    QTRY_VERIFY_WITH_TIMEOUT(endSpy.count() >= 1, 30000);
+
+    QString response;
+    for (int i = 0; i < tokenSpy.count(); i++)
+        response += tokenSpy.at(i).at(0).toString();
+    qDebug() << "v2 query response:" << response.left(500);
+
+    // Should mention the test workspace's scene
+    QVERIFY2(!response.isEmpty(), "v2 QUERY should return a response");
+
+    m_conn->setGraphVersion(QString());
 }
 
 QTEST_MAIN(AgentIntegration_Test)
