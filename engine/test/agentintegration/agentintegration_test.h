@@ -82,6 +82,24 @@ private slots:
     // v2 QUERY intent (requires API key for Haiku router + formatter)
     void v2QueryListFunctions();
 
+    // v2 BUILD intent — scene creation (requires API key)
+    void v2CreateScene();
+
+    // v2 REFINE intent — modify existing scene (requires API key)
+    void v2ModifyScene();
+
+    // v2 BUILD intent — delete scene (requires API key)
+    void v2DeleteScene();
+
+    // v2 agent note round-trip (requires API key)
+    void v2UpdateAgentNote();
+
+    // v2 delta round-trip — verify deltas work with v2 sessions
+    void v2DeltaRoundTrip();
+
+    // v2 session resume
+    void v2SessionResume();
+
 private:
     bool loadWorkspace(const QString &path);
     bool waitForState(int expectedState, int timeoutMs = 5000);
