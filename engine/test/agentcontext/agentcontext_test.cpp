@@ -1392,7 +1392,7 @@ void AgentContext_Test::createFixtureHandler()
     msg["model"] = "TestModel";
     msg["mode"] = "2ch";
     msg["universe"] = 0;
-    msg["address"] = 100;
+    msg["address"] = 101;  // 1-based DMX address
 
     conn.handleCreateFixture(msg);
 
@@ -1410,7 +1410,7 @@ void AgentContext_Test::createFixtureHandler()
     }
     QVERIFY(fxi != nullptr);
     QCOMPARE(fxi->universe(), (quint32)0);
-    QCOMPARE(fxi->address(), (quint32)100);
+    QCOMPARE(fxi->address(), (quint32)100);  // 0-based internal (101 - 1)
     QCOMPARE(fxi->channels(), (quint32)2);
 }
 
@@ -1439,7 +1439,7 @@ void AgentContext_Test::createFixtureAddressOverlap()
     msg["model"] = "TestModel";
     msg["mode"] = "2ch";
     msg["universe"] = 0;
-    msg["address"] = 201; // overlaps with existing at 200-201
+    msg["address"] = 201; // 1-based DMX; overlaps with existing at internal 200-201
 
     conn.handleCreateFixture(msg);
 
