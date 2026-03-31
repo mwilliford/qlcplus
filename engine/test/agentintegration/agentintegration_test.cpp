@@ -1516,4 +1516,517 @@ void AgentIntegration_Test::v2SessionResume()
     m_conn->setGraphVersion("v1");
 }
 
+/*****************************************************************************
+ * v2 prompt quality tests — creative decision-making
+ *****************************************************************************/
+
+void AgentIntegration_Test::v2VagueSceneAsksClarification()
+{
+    if (!hasRealLLM())
+        QSKIP("v2 requires API key — skipping");
+
+    m_conn->setGraphVersion("v2");
+    m_conn->connectToServer();
+    QVERIFY(waitForState(AgentConnection::Connected));
+
+    QSignalSpy tokenSpy(m_conn, SIGNAL(chatTokenReceived(QString)));
+    QSignalSpy cmdSpy(m_conn, SIGNAL(commandExecuting(QString)));
+    QSignalSpy endSpy(m_conn, SIGNAL(chatStreamEnded()));
+
+    // Vague request — doesn't specify show-ready vs foundational
+    m_conn->sendChatMessage(
+        "Create a blue scene on both scanners."
+    );
+
+    QTRY_VERIFY_WITH_TIMEOUT(endSpy.count() >= 1, 90000);
+
+    QString response;
+    for (int i = 0; i < tokenSpy.count(); i++)
+        response += tokenSpy.at(i).at(0).toString();
+    qDebug() << "v2 vague scene response:" << response.left(500);
+
+    // Check if any create_scene command was sent
+    bool gotCreate = false;
+    for (int i = 0; i < cmdSpy.count(); i++)
+    {
+        if (cmdSpy.at(i).at(0).toString() == "create_scene")
+            gotCreate = true;
+    }
+
+    // The agent should NOT immediately create — it should ask about
+    // complete scene vs color-only for layering.
+    if (gotCreate)
+    {
+        qDebug() << "v2 PROMPT QUALITY: Agent created without asking — expected clarification";
+        QFAIL("Vague scene request should ask about complete vs color-only, not create immediately");
+    }
+
+    // The response must show the agent understands scenes can serve different
+    // purposes. It should mention the distinction between a complete/standalone
+    // scene and a color-only/layering scene. Just asking "should I proceed?"
+    // is NOT sufficient — the agent must demonstrate design awareness.
+    QString lower = response.toLower();
+    bool mentionsComplete =
+        lower.contains("complete") ||
+        lower.contains("standalone") ||
+        lower.contains("on its own") ||
+        lower.contains("produce light") ||
+        lower.contains("visible");
+    bool mentionsLayering =
+        lower.contains("layer") ||
+        lower.contains("color only") ||
+        lower.contains("just the color") ||
+        lower.contains("only color") ||
+        lower.contains("combine") ||
+        lower.contains("collection") ||
+        lower.contains("mix");
+    bool mentionsAttributes =
+        lower.contains("dimmer") ||
+        lower.contains("shutter") ||
+        lower.contains("intensity");
+
+    // Must mention at least two of: complete/standalone concept, layering concept,
+    // or relevant attributes (dimmer/shutter). This proves the agent understands
+    // the distinction, not just that it asked a generic question.
+    int conceptCount = (mentionsComplete ? 1 : 0) +
+                       (mentionsLayering ? 1 : 0) +
+                       (mentionsAttributes ? 1 : 0);
+
+    QVERIFY2(conceptCount >= 2,
+             qPrintable(QString("Agent should ask about complete vs color-only scenes. "
+                               "Mentions: complete=%1 layering=%2 attributes=%3. Response: %4")
+                       .arg(mentionsComplete).arg(mentionsLayering).arg(mentionsAttributes)
+                       .arg(response.left(300))));
+
+    m_conn->setGraphVersion("v1");
+}
+
+void AgentIntegration_Test::v2ShowReadySceneHasDimmerAndShutter()
+{
+    if (!hasRealLLM())
+        QSKIP("v2 requires API key — skipping");
+
+    m_conn->setGraphVersion("v2");
+    m_conn->connectToServer();
+    QVERIFY(waitForState(AgentConnection::Connected));
+
+    int functionCountBefore = m_doc->functions().count();
+
+    QSignalSpy cmdSpy(m_conn, SIGNAL(commandExecuting(QString)));
+    QSignalSpy tokenSpy(m_conn, SIGNAL(chatTokenReceived(QString)));
+    QSignalSpy endSpy(m_conn, SIGNAL(chatStreamEnded()));
+
+    // Explicit show-ready request — should include dimmer + shutter + color
+    m_conn->sendChatMessage(
+        "Create a show-ready blue scene on both scanners (fixture 0 and 1). "
+        "Include color, dimmer at full, and shutter open so the light actually comes out. "
+        "Execute immediately, no confirmation needed."
+    );
+
+    QTRY_VERIFY_WITH_TIMEOUT(endSpy.count() >= 1, 90000);
+
+    // Handle confirmation if needed
+    QString response;
+    for (int i = 0; i < tokenSpy.count(); i++)
+        response += tokenSpy.at(i).at(0).toString();
+
+    bool gotCreate = false;
+    for (int i = 0; i < cmdSpy.count(); i++)
+    {
+        if (cmdSpy.at(i).at(0).toString() == "create_scene")
+            gotCreate = true;
+    }
+
+    if (!gotCreate && (response.contains("?") || response.toLower().contains("confirm")))
+    {
+        QSignalSpy endSpy2(m_conn, SIGNAL(chatStreamEnded()));
+        QSignalSpy cmdSpy2(m_conn, SIGNAL(commandExecuting(QString)));
+        m_conn->sendChatMessage("Yes, go ahead");
+        QTRY_VERIFY_WITH_TIMEOUT(endSpy2.count() >= 1, 90000);
+        for (int i = 0; i < cmdSpy2.count(); i++)
+        {
+            if (cmdSpy2.at(i).at(0).toString() == "create_scene")
+                gotCreate = true;
+        }
+    }
+
+    QVERIFY2(gotCreate, "Expected create_scene for show-ready request");
+
+    // Find the new scene
+    Scene *newScene = nullptr;
+    foreach (Function *fn, m_doc->functions())
+    {
+        if (fn->type() == Function::SceneType && fn->name().toLower().contains("blue"))
+        {
+            newScene = qobject_cast<Scene*>(fn);
+            if (newScene && newScene->id() >= (quint32)functionCountBefore)
+                break;
+            newScene = nullptr;
+        }
+    }
+
+    QVERIFY2(newScene != nullptr, "Could not find the new blue scene");
+    qDebug() << "v2 show-ready scene:" << newScene->name() << "values:" << newScene->values().count();
+
+    // Verify it has values for BOTH fixtures
+    // Intimidator Scan LED 300 in 11ch mode: Ch2=Color, Ch3=Shutter, Ch4=Dimmer
+    bool hasColor0 = false, hasDimmer0 = false, hasShutter0 = false;
+    bool hasColor1 = false, hasDimmer1 = false, hasShutter1 = false;
+
+    foreach (SceneValue sv, newScene->values())
+    {
+        qDebug() << "  fixture:" << sv.fxi << "ch:" << sv.channel << "val:" << sv.value;
+        if (sv.fxi == 0 && sv.channel == 2) hasColor0 = true;
+        if (sv.fxi == 0 && sv.channel == 3) hasShutter0 = true;
+        if (sv.fxi == 0 && sv.channel == 4) hasDimmer0 = true;
+        if (sv.fxi == 1 && sv.channel == 2) hasColor1 = true;
+        if (sv.fxi == 1 && sv.channel == 3) hasShutter1 = true;
+        if (sv.fxi == 1 && sv.channel == 4) hasDimmer1 = true;
+    }
+
+    // Show-ready must include color + dimmer + shutter on both fixtures
+    QVERIFY2(hasColor0 && hasColor1,
+             "Show-ready scene missing Color channel on one or both scanners");
+    QVERIFY2(hasDimmer0 && hasDimmer1,
+             "Show-ready scene missing Dimmer channel — light won't be visible");
+    QVERIFY2(hasShutter0 && hasShutter1,
+             "Show-ready scene missing Shutter channel — light won't come out");
+
+    m_conn->setGraphVersion("v1");
+}
+
+void AgentIntegration_Test::v2FoundationalSceneColorOnly()
+{
+    if (!hasRealLLM())
+        QSKIP("v2 requires API key — skipping");
+
+    m_conn->setGraphVersion("v2");
+    m_conn->connectToServer();
+    QVERIFY(waitForState(AgentConnection::Connected));
+
+    int functionCountBefore = m_doc->functions().count();
+
+    QSignalSpy cmdSpy(m_conn, SIGNAL(commandExecuting(QString)));
+    QSignalSpy tokenSpy(m_conn, SIGNAL(chatTokenReceived(QString)));
+    QSignalSpy endSpy(m_conn, SIGNAL(chatStreamEnded()));
+
+    // Explicit foundational/layering request — color channel only
+    m_conn->sendChatMessage(
+        "Create a foundational blue color scene on both scanners (fixture 0 and 1). "
+        "Only set the color channel — no dimmer, no shutter, no position. "
+        "This is for layering in collections. Execute immediately."
+    );
+
+    QTRY_VERIFY_WITH_TIMEOUT(endSpy.count() >= 1, 90000);
+
+    // Handle confirmation if needed
+    QString response;
+    for (int i = 0; i < tokenSpy.count(); i++)
+        response += tokenSpy.at(i).at(0).toString();
+
+    bool gotCreate = false;
+    for (int i = 0; i < cmdSpy.count(); i++)
+    {
+        if (cmdSpy.at(i).at(0).toString() == "create_scene")
+            gotCreate = true;
+    }
+
+    if (!gotCreate && (response.contains("?") || response.toLower().contains("confirm")))
+    {
+        QSignalSpy endSpy2(m_conn, SIGNAL(chatStreamEnded()));
+        QSignalSpy cmdSpy2(m_conn, SIGNAL(commandExecuting(QString)));
+        m_conn->sendChatMessage("Yes, go ahead");
+        QTRY_VERIFY_WITH_TIMEOUT(endSpy2.count() >= 1, 90000);
+        for (int i = 0; i < cmdSpy2.count(); i++)
+        {
+            if (cmdSpy2.at(i).at(0).toString() == "create_scene")
+                gotCreate = true;
+        }
+    }
+
+    QVERIFY2(gotCreate, "Expected create_scene for foundational request");
+
+    // Find the new scene
+    Scene *newScene = nullptr;
+    foreach (Function *fn, m_doc->functions())
+    {
+        if (fn->type() == Function::SceneType &&
+            (fn->name().toLower().contains("blue") || fn->name().toLower().contains("foundational")))
+        {
+            Scene *s = qobject_cast<Scene*>(fn);
+            if (s && s->id() >= (quint32)functionCountBefore)
+            {
+                newScene = s;
+                break;
+            }
+        }
+    }
+
+    QVERIFY2(newScene != nullptr, "Could not find the new foundational scene");
+    qDebug() << "v2 foundational scene:" << newScene->name() << "values:" << newScene->values().count();
+
+    // Verify it ONLY has color channels (Ch2), no dimmer (Ch4) or shutter (Ch3)
+    bool hasDimmer = false, hasShutter = false, hasPosition = false;
+
+    foreach (SceneValue sv, newScene->values())
+    {
+        qDebug() << "  fixture:" << sv.fxi << "ch:" << sv.channel << "val:" << sv.value;
+        if (sv.channel == 3) hasShutter = true;   // Shutter
+        if (sv.channel == 4) hasDimmer = true;    // Dimmer
+        if (sv.channel == 0 || sv.channel == 1) hasPosition = true;  // Pan/Tilt
+    }
+
+    QVERIFY2(!hasDimmer,
+             "Foundational scene should NOT include Dimmer — that's for a separate layer");
+    QVERIFY2(!hasShutter,
+             "Foundational scene should NOT include Shutter — that's for a separate layer");
+    QVERIFY2(!hasPosition,
+             "Foundational scene should NOT include Pan/Tilt — that's for a separate layer");
+
+    // Should have at least the color channel on both fixtures
+    bool hasColor0 = false, hasColor1 = false;
+    foreach (SceneValue sv, newScene->values())
+    {
+        if (sv.fxi == 0 && sv.channel == 2) hasColor0 = true;
+        if (sv.fxi == 1 && sv.channel == 2) hasColor1 = true;
+    }
+    QVERIFY2(hasColor0 && hasColor1,
+             "Foundational scene should have Color channel on both scanners");
+
+    m_conn->setGraphVersion("v1");
+}
+
+/*****************************************************************************
+ * v2 DMX correctness tests
+ *****************************************************************************/
+
+void AgentIntegration_Test::v2RedSceneCorrectColorValue()
+{
+    if (!hasRealLLM())
+        QSKIP("v2 requires API key — skipping");
+
+    m_conn->setGraphVersion("v2");
+    m_conn->connectToServer();
+    QVERIFY(waitForState(AgentConnection::Connected));
+
+    int functionCountBefore = m_doc->functions().count();
+
+    QSignalSpy cmdSpy(m_conn, SIGNAL(commandExecuting(QString)));
+    QSignalSpy tokenSpy(m_conn, SIGNAL(chatTokenReceived(QString)));
+    QSignalSpy endSpy(m_conn, SIGNAL(chatStreamEnded()));
+
+    // Explicit complete scene with red color
+    m_conn->sendChatMessage(
+        "Create a complete red scene on scanner 0 (fixture 0) only. "
+        "Include color set to red, dimmer full, shutter open. "
+        "Execute immediately, no confirmation."
+    );
+
+    QTRY_VERIFY_WITH_TIMEOUT(endSpy.count() >= 1, 90000);
+
+    // Handle confirmation if needed
+    QString response;
+    for (int i = 0; i < tokenSpy.count(); i++)
+        response += tokenSpy.at(i).at(0).toString();
+
+    bool gotCreate = false;
+    for (int i = 0; i < cmdSpy.count(); i++)
+    {
+        if (cmdSpy.at(i).at(0).toString() == "create_scene")
+            gotCreate = true;
+    }
+
+    if (!gotCreate && (response.contains("?") || response.toLower().contains("confirm")))
+    {
+        QSignalSpy endSpy2(m_conn, SIGNAL(chatStreamEnded()));
+        QSignalSpy cmdSpy2(m_conn, SIGNAL(commandExecuting(QString)));
+        m_conn->sendChatMessage("Yes, go ahead");
+        QTRY_VERIFY_WITH_TIMEOUT(endSpy2.count() >= 1, 90000);
+        for (int i = 0; i < cmdSpy2.count(); i++)
+        {
+            if (cmdSpy2.at(i).at(0).toString() == "create_scene")
+                gotCreate = true;
+        }
+    }
+
+    QVERIFY2(gotCreate, "Expected create_scene");
+
+    // Find the new scene
+    Scene *newScene = nullptr;
+    foreach (Function *fn, m_doc->functions())
+    {
+        if (fn->type() == Function::SceneType)
+        {
+            Scene *s = qobject_cast<Scene*>(fn);
+            if (s && s->id() >= (quint32)functionCountBefore)
+            {
+                newScene = s;
+                break;
+            }
+        }
+    }
+
+    QVERIFY2(newScene != nullptr, "Could not find the new scene");
+    qDebug() << "v2 red scene:" << newScene->name() << "values:" << newScene->values().count();
+
+    // Verify color channel (Ch2) has a value in the Red range (49-55)
+    // Intimidator Scan LED 300: Red = 49-55
+    bool hasCorrectColor = false;
+    foreach (SceneValue sv, newScene->values())
+    {
+        qDebug() << "  fixture:" << sv.fxi << "ch:" << sv.channel << "val:" << sv.value;
+        if (sv.fxi == 0 && sv.channel == 2)
+        {
+            QVERIFY2(sv.value >= 49 && sv.value <= 55,
+                     qPrintable(QString("Color channel should be 49-55 (Red) but got %1")
+                               .arg(sv.value)));
+            hasCorrectColor = true;
+        }
+    }
+
+    QVERIFY2(hasCorrectColor, "Scene missing Color channel on fixture 0");
+
+    m_conn->setGraphVersion("v1");
+}
+
+void AgentIntegration_Test::v2GoboByNameCorrectValue()
+{
+    if (!hasRealLLM())
+        QSKIP("v2 requires API key — skipping");
+
+    m_conn->setGraphVersion("v2");
+    m_conn->connectToServer();
+    QVERIFY(waitForState(AgentConnection::Connected));
+
+    int functionCountBefore = m_doc->functions().count();
+
+    QSignalSpy cmdSpy(m_conn, SIGNAL(commandExecuting(QString)));
+    QSignalSpy tokenSpy(m_conn, SIGNAL(chatTokenReceived(QString)));
+    QSignalSpy endSpy(m_conn, SIGNAL(chatStreamEnded()));
+
+    // Request a specific gobo by name — Gobo 3 exists on this fixture (Ch5, value 24-31)
+    m_conn->sendChatMessage(
+        "Create a complete scene on scanner 0 (fixture 0) with Gobo 3, "
+        "dimmer full, shutter open. Execute immediately, no confirmation."
+    );
+
+    QTRY_VERIFY_WITH_TIMEOUT(endSpy.count() >= 1, 90000);
+
+    QString response;
+    for (int i = 0; i < tokenSpy.count(); i++)
+        response += tokenSpy.at(i).at(0).toString();
+
+    bool gotCreate = false;
+    for (int i = 0; i < cmdSpy.count(); i++)
+    {
+        if (cmdSpy.at(i).at(0).toString() == "create_scene")
+            gotCreate = true;
+    }
+
+    if (!gotCreate && (response.contains("?") || response.toLower().contains("confirm")))
+    {
+        QSignalSpy endSpy2(m_conn, SIGNAL(chatStreamEnded()));
+        QSignalSpy cmdSpy2(m_conn, SIGNAL(commandExecuting(QString)));
+        m_conn->sendChatMessage("Yes, go ahead");
+        QTRY_VERIFY_WITH_TIMEOUT(endSpy2.count() >= 1, 90000);
+        for (int i = 0; i < cmdSpy2.count(); i++)
+        {
+            if (cmdSpy2.at(i).at(0).toString() == "create_scene")
+                gotCreate = true;
+        }
+    }
+
+    QVERIFY2(gotCreate, "Expected create_scene for gobo request");
+
+    // Find the new scene
+    Scene *newScene = nullptr;
+    foreach (Function *fn, m_doc->functions())
+    {
+        if (fn->type() == Function::SceneType)
+        {
+            Scene *s = qobject_cast<Scene*>(fn);
+            if (s && s->id() >= (quint32)functionCountBefore)
+            {
+                newScene = s;
+                break;
+            }
+        }
+    }
+
+    QVERIFY2(newScene != nullptr, "Could not find the new gobo scene");
+    qDebug() << "v2 gobo scene:" << newScene->name() << "values:" << newScene->values().count();
+
+    // Verify Gobo Wheel channel (Ch5) has a value in Gobo 3 range (24-31)
+    bool hasCorrectGobo = false;
+    foreach (SceneValue sv, newScene->values())
+    {
+        qDebug() << "  fixture:" << sv.fxi << "ch:" << sv.channel << "val:" << sv.value;
+        if (sv.fxi == 0 && sv.channel == 5)
+        {
+            QVERIFY2(sv.value >= 24 && sv.value <= 31,
+                     qPrintable(QString("Gobo Wheel should be 24-31 (Gobo 3) but got %1")
+                               .arg(sv.value)));
+            hasCorrectGobo = true;
+        }
+    }
+
+    QVERIFY2(hasCorrectGobo, "Scene missing Gobo Wheel channel on fixture 0");
+
+    m_conn->setGraphVersion("v1");
+}
+
+void AgentIntegration_Test::v2UnknownGoboListsOptions()
+{
+    if (!hasRealLLM())
+        QSKIP("v2 requires API key — skipping");
+
+    m_conn->setGraphVersion("v2");
+    m_conn->connectToServer();
+    QVERIFY(waitForState(AgentConnection::Connected));
+
+    QSignalSpy cmdSpy(m_conn, SIGNAL(commandExecuting(QString)));
+    QSignalSpy tokenSpy(m_conn, SIGNAL(chatTokenReceived(QString)));
+    QSignalSpy endSpy(m_conn, SIGNAL(chatStreamEnded()));
+
+    // Request a gobo that doesn't exist — agent should list available options
+    m_conn->sendChatMessage(
+        "Create a scene on scanner 0 with the Star Burst gobo."
+    );
+
+    QTRY_VERIFY_WITH_TIMEOUT(endSpy.count() >= 1, 90000);
+
+    QString response;
+    for (int i = 0; i < tokenSpy.count(); i++)
+        response += tokenSpy.at(i).at(0).toString();
+    qDebug() << "v2 unknown gobo response:" << response.left(500);
+
+    // The agent should NOT have created a scene with a guessed gobo value
+    bool gotCreate = false;
+    for (int i = 0; i < cmdSpy.count(); i++)
+    {
+        if (cmdSpy.at(i).at(0).toString() == "create_scene")
+            gotCreate = true;
+    }
+
+    QVERIFY2(!gotCreate,
+             "Agent should NOT create a scene with a nonexistent gobo — should ask the user");
+
+    // The response should list available gobos so the user can choose
+    QString lower = response.toLower();
+    bool listsGobos =
+        lower.contains("gobo 1") ||
+        lower.contains("gobo 2") ||
+        lower.contains("gobo 3") ||
+        lower.contains("available") ||
+        lower.contains("options") ||
+        lower.contains("choose") ||
+        lower.contains("which");
+
+    QVERIFY2(listsGobos,
+             qPrintable("Agent should list available gobos when requested one doesn't exist. Got: " +
+                        response.left(300)));
+
+    m_conn->setGraphVersion("v1");
+}
+
 QTEST_MAIN(AgentIntegration_Test)
