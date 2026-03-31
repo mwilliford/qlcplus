@@ -127,6 +127,12 @@ private slots:
     // Modify — change color replaces old value, doesn't duplicate
     void v2ModifyColorReplaces();
 
+    // Blackout scene — vague request should ask which fixtures
+    void v2VagueBlackoutAsksFixtures();
+
+    // Blackout scene — explicit fixtures, verify shutter closed + dimmer off
+    void v2ExplicitBlackoutCorrectValues();
+
 private:
     bool loadWorkspace(const QString &path);
     bool waitForState(int expectedState, int timeoutMs = 5000);
