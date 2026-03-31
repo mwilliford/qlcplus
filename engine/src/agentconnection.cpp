@@ -1798,8 +1798,7 @@ QJsonObject AgentConnection::buildWorkspaceSync()
     if (!m_doc->agentContext().isEmpty())
         sync["agentContext"] = serializeAgentContext(m_doc->agentContext());
 
-    if (!m_graphVersion.isEmpty())
-        sync["graphVersion"] = m_graphVersion;
+    sync["graphVersion"] = m_graphVersion.isEmpty() ? "v2" : m_graphVersion;
 
     return sync;
 }
