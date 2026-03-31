@@ -112,6 +112,7 @@ void AgentIntegration_Test::initTestCase()
     m_conn = new AgentConnection(m_doc, this);
     m_conn->setServerUrl(testServerUrl());
     m_conn->setAuthToken("dev-token-change-me");
+    m_conn->setGraphVersion("v1");  // v1 tests explicitly request v1
 
     // Load VC fixture JSON produced by vcserializer_test and use it as the
     // VC serializer callback — this tests the full protocol roundtrip with
@@ -1070,7 +1071,7 @@ void AgentIntegration_Test::v2SessionCreated()
     qDebug() << "v2 session created:" << sessionId;
 
     // Reset for next test
-    m_conn->setGraphVersion(QString());
+    m_conn->setGraphVersion("v1");
 }
 
 void AgentIntegration_Test::v2ControlBlackout()
@@ -1109,7 +1110,7 @@ void AgentIntegration_Test::v2ControlBlackout()
     QVERIFY2(gotBlackout || response.toLower().contains("blackout"),
              "Expected set_blackout command or blackout in response");
 
-    m_conn->setGraphVersion(QString());
+    m_conn->setGraphVersion("v1");
 }
 
 void AgentIntegration_Test::v2QueryListFunctions()
@@ -1136,7 +1137,7 @@ void AgentIntegration_Test::v2QueryListFunctions()
     // Should mention the test workspace's scene
     QVERIFY2(!response.isEmpty(), "v2 QUERY should return a response");
 
-    m_conn->setGraphVersion(QString());
+    m_conn->setGraphVersion("v1");
 }
 
 void AgentIntegration_Test::v2CreateScene()
@@ -1208,7 +1209,7 @@ void AgentIntegration_Test::v2CreateScene()
     QVERIFY2(functionCountAfter > functionCountBefore,
              "v2 BUILD: no new function created on Doc");
 
-    m_conn->setGraphVersion(QString());
+    m_conn->setGraphVersion("v1");
 }
 
 void AgentIntegration_Test::v2ModifyScene()
@@ -1260,7 +1261,7 @@ void AgentIntegration_Test::v2ModifyScene()
              qPrintable(QString("v2 REFINE: set_values should clear old values. Before: %1, After: %2")
                         .arg(originalCount).arg(newCount)));
 
-    m_conn->setGraphVersion(QString());
+    m_conn->setGraphVersion("v1");
 }
 
 void AgentIntegration_Test::v2DeleteScene()
@@ -1315,7 +1316,7 @@ void AgentIntegration_Test::v2DeleteScene()
     if (tempId == Function::invalidId())
     {
         qWarning() << "v2 DELETE: Could not find temp scene — skipping";
-        m_conn->setGraphVersion(QString());
+        m_conn->setGraphVersion("v1");
         QSKIP("v2 scene creation was not immediate — cannot test delete");
     }
 
@@ -1358,7 +1359,7 @@ void AgentIntegration_Test::v2DeleteScene()
         qDebug() << "v2 DELETE: function successfully removed";
     }
 
-    m_conn->setGraphVersion(QString());
+    m_conn->setGraphVersion("v1");
 }
 
 void AgentIntegration_Test::v2UpdateAgentNote()
@@ -1414,7 +1415,7 @@ void AgentIntegration_Test::v2UpdateAgentNote()
         qDebug() << "v2: update_agent_note not called — agent may have used a different approach";
     }
 
-    m_conn->setGraphVersion(QString());
+    m_conn->setGraphVersion("v1");
 }
 
 void AgentIntegration_Test::v2DeltaRoundTrip()
@@ -1458,7 +1459,7 @@ void AgentIntegration_Test::v2DeltaRoundTrip()
     QVERIFY2(!response.contains("V2 Delta Test Scene"),
              "v2: Server still shows deleted function — delta not applied");
 
-    m_conn->setGraphVersion(QString());
+    m_conn->setGraphVersion("v1");
 }
 
 void AgentIntegration_Test::v2SessionResume()
@@ -1512,7 +1513,7 @@ void AgentIntegration_Test::v2SessionResume()
         QVERIFY2(messages.count() > 0, "Resumed session should have messages");
     }
 
-    m_conn->setGraphVersion(QString());
+    m_conn->setGraphVersion("v1");
 }
 
 QTEST_MAIN(AgentIntegration_Test)
