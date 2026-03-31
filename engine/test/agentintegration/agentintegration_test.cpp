@@ -2194,4 +2194,184 @@ void AgentIntegration_Test::v2ModifyColorReplaces()
     m_conn->setGraphVersion("v1");
 }
 
+/*****************************************************************************
+ * v2 blackout scene tests
+ *****************************************************************************/
+
+void AgentIntegration_Test::v2VagueBlackoutAsksFixtures()
+{
+    if (!hasRealLLM())
+        QSKIP("v2 requires API key — skipping");
+
+    m_conn->setGraphVersion("v2");
+    m_conn->connectToServer();
+    QVERIFY(waitForState(AgentConnection::Connected));
+
+    QSignalSpy cmdSpy(m_conn, SIGNAL(commandExecuting(QString)));
+    QSignalSpy tokenSpy(m_conn, SIGNAL(chatTokenReceived(QString)));
+    QSignalSpy endSpy(m_conn, SIGNAL(chatStreamEnded()));
+
+    // Vague — doesn't specify which fixtures
+    m_conn->sendChatMessage("Create a blackout scene.");
+
+    QTRY_VERIFY_WITH_TIMEOUT(endSpy.count() >= 1, 90000);
+
+    QString response;
+    for (int i = 0; i < tokenSpy.count(); i++)
+        response += tokenSpy.at(i).at(0).toString();
+    qDebug() << "v2 vague blackout response:" << response.left(500);
+
+    // Should NOT have created immediately without knowing which fixtures
+    bool gotCreate = false;
+    for (int i = 0; i < cmdSpy.count(); i++)
+    {
+        if (cmdSpy.at(i).at(0).toString() == "create_scene")
+            gotCreate = true;
+    }
+
+    // The agent should ask which fixtures or fixture groups to blackout.
+    // Creating for ALL fixtures without asking is also acceptable if
+    // the agent explains what it's doing.
+    QString lower = response.toLower();
+    bool asksAboutFixtures =
+        lower.contains("which fixture") ||
+        lower.contains("all fixture") ||
+        lower.contains("scanner") ||
+        lower.contains("par") ||
+        lower.contains("all lights") ||
+        lower.contains("every fixture") ||
+        response.contains("?");
+
+    if (gotCreate)
+    {
+        // If it created, it should at least have mentioned which fixtures
+        QVERIFY2(asksAboutFixtures || lower.contains("all"),
+                 qPrintable("Agent created blackout without specifying fixtures. Got: " +
+                            response.left(300)));
+        qDebug() << "v2 agent created blackout and explained scope — acceptable";
+    }
+    else
+    {
+        QVERIFY2(asksAboutFixtures,
+                 qPrintable("Expected agent to ask about which fixtures. Got: " +
+                            response.left(300)));
+    }
+
+    m_conn->setGraphVersion("v1");
+}
+
+void AgentIntegration_Test::v2ExplicitBlackoutCorrectValues()
+{
+    if (!hasRealLLM())
+        QSKIP("v2 requires API key — skipping");
+
+    m_conn->setGraphVersion("v2");
+    m_conn->connectToServer();
+    QVERIFY(waitForState(AgentConnection::Connected));
+
+    int functionCountBefore = m_doc->functions().count();
+
+    QSignalSpy cmdSpy(m_conn, SIGNAL(commandExecuting(QString)));
+    QSignalSpy tokenSpy(m_conn, SIGNAL(chatTokenReceived(QString)));
+    QSignalSpy endSpy(m_conn, SIGNAL(chatStreamEnded()));
+
+    // Explicit — both scanners, complete blackout
+    m_conn->sendChatMessage(
+        "Create a complete blackout scene on both scanners (fixture 0 and 1). "
+        "Set shutter closed and dimmer to 0 so no light comes out. "
+        "Execute immediately, no confirmation."
+    );
+
+    QTRY_VERIFY_WITH_TIMEOUT(endSpy.count() >= 1, 90000);
+
+    QString response;
+    for (int i = 0; i < tokenSpy.count(); i++)
+        response += tokenSpy.at(i).at(0).toString();
+
+    bool gotCreate = false;
+    for (int i = 0; i < cmdSpy.count(); i++)
+    {
+        if (cmdSpy.at(i).at(0).toString() == "create_scene")
+            gotCreate = true;
+    }
+
+    if (!gotCreate && (response.contains("?") || response.toLower().contains("confirm")))
+    {
+        QSignalSpy endSpy2(m_conn, SIGNAL(chatStreamEnded()));
+        QSignalSpy cmdSpy2(m_conn, SIGNAL(commandExecuting(QString)));
+        m_conn->sendChatMessage("Yes, go ahead");
+        QTRY_VERIFY_WITH_TIMEOUT(endSpy2.count() >= 1, 90000);
+        for (int i = 0; i < cmdSpy2.count(); i++)
+        {
+            if (cmdSpy2.at(i).at(0).toString() == "create_scene")
+                gotCreate = true;
+        }
+    }
+
+    QVERIFY2(gotCreate, "Expected create_scene for explicit blackout");
+
+    // Find the new scene
+    Scene *newScene = nullptr;
+    foreach (Function *fn, m_doc->functions())
+    {
+        if (fn->type() == Function::SceneType)
+        {
+            Scene *s = qobject_cast<Scene*>(fn);
+            if (s && s->id() >= (quint32)functionCountBefore)
+            {
+                newScene = s;
+                break;
+            }
+        }
+    }
+
+    QVERIFY2(newScene != nullptr, "Could not find the new blackout scene");
+    qDebug() << "v2 blackout scene:" << newScene->name() << "values:" << newScene->values().count();
+
+    // Verify shutter closed (Ch3 = 0-3) and dimmer off (Ch4 = 0) on both fixtures
+    // Intimidator Scan LED 300: Ch3 Shutter 0-3 = Closed, Ch4 Dimmer 0 = Off
+    bool hasShutter0 = false, hasShutter1 = false;
+    bool hasDimmer0 = false, hasDimmer1 = false;
+
+    foreach (SceneValue sv, newScene->values())
+    {
+        qDebug() << "  fixture:" << sv.fxi << "ch:" << sv.channel << "val:" << sv.value;
+        if (sv.fxi == 0 && sv.channel == 3)
+        {
+            QVERIFY2(sv.value <= 3,
+                     qPrintable(QString("Fixture 0 shutter should be 0-3 (closed) but got %1")
+                               .arg(sv.value)));
+            hasShutter0 = true;
+        }
+        if (sv.fxi == 0 && sv.channel == 4)
+        {
+            QVERIFY2(sv.value == 0,
+                     qPrintable(QString("Fixture 0 dimmer should be 0 (off) but got %1")
+                               .arg(sv.value)));
+            hasDimmer0 = true;
+        }
+        if (sv.fxi == 1 && sv.channel == 3)
+        {
+            QVERIFY2(sv.value <= 3,
+                     qPrintable(QString("Fixture 1 shutter should be 0-3 (closed) but got %1")
+                               .arg(sv.value)));
+            hasShutter1 = true;
+        }
+        if (sv.fxi == 1 && sv.channel == 4)
+        {
+            QVERIFY2(sv.value == 0,
+                     qPrintable(QString("Fixture 1 dimmer should be 0 (off) but got %1")
+                               .arg(sv.value)));
+            hasDimmer1 = true;
+        }
+    }
+
+    // At minimum, either shutter or dimmer must be set to "off" values.
+    // Both is ideal, but dimmer=0 alone is sufficient for blackout.
+    QVERIFY2((hasShutter0 || hasDimmer0) && (hasShutter1 || hasDimmer1),
+             "Blackout scene needs shutter closed and/or dimmer off on both fixtures");
+
+    m_conn->setGraphVersion("v1");
+}
+
 QTEST_MAIN(AgentIntegration_Test)
