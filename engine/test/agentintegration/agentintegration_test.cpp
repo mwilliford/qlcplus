@@ -2229,33 +2229,29 @@ void AgentIntegration_Test::v2VagueBlackoutAsksFixtures()
             gotCreate = true;
     }
 
-    // The agent should ask which fixtures or fixture groups to blackout.
-    // Creating for ALL fixtures without asking is also acceptable if
-    // the agent explains what it's doing.
+    // The agent should NOT create without asking which fixtures.
+    // "Create a blackout scene" doesn't specify — maybe the user only wants
+    // scanners blacked out, not the par wash. The agent must ask.
+    if (gotCreate)
+    {
+        qDebug() << "v2 PROMPT QUALITY: Agent created blackout without asking which fixtures";
+        QFAIL("Vague blackout should ask which fixtures, not assume all");
+    }
+
+    // Verify the response asks about fixtures
     QString lower = response.toLower();
     bool asksAboutFixtures =
         lower.contains("which fixture") ||
+        lower.contains("which light") ||
         lower.contains("all fixture") ||
+        lower.contains("all light") ||
         lower.contains("scanner") ||
         lower.contains("par") ||
-        lower.contains("all lights") ||
-        lower.contains("every fixture") ||
         response.contains("?");
 
-    if (gotCreate)
-    {
-        // If it created, it should at least have mentioned which fixtures
-        QVERIFY2(asksAboutFixtures || lower.contains("all"),
-                 qPrintable("Agent created blackout without specifying fixtures. Got: " +
-                            response.left(300)));
-        qDebug() << "v2 agent created blackout and explained scope — acceptable";
-    }
-    else
-    {
-        QVERIFY2(asksAboutFixtures,
-                 qPrintable("Expected agent to ask about which fixtures. Got: " +
-                            response.left(300)));
-    }
+    QVERIFY2(asksAboutFixtures,
+             qPrintable("Agent should ask which fixtures to blackout. Got: " +
+                        response.left(300)));
 
     m_conn->setGraphVersion("v1");
 }
