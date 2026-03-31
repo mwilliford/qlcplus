@@ -65,6 +65,10 @@ public:
     void setServerUrl(const QUrl &url);
     QUrl serverUrl() const;
 
+    /** Request a specific graph version in workspace_sync (e.g. "v2"). Empty = server default. */
+    void setGraphVersion(const QString &version) { m_graphVersion = version; }
+    QString graphVersion() const { return m_graphVersion; }
+
     /** Access the auth manager for login/logout/config. */
     AgentAuthManager *authManager() { return &m_authManager; }
     QObject *authManagerObj() { return &m_authManager; }
@@ -195,6 +199,7 @@ private:
     QWebSocket *m_webSocket;
     State m_state;
     QUrl m_serverUrl;
+    QString m_graphVersion;     // optional: request specific graph version in workspace_sync
 
     QTimer m_reconnectTimer;
     int m_reconnectDelay;       // milliseconds
