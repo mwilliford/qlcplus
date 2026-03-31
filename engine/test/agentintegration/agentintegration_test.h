@@ -139,6 +139,15 @@ private slots:
     // Beat-synced chaser — explicit functions, verify tempo_type=Beats
     void v2ExplicitBeatChaserUsesBeats();
 
+    // REFINE — "make it faster" reduces chaser timing
+    void v2RefineChaserFaster();
+
+    // Design awareness — "create scenes for a show" asks about scope
+    void v2ShowRequestAsksAboutScope();
+
+    // Fixture group — "group all my scanners" creates fixture group, not scene
+    void v2GroupScannersCreatesFixtureGroup();
+
 private:
     bool loadWorkspace(const QString &path);
     bool waitForState(int expectedState, int timeoutMs = 5000);

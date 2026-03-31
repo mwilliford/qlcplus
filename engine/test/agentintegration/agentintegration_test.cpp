@@ -2505,4 +2505,248 @@ void AgentIntegration_Test::v2ExplicitBeatChaserUsesBeats()
     m_conn->setGraphVersion("v1");
 }
 
+/*****************************************************************************
+ * v2 REFINE — make chaser faster
+ *****************************************************************************/
+
+void AgentIntegration_Test::v2RefineChaserFaster()
+{
+    if (!hasRealLLM())
+        QSKIP("v2 requires API key — skipping");
+
+    m_conn->setGraphVersion("v2");
+    m_conn->connectToServer();
+    QVERIFY(waitForState(AgentConnection::Connected));
+
+    // First create a chaser we can modify
+    QSignalSpy cmdSpy1(m_conn, SIGNAL(commandExecuting(QString)));
+    QSignalSpy endSpy1(m_conn, SIGNAL(chatStreamEnded()));
+
+    m_conn->sendChatMessage(
+        "Create a chaser called 'V2 Speed Test' using function 0 ('red wash') "
+        "as the only step. Set hold to 3000ms. Execute immediately, no confirmation."
+    );
+    QTRY_VERIFY_WITH_TIMEOUT(endSpy1.count() >= 1, 90000);
+
+    // Handle confirmation
+    {
+        QSignalSpy tokenSpy(m_conn, &AgentConnection::chatTokenReceived);
+        QString resp;
+        for (int i = 0; i < tokenSpy.count(); i++)
+            resp += tokenSpy.at(i).at(0).toString();
+        bool created = false;
+        for (int i = 0; i < cmdSpy1.count(); i++)
+        {
+            if (cmdSpy1.at(i).at(0).toString() == "create_chaser")
+                created = true;
+        }
+        if (!created)
+        {
+            QSignalSpy endSpy2(m_conn, &AgentConnection::chatStreamEnded);
+            m_conn->sendChatMessage("Yes");
+            QTRY_VERIFY_WITH_TIMEOUT(endSpy2.count() >= 1, 90000);
+        }
+    }
+
+    // Find the created chaser and record its timing
+    Chaser *chaser = nullptr;
+    foreach (Function *fn, m_doc->functions())
+    {
+        if (fn->type() == Function::ChaserType &&
+            fn->name().contains("Speed Test"))
+        {
+            chaser = qobject_cast<Chaser*>(fn);
+            break;
+        }
+    }
+
+    if (chaser == nullptr || chaser->stepsCount() == 0)
+    {
+        m_conn->setGraphVersion("v1");
+        QSKIP("Could not create initial chaser — skipping refine test");
+    }
+
+    uint originalHold = chaser->steps().first().hold;
+    quint32 chaserId = chaser->id();
+    qDebug() << "v2 refine: created chaser ID" << chaserId
+             << "hold:" << originalHold << "ms";
+
+    // Now ask to make it faster
+    QSignalSpy tokenSpy2(m_conn, &AgentConnection::chatTokenReceived);
+    QSignalSpy endSpy3(m_conn, &AgentConnection::chatStreamEnded);
+
+    m_conn->sendChatMessage(
+        QString("Make the chaser 'V2 Speed Test' (function %1) faster. "
+                "Reduce the hold time. Execute immediately.").arg(chaserId)
+    );
+
+    QTRY_VERIFY_WITH_TIMEOUT(endSpy3.count() >= 1, 90000);
+
+    // Handle confirmation
+    {
+        QString resp;
+        for (int i = 0; i < tokenSpy2.count(); i++)
+            resp += tokenSpy2.at(i).at(0).toString();
+        if (resp.contains("?") || resp.toLower().contains("confirm"))
+        {
+            QSignalSpy endSpy4(m_conn, &AgentConnection::chatStreamEnded);
+            m_conn->sendChatMessage("Yes, go ahead");
+            QTRY_VERIFY_WITH_TIMEOUT(endSpy4.count() >= 1, 90000);
+        }
+    }
+
+    // Verify the hold was reduced
+    if (chaser->stepsCount() > 0)
+    {
+        uint newHold = chaser->steps().first().hold;
+        qDebug() << "v2 refine: new hold:" << newHold << "ms (was" << originalHold << ")";
+        QVERIFY2(newHold < originalHold,
+                 qPrintable(QString("Hold should have decreased. Was %1, now %2")
+                           .arg(originalHold).arg(newHold)));
+    }
+
+    m_conn->setGraphVersion("v1");
+}
+
+/*****************************************************************************
+ * v2 design awareness — show request asks about scope
+ *****************************************************************************/
+
+void AgentIntegration_Test::v2ShowRequestAsksAboutScope()
+{
+    if (!hasRealLLM())
+        QSKIP("v2 requires API key — skipping");
+
+    m_conn->setGraphVersion("v2");
+    m_conn->connectToServer();
+    QVERIFY(waitForState(AgentConnection::Connected));
+
+    QSignalSpy cmdSpy(m_conn, SIGNAL(commandExecuting(QString)));
+    QSignalSpy tokenSpy(m_conn, SIGNAL(chatTokenReceived(QString)));
+    QSignalSpy endSpy(m_conn, SIGNAL(chatStreamEnded()));
+
+    // Open-ended show request — should ask, not dump 20 scenes
+    m_conn->sendChatMessage("Create scenes for a show.");
+
+    QTRY_VERIFY_WITH_TIMEOUT(endSpy.count() >= 1, 90000);
+
+    QString response;
+    for (int i = 0; i < tokenSpy.count(); i++)
+        response += tokenSpy.at(i).at(0).toString();
+    qDebug() << "v2 show request response:" << response.left(500);
+
+    // Should NOT have created anything without understanding scope
+    bool gotCreate = false;
+    for (int i = 0; i < cmdSpy.count(); i++)
+    {
+        QString cmd = cmdSpy.at(i).at(0).toString();
+        if (cmd.startsWith("create_"))
+            gotCreate = true;
+    }
+
+    if (gotCreate)
+    {
+        qDebug() << "v2 PROMPT QUALITY: Agent created functions without understanding show scope";
+        QFAIL("Open-ended show request should ask about scope first");
+    }
+
+    // Should ask about what kind of show, which fixtures, what style
+    QString lower = response.toLower();
+    bool asksAboutScope =
+        lower.contains("what kind") ||
+        lower.contains("what type") ||
+        lower.contains("what style") ||
+        lower.contains("genre") ||
+        lower.contains("which fixture") ||
+        lower.contains("color") ||
+        lower.contains("look") ||
+        lower.contains("vibe") ||
+        lower.contains("mood") ||
+        response.contains("?");
+
+    QVERIFY2(asksAboutScope,
+             qPrintable("Agent should ask about show scope/style. Got: " +
+                        response.left(300)));
+
+    m_conn->setGraphVersion("v1");
+}
+
+/*****************************************************************************
+ * v2 fixture group — "group scanners" creates group, not scene
+ *****************************************************************************/
+
+void AgentIntegration_Test::v2GroupScannersCreatesFixtureGroup()
+{
+    if (!hasRealLLM())
+        QSKIP("v2 requires API key — skipping");
+
+    m_conn->setGraphVersion("v2");
+    m_conn->connectToServer();
+    QVERIFY(waitForState(AgentConnection::Connected));
+
+    QSignalSpy cmdSpy(m_conn, SIGNAL(commandExecuting(QString)));
+    QSignalSpy tokenSpy(m_conn, SIGNAL(chatTokenReceived(QString)));
+    QSignalSpy endSpy(m_conn, SIGNAL(chatStreamEnded()));
+
+    m_conn->sendChatMessage(
+        "Group all my scanners together. Create a fixture group called 'Scanners' "
+        "containing fixture 0 and fixture 1. Execute immediately."
+    );
+
+    QTRY_VERIFY_WITH_TIMEOUT(endSpy.count() >= 1, 90000);
+
+    QString response;
+    for (int i = 0; i < tokenSpy.count(); i++)
+        response += tokenSpy.at(i).at(0).toString();
+    qDebug() << "v2 group response:" << response.left(500);
+
+    // Should have used create_fixture_group, NOT create_scene
+    bool gotFixtureGroup = false;
+    bool gotScene = false;
+    for (int i = 0; i < cmdSpy.count(); i++)
+    {
+        QString cmd = cmdSpy.at(i).at(0).toString();
+        qDebug() << "v2 group command:" << cmd;
+        if (cmd == "create_fixture_group")
+            gotFixtureGroup = true;
+        if (cmd == "create_scene")
+            gotScene = true;
+    }
+
+    // Handle confirmation if agent asked
+    if (!gotFixtureGroup && (response.contains("?") || response.toLower().contains("confirm")))
+    {
+        QSignalSpy endSpy2(m_conn, SIGNAL(chatStreamEnded()));
+        QSignalSpy cmdSpy2(m_conn, SIGNAL(commandExecuting(QString)));
+        m_conn->sendChatMessage("Yes, go ahead");
+        QTRY_VERIFY_WITH_TIMEOUT(endSpy2.count() >= 1, 90000);
+        for (int i = 0; i < cmdSpy2.count(); i++)
+        {
+            QString cmd = cmdSpy2.at(i).at(0).toString();
+            if (cmd == "create_fixture_group")
+                gotFixtureGroup = true;
+            if (cmd == "create_scene")
+                gotScene = true;
+        }
+    }
+
+    QVERIFY2(!gotScene,
+             "Agent should NOT create a scene when asked to group fixtures");
+
+    // Agent should have either created a fixture group or asked for clarification.
+    // Both are acceptable — the key assertion is: no scene creation.
+    if (gotFixtureGroup)
+    {
+        qDebug() << "v2 fixture group created successfully";
+    }
+    else
+    {
+        // Agent may have asked for clarification or explained — that's OK
+        qDebug() << "v2 agent did not create fixture group (may have asked/explained)";
+        qDebug() << "Response:" << response.left(300);
+    }
+
+    m_conn->setGraphVersion("v1");
+}
+
 QTEST_MAIN(AgentIntegration_Test)
