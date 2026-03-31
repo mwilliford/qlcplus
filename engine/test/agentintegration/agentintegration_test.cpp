@@ -2029,4 +2029,169 @@ void AgentIntegration_Test::v2UnknownGoboListsOptions()
     m_conn->setGraphVersion("v1");
 }
 
+/*****************************************************************************
+ * v2 chaser + modify tests
+ *****************************************************************************/
+
+void AgentIntegration_Test::v2ChaserWithTiming()
+{
+    if (!hasRealLLM())
+        QSKIP("v2 requires API key — skipping");
+
+    m_conn->setGraphVersion("v2");
+    m_conn->connectToServer();
+    QVERIFY(waitForState(AgentConnection::Connected));
+
+    int functionCountBefore = m_doc->functions().count();
+
+    QSignalSpy cmdSpy(m_conn, SIGNAL(commandExecuting(QString)));
+    QSignalSpy tokenSpy(m_conn, SIGNAL(chatTokenReceived(QString)));
+    QSignalSpy endSpy(m_conn, SIGNAL(chatStreamEnded()));
+
+    // Create a chaser with explicit timing. The test workspace has
+    // function 0 ("red wash") which we can use as a step.
+    m_conn->sendChatMessage(
+        "Create a chaser called 'V2 Timing Test' using function 0 ('red wash') "
+        "as the only step. Set hold to 2000ms, fade in 500ms, fade out 500ms. "
+        "Execute immediately, no confirmation."
+    );
+
+    QTRY_VERIFY_WITH_TIMEOUT(endSpy.count() >= 1, 90000);
+
+    QString response;
+    for (int i = 0; i < tokenSpy.count(); i++)
+        response += tokenSpy.at(i).at(0).toString();
+
+    bool gotCreate = false;
+    for (int i = 0; i < cmdSpy.count(); i++)
+    {
+        if (cmdSpy.at(i).at(0).toString() == "create_chaser")
+            gotCreate = true;
+    }
+
+    if (!gotCreate && (response.contains("?") || response.toLower().contains("confirm")))
+    {
+        QSignalSpy endSpy2(m_conn, SIGNAL(chatStreamEnded()));
+        QSignalSpy cmdSpy2(m_conn, SIGNAL(commandExecuting(QString)));
+        m_conn->sendChatMessage("Yes, go ahead");
+        QTRY_VERIFY_WITH_TIMEOUT(endSpy2.count() >= 1, 90000);
+        for (int i = 0; i < cmdSpy2.count(); i++)
+        {
+            if (cmdSpy2.at(i).at(0).toString() == "create_chaser")
+                gotCreate = true;
+        }
+    }
+
+    QVERIFY2(gotCreate, "Expected create_chaser");
+
+    // Find the new chaser
+    Chaser *chaser = nullptr;
+    foreach (Function *fn, m_doc->functions())
+    {
+        if (fn->type() == Function::ChaserType && fn->id() >= (quint32)functionCountBefore)
+        {
+            chaser = qobject_cast<Chaser*>(fn);
+            break;
+        }
+    }
+
+    QVERIFY2(chaser != nullptr, "Could not find the new chaser");
+    qDebug() << "v2 chaser:" << chaser->name() << "steps:" << chaser->stepsCount();
+    QVERIFY2(chaser->stepsCount() >= 1, "Chaser has no steps");
+
+    ChaserStep step = chaser->steps().first();
+    qDebug() << "  Step 0: fadeIn=" << step.fadeIn << "hold=" << step.hold
+             << "fadeOut=" << step.fadeOut << "fid=" << step.fid;
+
+    // Hold should be around 2000ms (allow some tolerance for agent interpretation)
+    QVERIFY2(step.hold >= 1500,
+             qPrintable(QString("Hold is %1ms, expected >= 1500ms").arg(step.hold)));
+
+    m_conn->setGraphVersion("v1");
+}
+
+void AgentIntegration_Test::v2ModifyColorReplaces()
+{
+    if (!hasRealLLM())
+        QSKIP("v2 requires API key — skipping");
+
+    m_conn->setGraphVersion("v2");
+    m_conn->connectToServer();
+    QVERIFY(waitForState(AgentConnection::Connected));
+
+    // The test workspace has scene "red wash" (ID 0).
+    // Get its current color value before modifying.
+    Scene *scene = qobject_cast<Scene*>(m_doc->function(0));
+    QVERIFY(scene != nullptr);
+
+    // Find the current color channel value for fixture 0
+    int originalColorValue = -1;
+    foreach (SceneValue sv, scene->values())
+    {
+        if (sv.fxi == 0 && sv.channel == 2)  // Ch2 = Color
+        {
+            originalColorValue = sv.value;
+            break;
+        }
+    }
+    qDebug() << "v2 modify: original color value for fixture 0 Ch2:" << originalColorValue;
+
+    QSignalSpy tokenSpy(m_conn, &AgentConnection::chatTokenReceived);
+    QSignalSpy endSpy(m_conn, &AgentConnection::chatStreamEnded);
+
+    // Ask to change the color from whatever it is to blue
+    m_conn->sendChatMessage(
+        "Change the color in scene 'red wash' (function 0) to blue on all fixtures. "
+        "Use set_values to replace all values. Keep dimmer and shutter as they are "
+        "but change only the color channel to blue. Execute immediately."
+    );
+
+    QTRY_VERIFY_WITH_TIMEOUT(endSpy.count() >= 1, 90000);
+
+    QString response;
+    for (int i = 0; i < tokenSpy.count(); i++)
+        response += tokenSpy.at(i).at(0).toString();
+    qDebug() << "v2 modify response:" << response.left(500);
+
+    // Handle confirmation
+    if (response.contains("?") || response.toLower().contains("confirm"))
+    {
+        QSignalSpy endSpy2(m_conn, &AgentConnection::chatStreamEnded);
+        m_conn->sendChatMessage("Yes, go ahead");
+        QTRY_VERIFY_WITH_TIMEOUT(endSpy2.count() >= 1, 90000);
+    }
+
+    // Check that the color channel was changed
+    int newColorValue = -1;
+    foreach (SceneValue sv, scene->values())
+    {
+        qDebug() << "  after modify: fixture:" << sv.fxi << "ch:" << sv.channel << "val:" << sv.value;
+        if (sv.fxi == 0 && sv.channel == 2)
+        {
+            newColorValue = sv.value;
+        }
+    }
+
+    qDebug() << "v2 modify: new color value:" << newColorValue << "(was" << originalColorValue << ")";
+
+    // The color should have changed
+    if (originalColorValue >= 0 && newColorValue >= 0)
+    {
+        QVERIFY2(newColorValue != originalColorValue,
+                 qPrintable(QString("Color value didn't change. Before: %1, After: %2")
+                           .arg(originalColorValue).arg(newColorValue)));
+
+        // Blue range on Intimidator Scan LED 300 is 35-41
+        QVERIFY2(newColorValue >= 35 && newColorValue <= 41,
+                 qPrintable(QString("New color should be blue (35-41) but got %1")
+                           .arg(newColorValue)));
+    }
+    else
+    {
+        QVERIFY2(newColorValue >= 0, "Color channel not found after modify");
+    }
+
+    m_conn->setGraphVersion("v1");
+}
+
 QTEST_MAIN(AgentIntegration_Test)
