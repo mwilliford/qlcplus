@@ -121,6 +121,12 @@ private slots:
     // DMX correctness — nonexistent gobo name → agent lists available gobos
     void v2UnknownGoboListsOptions();
 
+    // Chaser — per-step timing preserved
+    void v2ChaserWithTiming();
+
+    // Modify — change color replaces old value, doesn't duplicate
+    void v2ModifyColorReplaces();
+
 private:
     bool loadWorkspace(const QString &path);
     bool waitForState(int expectedState, int timeoutMs = 5000);
