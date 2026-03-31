@@ -666,7 +666,8 @@ void AgentConnection::handleCreateFixture(const QJsonObject &msg)
     QString model = msg["model"].toString();
     QString modeName = msg["mode"].toString();
     quint32 universe = (quint32)msg["universe"].toInt();
-    quint32 address = (quint32)msg["address"].toInt();
+    quint32 dmxAddress = (quint32)msg["address"].toInt();  // 1-based from agent
+    quint32 address = dmxAddress - 1;                       // convert to 0-based for engine
 
     // Look up fixture def from cache
     QLCFixtureDef *def = m_doc->fixtureDefCache()->fixtureDef(manufacturer, model);
@@ -701,9 +702,9 @@ void AgentConnection::handleCreateFixture(const QJsonObject &msg)
             {
                 QJsonObject extra;
                 extra["error"] = QString("ADDRESS_OVERLAP: range %1-%2 overlaps fixture '%3' (ID %4) at %5-%6")
-                    .arg(address).arg(address + channels - 1)
+                    .arg(dmxAddress).arg(dmxAddress + channels - 1)
                     .arg(existing->name()).arg(existing->id())
-                    .arg(exStart).arg(exEnd - 1);
+                    .arg(exStart + 1).arg(exEnd);
                 sendCommandResult(requestId, false, extra);
                 return;
             }
@@ -2026,7 +2027,7 @@ QJsonArray AgentConnection::serializeFixtures()
         QLCFixtureMode *mode = fxi->fixtureMode();
         fj["mode"] = mode ? mode->name() : "";
         fj["universe"] = (int)fxi->universe();
-        fj["address"] = (int)fxi->address();
+        fj["address"] = (int)(fxi->address() + 1);  // 1-based DMX address
         fj["channels"] = (int)fxi->channels();
 
         if (!fxi->agentContext().isEmpty())
@@ -2339,7 +2340,7 @@ QJsonObject AgentConnection::serializeFixture(quint32 id)
     const QLCFixtureMode *mode = fxi->fixtureMode();
     fj["mode"] = mode ? mode->name() : "";
     fj["universe"] = (int)fxi->universe();
-    fj["address"] = (int)fxi->address();
+    fj["address"] = (int)(fxi->address() + 1);  // 1-based DMX address
     fj["channels"] = (int)fxi->channels();
 
     QList<int> htpList = fxi->forcedHTPChannels();
