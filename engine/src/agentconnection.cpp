@@ -422,6 +422,20 @@ void AgentConnection::onWsTextMessage(const QString &message)
         emit commandExecuting("stop_all");
         handleStopAll(msg);
     }
+    else if (type == "create_fixture")
+    {
+        emit commandExecuting("create_fixture");
+        handleCreateFixture(msg);
+    }
+    else if (type == "delete_fixture")
+    {
+        emit commandExecuting("delete_fixture");
+        handleDeleteFixture(msg);
+    }
+    else if (type == "search_fixture_library")
+    {
+        handleSearchFixtureLibrary(msg);
+    }
     else if (type == "delete_function")
     {
         emit commandExecuting("delete_function");
@@ -642,6 +656,166 @@ void AgentConnection::handleStopAll(const QJsonObject &msg)
     }
 
     sendCommandResult(requestId, true);
+}
+
+void AgentConnection::handleCreateFixture(const QJsonObject &msg)
+{
+    QString requestId = msg["requestId"].toString();
+    QString name = msg["name"].toString();
+    QString manufacturer = msg["manufacturer"].toString();
+    QString model = msg["model"].toString();
+    QString modeName = msg["mode"].toString();
+    quint32 universe = (quint32)msg["universe"].toInt();
+    quint32 address = (quint32)msg["address"].toInt();
+
+    // Look up fixture def from cache
+    QLCFixtureDef *def = m_doc->fixtureDefCache()->fixtureDef(manufacturer, model);
+    if (def == nullptr)
+    {
+        QJsonObject extra;
+        extra["error"] = QString("Fixture definition not found: %1 %2").arg(manufacturer, model);
+        sendCommandResult(requestId, false, extra);
+        return;
+    }
+
+    // Look up mode
+    QLCFixtureMode *mode = def->mode(modeName);
+    if (mode == nullptr)
+    {
+        QJsonObject extra;
+        extra["error"] = QString("Mode '%1' not found for %2 %3").arg(modeName, manufacturer, model);
+        sendCommandResult(requestId, false, extra);
+        return;
+    }
+
+    // Check address overlap with existing fixtures
+    quint32 channels = mode->channels().size();
+    foreach (Fixture *existing, m_doc->fixtures())
+    {
+        if (existing->universe() == universe)
+        {
+            quint32 exStart = existing->address();
+            quint32 exEnd = exStart + existing->channels();
+            quint32 newEnd = address + channels;
+            if (address < exEnd && newEnd > exStart)
+            {
+                QJsonObject extra;
+                extra["error"] = QString("ADDRESS_OVERLAP: range %1-%2 overlaps fixture '%3' (ID %4) at %5-%6")
+                    .arg(address).arg(address + channels - 1)
+                    .arg(existing->name()).arg(existing->id())
+                    .arg(exStart).arg(exEnd - 1);
+                sendCommandResult(requestId, false, extra);
+                return;
+            }
+        }
+    }
+
+    // Create fixture
+    Fixture *fixture = new Fixture(m_doc);
+    fixture->setName(name);
+    fixture->setFixtureDefinition(def, mode);
+    fixture->setUniverse(universe);
+    fixture->setAddress(address);
+
+    bool ok = m_doc->addFixture(fixture);
+    // fixtureAdded signal → onFixtureAdded → fixture_added delta auto-sent
+
+    if (ok)
+    {
+        QJsonObject extra;
+        extra["fixtureId"] = (int)fixture->id();
+        sendCommandResult(requestId, true, extra);
+    }
+    else
+    {
+        QJsonObject extra;
+        extra["error"] = "Failed to add fixture to document";
+        sendCommandResult(requestId, false, extra);
+        delete fixture;
+    }
+}
+
+void AgentConnection::handleDeleteFixture(const QJsonObject &msg)
+{
+    QString requestId = msg["requestId"].toString();
+    quint32 fixtureId = (quint32)msg["fixtureId"].toInt();
+
+    Fixture *fxi = m_doc->fixture(fixtureId);
+    if (fxi == nullptr)
+    {
+        QJsonObject extra;
+        extra["error"] = QString("Fixture ID %1 does not exist").arg(fixtureId);
+        sendCommandResult(requestId, false, extra);
+        return;
+    }
+
+    // Reset DMX universe address space before deletion
+    QList<Universe*> ua = m_doc->inputOutputMap()->claimUniverses();
+    int universe = fxi->universe();
+    if (universe < ua.count())
+        ua[universe]->reset(fxi->address(), fxi->channels());
+    m_doc->inputOutputMap()->releaseUniverses(false);
+
+    bool ok = m_doc->deleteFixture(fixtureId);
+    // fixtureRemoved signal → onFixtureRemoved → fixture_removed delta auto-sent
+
+    if (ok)
+    {
+        QJsonObject extra;
+        extra["fixtureId"] = (int)fixtureId;
+        sendCommandResult(requestId, true, extra);
+    }
+    else
+    {
+        QJsonObject extra;
+        extra["error"] = QString("Failed to delete fixture %1").arg(fixtureId);
+        sendCommandResult(requestId, false, extra);
+    }
+}
+
+void AgentConnection::handleSearchFixtureLibrary(const QJsonObject &msg)
+{
+    QString requestId = msg["requestId"].toString();
+    QString query = msg["query"].toString().toLower();
+
+    QJsonArray results;
+    const int MAX_RESULTS = 20;
+
+    QStringList manufacturers = m_doc->fixtureDefCache()->manufacturers();
+    for (const QString &mfr : manufacturers)
+    {
+        if (results.count() >= MAX_RESULTS)
+            break;
+
+        QStringList models = m_doc->fixtureDefCache()->models(mfr);
+        for (const QString &model : models)
+        {
+            if (results.count() >= MAX_RESULTS)
+                break;
+
+            // Case-insensitive substring match on manufacturer + model
+            if (mfr.toLower().contains(query) || model.toLower().contains(query))
+            {
+                QLCFixtureDef *def = m_doc->fixtureDefCache()->fixtureDef(mfr, model);
+                QJsonObject entry;
+                entry["manufacturer"] = mfr;
+                entry["model"] = model;
+                if (def != nullptr)
+                {
+                    entry["type"] = QLCFixtureDef::typeToString(def->type());
+                    QJsonArray modes;
+                    for (QLCFixtureMode *mode : def->modes())
+                        modes.append(mode->name());
+                    entry["modes"] = modes;
+                }
+                results.append(entry);
+            }
+        }
+    }
+
+    QJsonObject extra;
+    extra["results"] = results;
+    sendCommandResult(requestId, true, extra);
 }
 
 void AgentConnection::handleDeleteFunction(const QJsonObject &msg)

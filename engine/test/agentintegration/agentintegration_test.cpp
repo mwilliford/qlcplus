@@ -2749,4 +2749,182 @@ void AgentIntegration_Test::v2GroupScannersCreatesFixtureGroup()
     m_conn->setGraphVersion("v1");
 }
 
+void AgentIntegration_Test::v2CreateFixtureAtAddress()
+{
+    if (!hasRealLLM())
+        QSKIP("v2 requires API key — skipping");
+
+    m_conn->setGraphVersion("v2");
+    m_conn->connectToServer();
+    QVERIFY(waitForState(AgentConnection::Connected));
+
+    int fixtureCountBefore = m_doc->fixtures().count();
+    qDebug() << "v2 fixtures before create:" << fixtureCountBefore;
+
+    QSignalSpy cmdSpy(m_conn, SIGNAL(commandExecuting(QString)));
+    QSignalSpy tokenSpy(m_conn, SIGNAL(chatTokenReceived(QString)));
+    QSignalSpy endSpy(m_conn, SIGNAL(chatStreamEnded()));
+
+    m_conn->sendChatMessage(
+        "Add a new Chauvet Intimidator Scan LED 300 fixture called 'Scanner 3' "
+        "at universe 0 address 33 in DMX 11-channel mode. Execute immediately, "
+        "no confirmation needed."
+    );
+
+    QTRY_VERIFY_WITH_TIMEOUT(endSpy.count() >= 1, 90000);
+
+    QString response;
+    for (int i = 0; i < tokenSpy.count(); i++)
+        response += tokenSpy.at(i).at(0).toString();
+    qDebug() << "v2 create fixture response:" << response.left(500);
+
+    bool gotCreateFixture = false;
+    for (int i = 0; i < cmdSpy.count(); i++)
+    {
+        QString cmd = cmdSpy.at(i).at(0).toString();
+        qDebug() << "v2 create fixture command:" << cmd;
+        if (cmd == "create_fixture")
+            gotCreateFixture = true;
+    }
+
+    // Handle confirmation if agent asked
+    if (!gotCreateFixture && (response.contains("?") || response.toLower().contains("confirm")))
+    {
+        qDebug() << "v2 agent asked for confirmation, sending approval";
+        QSignalSpy endSpy2(m_conn, SIGNAL(chatStreamEnded()));
+        QSignalSpy cmdSpy2(m_conn, SIGNAL(commandExecuting(QString)));
+        m_conn->sendChatMessage("Yes, go ahead");
+        QTRY_VERIFY_WITH_TIMEOUT(endSpy2.count() >= 1, 90000);
+        for (int i = 0; i < cmdSpy2.count(); i++)
+        {
+            if (cmdSpy2.at(i).at(0).toString() == "create_fixture")
+            {
+                gotCreateFixture = true;
+                break;
+            }
+        }
+    }
+
+    QVERIFY2(gotCreateFixture, "v2 BUILD: expected create_fixture command");
+
+    int fixtureCountAfter = m_doc->fixtures().count();
+    qDebug() << "v2 fixtures after create:" << fixtureCountAfter;
+    QVERIFY2(fixtureCountAfter > fixtureCountBefore,
+             "v2 BUILD: no new fixture created on Doc");
+
+    // Verify the new fixture has the right address
+    bool foundNewFixture = false;
+    foreach (Fixture *fxi, m_doc->fixtures())
+    {
+        if (fxi->name() == "Scanner 3" || fxi->address() == 33)
+        {
+            qDebug() << "v2 new fixture:" << fxi->name() << "addr:" << fxi->address()
+                     << "channels:" << fxi->channels();
+            QCOMPARE(fxi->address(), (quint32)33);
+            foundNewFixture = true;
+            break;
+        }
+    }
+    QVERIFY2(foundNewFixture, "v2 BUILD: new fixture not found at expected address");
+
+    m_conn->setGraphVersion("v1");
+}
+
+void AgentIntegration_Test::v2DeleteFixtureWithConfirmation()
+{
+    if (!hasRealLLM())
+        QSKIP("v2 requires API key — skipping");
+
+    m_conn->setGraphVersion("v2");
+    m_conn->connectToServer();
+    QVERIFY(waitForState(AgentConnection::Connected));
+
+    // First, create a fixture to delete (so we don't destroy the test workspace)
+    QSignalSpy endSpy0(m_conn, SIGNAL(chatStreamEnded()));
+    m_conn->sendChatMessage(
+        "Add a Chauvet Intimidator Scan LED 300 called 'Temp Scanner' at universe 0 "
+        "address 44 in DMX 11-channel mode. Execute immediately, no confirmation."
+    );
+    QTRY_VERIFY_WITH_TIMEOUT(endSpy0.count() >= 1, 90000);
+
+    // Find the fixture we just created
+    quint32 tempFixtureId = Fixture::invalidId();
+    foreach (Fixture *fxi, m_doc->fixtures())
+    {
+        if (fxi->name() == "Temp Scanner" || fxi->address() == 44)
+        {
+            tempFixtureId = fxi->id();
+            break;
+        }
+    }
+
+    if (tempFixtureId == Fixture::invalidId())
+    {
+        qDebug() << "v2 delete test: could not create temp fixture, skipping";
+        m_conn->setGraphVersion("v1");
+        QSKIP("Could not create temp fixture for delete test");
+        return;
+    }
+
+    int fixtureCountBefore = m_doc->fixtures().count();
+    qDebug() << "v2 delete: temp fixture ID" << tempFixtureId
+             << "fixtures before:" << fixtureCountBefore;
+
+    QSignalSpy cmdSpy(m_conn, SIGNAL(commandExecuting(QString)));
+    QSignalSpy tokenSpy(m_conn, SIGNAL(chatTokenReceived(QString)));
+    QSignalSpy endSpy(m_conn, SIGNAL(chatStreamEnded()));
+
+    m_conn->sendChatMessage(
+        QString("Delete fixture %1 (Temp Scanner). I confirm deletion.").arg(tempFixtureId)
+    );
+
+    QTRY_VERIFY_WITH_TIMEOUT(endSpy.count() >= 1, 90000);
+
+    QString response;
+    for (int i = 0; i < tokenSpy.count(); i++)
+        response += tokenSpy.at(i).at(0).toString();
+    qDebug() << "v2 delete fixture response:" << response.left(500);
+
+    bool gotDeleteFixture = false;
+    for (int i = 0; i < cmdSpy.count(); i++)
+    {
+        QString cmd = cmdSpy.at(i).at(0).toString();
+        qDebug() << "v2 delete fixture command:" << cmd;
+        if (cmd == "delete_fixture")
+            gotDeleteFixture = true;
+    }
+
+    // Handle confirmation — the agent should inspect_connections then confirm
+    if (!gotDeleteFixture && (response.contains("?") || response.toLower().contains("confirm")
+        || response.toLower().contains("impact") || response.toLower().contains("delete")))
+    {
+        qDebug() << "v2 agent asked for confirmation, sending approval";
+        QSignalSpy endSpy2(m_conn, SIGNAL(chatStreamEnded()));
+        QSignalSpy cmdSpy2(m_conn, SIGNAL(commandExecuting(QString)));
+        m_conn->sendChatMessage("Yes, delete it");
+        QTRY_VERIFY_WITH_TIMEOUT(endSpy2.count() >= 1, 90000);
+        for (int i = 0; i < cmdSpy2.count(); i++)
+        {
+            if (cmdSpy2.at(i).at(0).toString() == "delete_fixture")
+            {
+                gotDeleteFixture = true;
+                break;
+            }
+        }
+    }
+
+    QVERIFY2(gotDeleteFixture, "v2 BUILD: expected delete_fixture command");
+
+    // Fixture should be gone
+    QVERIFY2(m_doc->fixture(tempFixtureId) == nullptr,
+             "v2 BUILD: fixture should have been deleted from Doc");
+
+    int fixtureCountAfter = m_doc->fixtures().count();
+    qDebug() << "v2 delete: fixtures after:" << fixtureCountAfter;
+    QVERIFY2(fixtureCountAfter < fixtureCountBefore,
+             "v2 BUILD: fixture count should have decreased");
+
+    m_conn->setGraphVersion("v1");
+}
+
 QTEST_MAIN(AgentIntegration_Test)
