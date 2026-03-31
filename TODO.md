@@ -68,6 +68,20 @@
 
 - [x] **Input disabled during streaming**: Fixed in v5 QML — input always enabled, send during streaming does implicit cancel.
 
+## Bugs: Missing signal handlers (deletion safety)
+
+- [ ] **RGBMatrix: fixtureGroupRemoved** — RGBMatrix stores raw `m_group` pointer
+  (rgbmatrix.h:152) and `m_fixtureGroupID` but does NOT connect to
+  `Doc::fixtureGroupRemoved`. Deleting a fixture group while an RGBMatrix references it
+  causes a dangling pointer crash when the matrix accesses `m_group->fixtureList()`.
+  Fix: connect signal, clear `m_group`/`m_fixtureGroupID`, invalidate algorithm state.
+  **Workaround:** Server prompt instructs agent to delete RGBMatrix before its group.
+
+- [ ] **VCSlider: functionRemoved for playbackFunction** — VCSlider stores
+  `m_playbackFunction` (vcslider.h:411) but does NOT connect to `Doc::functionRemoved`.
+  Deleting a function bound as a slider's playback function leaves a stale ID.
+  Fix: connect signal, reset `m_playbackFunction` to `Function::invalidId()` when match.
+
 ## Bugs: UI not refreshing on agent-initiated changes
 
 - [x] **FunctionManager: functionRemoved** — tree didn't update when agent deleted functions. Fixed: connected Doc::functionRemoved → updateTree().

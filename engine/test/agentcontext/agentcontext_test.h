@@ -91,6 +91,18 @@ private slots:
     void modifySceneSetValues();
     void modifySceneAddValues();
 
+    // create_fixture handler
+    void createFixtureHandler();
+    void createFixtureAddressOverlap();
+    void createFixtureDefNotFound();
+
+    // delete_fixture handler
+    void deleteFixtureHandler();
+    void deleteFixtureNotFound();
+
+    // search_fixture_library handler
+    void searchFixtureLibrary();
+
     // AgentConnection state and auth
     void connectionStateEnum();
     void authStateEnum();
