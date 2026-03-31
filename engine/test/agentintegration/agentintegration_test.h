@@ -148,6 +148,10 @@ private slots:
     // Fixture group — "group all my scanners" creates fixture group, not scene
     void v2GroupScannersCreatesFixtureGroup();
 
+    // Fixture CRUD — create_fixture and delete_fixture via agent
+    void v2CreateFixtureAtAddress();
+    void v2DeleteFixtureWithConfirmation();
+
 private:
     bool loadWorkspace(const QString &path);
     bool waitForState(int expectedState, int timeoutMs = 5000);

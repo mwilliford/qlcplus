@@ -161,6 +161,9 @@ private:
     void handleStartFunction(const QJsonObject &msg);
     void handleStopFunction(const QJsonObject &msg);
     void handleStopAll(const QJsonObject &msg);
+    void handleCreateFixture(const QJsonObject &msg);
+    void handleDeleteFixture(const QJsonObject &msg);
+    void handleSearchFixtureLibrary(const QJsonObject &msg);
     void handleDeleteFunction(const QJsonObject &msg);
     void handleModifyFunction(const QJsonObject &msg);
     void handleSetSimpleDesk(const QJsonObject &msg);

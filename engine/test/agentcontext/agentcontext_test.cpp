@@ -1350,6 +1350,204 @@ void AgentContext_Test::handlePastedJWT()
              AgentAuthManager::Authenticated);
 }
 
+/*****************************************************************************
+ * create_fixture handler
+ *****************************************************************************/
+
+void AgentContext_Test::createFixtureHandler()
+{
+    // Set up a fixture definition in the cache
+    QLCFixtureDef *def = new QLCFixtureDef();
+    def->setManufacturer("TestMfr");
+    def->setModel("TestModel");
+    def->setType(QLCFixtureDef::Scanner);
+
+    QLCChannel *ch1 = new QLCChannel();
+    ch1->setName("Pan");
+    ch1->setGroup(QLCChannel::Pan);
+    def->addChannel(ch1);
+
+    QLCChannel *ch2 = new QLCChannel();
+    ch2->setName("Tilt");
+    ch2->setGroup(QLCChannel::Tilt);
+    def->addChannel(ch2);
+
+    QLCFixtureMode *mode = new QLCFixtureMode(def);
+    mode->setName("2ch");
+    mode->insertChannel(ch1, 0);
+    mode->insertChannel(ch2, 1);
+    def->addMode(mode);
+
+    m_doc->fixtureDefCache()->addFixtureDef(def);
+
+    int countBefore = m_doc->fixtures().count();
+
+    AgentConnection conn(m_doc);
+
+    QJsonObject msg;
+    msg["type"] = "create_fixture";
+    msg["requestId"] = "test-cf-1";
+    msg["name"] = "Test Scanner";
+    msg["manufacturer"] = "TestMfr";
+    msg["model"] = "TestModel";
+    msg["mode"] = "2ch";
+    msg["universe"] = 0;
+    msg["address"] = 100;
+
+    conn.handleCreateFixture(msg);
+
+    QCOMPARE(m_doc->fixtures().count(), countBefore + 1);
+
+    // Find the newly created fixture
+    Fixture *fxi = nullptr;
+    foreach (Fixture *f, m_doc->fixtures())
+    {
+        if (f->name() == "Test Scanner")
+        {
+            fxi = f;
+            break;
+        }
+    }
+    QVERIFY(fxi != nullptr);
+    QCOMPARE(fxi->universe(), (quint32)0);
+    QCOMPARE(fxi->address(), (quint32)100);
+    QCOMPARE(fxi->channels(), (quint32)2);
+}
+
+void AgentContext_Test::createFixtureAddressOverlap()
+{
+    // First create a fixture at address 100
+    QLCFixtureDef *def = m_doc->fixtureDefCache()->fixtureDef("TestMfr", "TestModel");
+    QVERIFY(def != nullptr);
+
+    Fixture *existing = new Fixture(m_doc);
+    existing->setName("Existing");
+    existing->setFixtureDefinition(def, def->mode("2ch"));
+    existing->setUniverse(0);
+    existing->setAddress(200);
+    m_doc->addFixture(existing);
+
+    int countBefore = m_doc->fixtures().count();
+
+    AgentConnection conn(m_doc);
+
+    QJsonObject msg;
+    msg["type"] = "create_fixture";
+    msg["requestId"] = "test-cf-overlap";
+    msg["name"] = "Overlapping";
+    msg["manufacturer"] = "TestMfr";
+    msg["model"] = "TestModel";
+    msg["mode"] = "2ch";
+    msg["universe"] = 0;
+    msg["address"] = 201; // overlaps with existing at 200-201
+
+    conn.handleCreateFixture(msg);
+
+    // Should NOT have added a fixture due to overlap
+    QCOMPARE(m_doc->fixtures().count(), countBefore);
+}
+
+void AgentContext_Test::createFixtureDefNotFound()
+{
+    AgentConnection conn(m_doc);
+
+    QJsonObject msg;
+    msg["type"] = "create_fixture";
+    msg["requestId"] = "test-cf-notfound";
+    msg["name"] = "Bad Fixture";
+    msg["manufacturer"] = "NonexistentMfr";
+    msg["model"] = "NonexistentModel";
+    msg["mode"] = "Basic";
+    msg["universe"] = 0;
+    msg["address"] = 300;
+
+    int countBefore = m_doc->fixtures().count();
+    conn.handleCreateFixture(msg);
+
+    // Should not have added
+    QCOMPARE(m_doc->fixtures().count(), countBefore);
+}
+
+/*****************************************************************************
+ * delete_fixture handler
+ *****************************************************************************/
+
+void AgentContext_Test::deleteFixtureHandler()
+{
+    // Create a fixture to delete
+    QLCFixtureDef *def = m_doc->fixtureDefCache()->fixtureDef("TestMfr", "TestModel");
+    QVERIFY(def != nullptr);
+
+    Fixture *fxi = new Fixture(m_doc);
+    fxi->setName("Delete Me Fixture");
+    fxi->setFixtureDefinition(def, def->mode("2ch"));
+    fxi->setUniverse(0);
+    fxi->setAddress(400);
+    m_doc->addFixture(fxi);
+    quint32 fxiId = fxi->id();
+
+    QVERIFY(m_doc->fixture(fxiId) != nullptr);
+
+    AgentConnection conn(m_doc);
+
+    QJsonObject msg;
+    msg["type"] = "delete_fixture";
+    msg["requestId"] = "test-df-1";
+    msg["fixtureId"] = (int)fxiId;
+
+    conn.handleDeleteFixture(msg);
+
+    QVERIFY(m_doc->fixture(fxiId) == nullptr);
+}
+
+void AgentContext_Test::deleteFixtureNotFound()
+{
+    AgentConnection conn(m_doc);
+
+    QJsonObject msg;
+    msg["type"] = "delete_fixture";
+    msg["requestId"] = "test-df-2";
+    msg["fixtureId"] = 9999;
+
+    // Should not crash — sends error result
+    conn.handleDeleteFixture(msg);
+}
+
+/*****************************************************************************
+ * search_fixture_library handler
+ *****************************************************************************/
+
+void AgentContext_Test::searchFixtureLibrary()
+{
+    // The fixture def cache is loaded in initTestCase with ~1710 fixtures.
+    // Search for "Intimidator" — should find Chauvet fixtures.
+    AgentConnection conn(m_doc);
+
+    QJsonObject msg;
+    msg["type"] = "search_fixture_library";
+    msg["requestId"] = "test-sfl-1";
+    msg["query"] = "Intimidator";
+
+    // We can't easily check the WebSocket output in a unit test (not connected),
+    // but we can verify it doesn't crash and exercise the code path.
+    conn.handleSearchFixtureLibrary(msg);
+
+    // Also test with a very specific query to verify the cache is being searched
+    QStringList manufacturers = m_doc->fixtureDefCache()->manufacturers();
+    QVERIFY(manufacturers.count() > 0);
+
+    // Verify the cache has Chauvet fixtures (loaded from resources/fixtures)
+    QStringList chauvetModels = m_doc->fixtureDefCache()->models("Chauvet");
+    QVERIFY(chauvetModels.count() > 0);
+
+    // Verify a search for empty string doesn't crash
+    QJsonObject msg2;
+    msg2["type"] = "search_fixture_library";
+    msg2["requestId"] = "test-sfl-2";
+    msg2["query"] = "";
+    conn.handleSearchFixtureLibrary(msg2);
+}
+
 void AgentContext_Test::destructorSafety()
 {
     // Verify AgentConnection can be destroyed without crashing
