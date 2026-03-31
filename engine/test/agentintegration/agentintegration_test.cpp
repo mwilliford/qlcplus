@@ -2370,4 +2370,139 @@ void AgentIntegration_Test::v2ExplicitBlackoutCorrectValues()
     m_conn->setGraphVersion("v1");
 }
 
+/*****************************************************************************
+ * v2 beat-synced chaser tests
+ *****************************************************************************/
+
+void AgentIntegration_Test::v2VagueBeatChaserAsks()
+{
+    if (!hasRealLLM())
+        QSKIP("v2 requires API key — skipping");
+
+    m_conn->setGraphVersion("v2");
+    m_conn->connectToServer();
+    QVERIFY(waitForState(AgentConnection::Connected));
+
+    QSignalSpy cmdSpy(m_conn, SIGNAL(commandExecuting(QString)));
+    QSignalSpy tokenSpy(m_conn, SIGNAL(chatTokenReceived(QString)));
+    QSignalSpy endSpy(m_conn, SIGNAL(chatStreamEnded()));
+
+    // Vague — doesn't specify which functions to chase
+    m_conn->sendChatMessage("Create a beat-synced chaser.");
+
+    QTRY_VERIFY_WITH_TIMEOUT(endSpy.count() >= 1, 90000);
+
+    QString response;
+    for (int i = 0; i < tokenSpy.count(); i++)
+        response += tokenSpy.at(i).at(0).toString();
+    qDebug() << "v2 vague beat chaser response:" << response.left(500);
+
+    // Should NOT create without knowing which functions/scenes to chase
+    bool gotCreate = false;
+    for (int i = 0; i < cmdSpy.count(); i++)
+    {
+        if (cmdSpy.at(i).at(0).toString() == "create_chaser")
+            gotCreate = true;
+    }
+
+    if (gotCreate)
+    {
+        qDebug() << "v2 PROMPT QUALITY: Agent created chaser without asking what to chase";
+        QFAIL("Vague beat chaser should ask which functions/scenes to use as steps");
+    }
+
+    // Should ask about which scenes/functions to include
+    QString lower = response.toLower();
+    bool asksAboutContent =
+        lower.contains("which scene") ||
+        lower.contains("which function") ||
+        lower.contains("what scene") ||
+        lower.contains("what function") ||
+        lower.contains("which look") ||
+        lower.contains("step") ||
+        lower.contains("existing") ||
+        response.contains("?");
+
+    QVERIFY2(asksAboutContent,
+             qPrintable("Agent should ask which functions to use as chaser steps. Got: " +
+                        response.left(300)));
+
+    m_conn->setGraphVersion("v1");
+}
+
+void AgentIntegration_Test::v2ExplicitBeatChaserUsesBeats()
+{
+    if (!hasRealLLM())
+        QSKIP("v2 requires API key — skipping");
+
+    m_conn->setGraphVersion("v2");
+    m_conn->connectToServer();
+    QVERIFY(waitForState(AgentConnection::Connected));
+
+    int functionCountBefore = m_doc->functions().count();
+
+    QSignalSpy cmdSpy(m_conn, SIGNAL(commandExecuting(QString)));
+    QSignalSpy tokenSpy(m_conn, SIGNAL(chatTokenReceived(QString)));
+    QSignalSpy endSpy(m_conn, SIGNAL(chatStreamEnded()));
+
+    // Explicit — specifies functions and beat-synced timing
+    m_conn->sendChatMessage(
+        "Create a beat-synced chaser called 'V2 Beat Chase' using function 0 ('red wash') "
+        "as the only step. It should sync to the BPM clock, not use fixed millisecond timing. "
+        "Set hold to 1 beat. Execute immediately, no confirmation."
+    );
+
+    QTRY_VERIFY_WITH_TIMEOUT(endSpy.count() >= 1, 90000);
+
+    QString response;
+    for (int i = 0; i < tokenSpy.count(); i++)
+        response += tokenSpy.at(i).at(0).toString();
+
+    bool gotCreate = false;
+    for (int i = 0; i < cmdSpy.count(); i++)
+    {
+        if (cmdSpy.at(i).at(0).toString() == "create_chaser")
+            gotCreate = true;
+    }
+
+    if (!gotCreate && (response.contains("?") || response.toLower().contains("confirm")))
+    {
+        QSignalSpy endSpy2(m_conn, SIGNAL(chatStreamEnded()));
+        QSignalSpy cmdSpy2(m_conn, SIGNAL(commandExecuting(QString)));
+        m_conn->sendChatMessage("Yes, go ahead");
+        QTRY_VERIFY_WITH_TIMEOUT(endSpy2.count() >= 1, 90000);
+        for (int i = 0; i < cmdSpy2.count(); i++)
+        {
+            if (cmdSpy2.at(i).at(0).toString() == "create_chaser")
+                gotCreate = true;
+        }
+    }
+
+    QVERIFY2(gotCreate, "Expected create_chaser for explicit beat-synced request");
+
+    // Find the new chaser
+    Chaser *chaser = nullptr;
+    foreach (Function *fn, m_doc->functions())
+    {
+        if (fn->type() == Function::ChaserType && fn->id() >= (quint32)functionCountBefore)
+        {
+            chaser = qobject_cast<Chaser*>(fn);
+            break;
+        }
+    }
+
+    QVERIFY2(chaser != nullptr, "Could not find the new chaser");
+    qDebug() << "v2 beat chaser:" << chaser->name()
+             << "steps:" << chaser->stepsCount()
+             << "tempoType:" << chaser->tempoType();
+
+    // Verify tempo_type is Beats (not Time)
+    // In QLC+: Chaser::Time = 0, Chaser::Beats = 1
+    QVERIFY2(chaser->tempoType() == Chaser::Beats,
+             qPrintable(QString("Beat-synced chaser should use Beats tempo type, got %1")
+                       .arg(chaser->tempoType())));
+
+    m_conn->setGraphVersion("v1");
+}
+
 QTEST_MAIN(AgentIntegration_Test)
