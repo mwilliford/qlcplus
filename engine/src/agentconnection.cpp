@@ -848,6 +848,28 @@ void AgentConnection::handleModifyFunction(const QJsonObject &msg)
             }
         }
 
+        // modifySteps — replace steps at specified indices (in-place update)
+        if (changes.contains("modifySteps"))
+        {
+            QJsonArray stepsArr = changes["modifySteps"].toArray();
+            for (const QJsonValue &v : stepsArr)
+            {
+                QJsonObject stepObj = v.toObject();
+                int index = stepObj["index"].toInt();
+                QJsonObject stepData = stepObj["step"].toObject();
+
+                ChaserStep step;
+                step.fid = stepData["functionId"].toInt();
+                step.fadeIn = stepData["fadeIn"].toInt(0);
+                step.hold = stepData["hold"].toInt(0);
+                step.fadeOut = stepData["fadeOut"].toInt(0);
+                step.duration = stepData["duration"].toInt(0);
+                step.note = stepData["note"].toString();
+
+                chaser->replaceStep(step, index);
+            }
+        }
+
         // moveStep — reorder a step
         if (changes.contains("moveStep"))
         {
