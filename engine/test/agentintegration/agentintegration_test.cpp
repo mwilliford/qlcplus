@@ -2766,9 +2766,10 @@ void AgentIntegration_Test::v2CreateFixtureAtAddress()
     QSignalSpy endSpy(m_conn, SIGNAL(chatStreamEnded()));
 
     m_conn->sendChatMessage(
-        "Add a new Chauvet Intimidator Scan LED 300 fixture called 'Scanner 3' "
-        "at universe 0 address 33 in DMX 11-channel mode. Execute immediately, "
-        "no confirmation needed."
+        "Add a new fixture called 'Scanner 3' using the Chauvet Intimidator Scan LED 300 "
+        "definition (already in the workspace) at universe 0 DMX address 34 in DMX 11-channel "
+        "mode. The fixture definition is already loaded — use create_fixture directly, "
+        "do not search the library. Execute immediately, no confirmation needed."
     );
 
     QTRY_VERIFY_WITH_TIMEOUT(endSpy.count() >= 1, 90000);
@@ -2816,7 +2817,7 @@ void AgentIntegration_Test::v2CreateFixtureAtAddress()
     bool foundNewFixture = false;
     foreach (Fixture *fxi, m_doc->fixtures())
     {
-        if (fxi->name() == "Scanner 3" || fxi->address() == 33)
+        if (fxi->name() == "Scanner 3" || fxi->address() == 33)  // 0-based internal (DMX 34 - 1)
         {
             qDebug() << "v2 new fixture:" << fxi->name() << "addr:" << fxi->address()
                      << "channels:" << fxi->channels();
@@ -2842,8 +2843,9 @@ void AgentIntegration_Test::v2DeleteFixtureWithConfirmation()
     // First, create a fixture to delete (so we don't destroy the test workspace)
     QSignalSpy endSpy0(m_conn, SIGNAL(chatStreamEnded()));
     m_conn->sendChatMessage(
-        "Add a Chauvet Intimidator Scan LED 300 called 'Temp Scanner' at universe 0 "
-        "address 44 in DMX 11-channel mode. Execute immediately, no confirmation."
+        "Add a fixture called 'Temp Scanner' using Chauvet Intimidator Scan LED 300 "
+        "(already in workspace) at universe 0 DMX address 45 in DMX 11-channel mode. "
+        "Use create_fixture directly, don't search the library. Execute immediately, no confirmation."
     );
     QTRY_VERIFY_WITH_TIMEOUT(endSpy0.count() >= 1, 90000);
 
@@ -2851,7 +2853,7 @@ void AgentIntegration_Test::v2DeleteFixtureWithConfirmation()
     quint32 tempFixtureId = Fixture::invalidId();
     foreach (Fixture *fxi, m_doc->fixtures())
     {
-        if (fxi->name() == "Temp Scanner" || fxi->address() == 44)
+        if (fxi->name() == "Temp Scanner" || fxi->address() == 44)  // 0-based internal (DMX 45 - 1)
         {
             tempFixtureId = fxi->id();
             break;
