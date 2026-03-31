@@ -70,6 +70,18 @@ private slots:
     // modify_function set_values (requires API key)
     void modifySceneSetValuesViaAgent();
 
+    // --- v2 intent-routed architecture tests ---
+    // These set graphVersion="v2" in workspace_sync to test the v2 graph.
+
+    // v2 session flow (no API key needed for connection)
+    void v2SessionCreated();
+
+    // v2 CONTROL intent — blackout (requires API key for Haiku router)
+    void v2ControlBlackout();
+
+    // v2 QUERY intent (requires API key for Haiku router + formatter)
+    void v2QueryListFunctions();
+
 private:
     bool loadWorkspace(const QString &path);
     bool waitForState(int expectedState, int timeoutMs = 5000);
