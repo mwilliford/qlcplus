@@ -133,6 +133,12 @@ private slots:
     // Blackout scene — explicit fixtures, verify shutter closed + dimmer off
     void v2ExplicitBlackoutCorrectValues();
 
+    // Beat-synced chaser — vague should ask what functions to chase
+    void v2VagueBeatChaserAsks();
+
+    // Beat-synced chaser — explicit functions, verify tempo_type=Beats
+    void v2ExplicitBeatChaserUsesBeats();
+
 private:
     bool loadWorkspace(const QString &path);
     bool waitForState(int expectedState, int timeoutMs = 5000);
