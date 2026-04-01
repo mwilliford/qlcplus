@@ -28,6 +28,7 @@
 #include "chaserstep.h"
 #include "chaser.h"
 #include "scene.h"
+#include "qlcpalette.h"
 #include "doc.h"
 #undef private
 #undef protected
@@ -2925,6 +2926,99 @@ void AgentIntegration_Test::v2DeleteFixtureWithConfirmation()
     qDebug() << "v2 delete: fixtures after:" << fixtureCountAfter;
     QVERIFY2(fixtureCountAfter < fixtureCountBefore,
              "v2 BUILD: fixture count should have decreased");
+
+    m_conn->setGraphVersion("v1");
+}
+
+void AgentIntegration_Test::v2CreateColorPalette()
+{
+    if (!hasRealLLM())
+        QSKIP("v2 requires API key — skipping");
+
+    m_conn->setGraphVersion("v2");
+    m_conn->connectToServer();
+    QVERIFY(waitForState(AgentConnection::Connected));
+
+    int paletteCountBefore = m_doc->palettes().count();
+    qDebug() << "v2 palettes before create:" << paletteCountBefore;
+
+    QSignalSpy cmdSpy(m_conn, SIGNAL(commandExecuting(QString)));
+    QSignalSpy tokenSpy(m_conn, SIGNAL(chatTokenReceived(QString)));
+    QSignalSpy endSpy(m_conn, SIGNAL(chatStreamEnded()));
+
+    m_conn->sendChatMessage(
+        "Create a Color palette called 'Deep Blue' with the color #0000cc. "
+        "Execute immediately, no confirmation needed."
+    );
+
+    QTRY_VERIFY_WITH_TIMEOUT(endSpy.count() >= 1, 90000);
+
+    QString response;
+    for (int i = 0; i < tokenSpy.count(); i++)
+        response += tokenSpy.at(i).at(0).toString();
+    qDebug() << "v2 create palette response:" << response.left(500);
+
+    bool gotCreatePalette = false;
+    for (int i = 0; i < cmdSpy.count(); i++)
+    {
+        QString cmd = cmdSpy.at(i).at(0).toString();
+        qDebug() << "v2 create palette command:" << cmd;
+        if (cmd == "create_palette")
+            gotCreatePalette = true;
+    }
+
+    // Handle confirmation if agent asked
+    if (!gotCreatePalette && (response.contains("?") || response.toLower().contains("confirm")))
+    {
+        qDebug() << "v2 agent asked for confirmation, sending approval";
+        QSignalSpy endSpy2(m_conn, SIGNAL(chatStreamEnded()));
+        QSignalSpy cmdSpy2(m_conn, SIGNAL(commandExecuting(QString)));
+        m_conn->sendChatMessage("Yes, go ahead");
+        QTRY_VERIFY_WITH_TIMEOUT(endSpy2.count() >= 1, 90000);
+        for (int i = 0; i < cmdSpy2.count(); i++)
+        {
+            if (cmdSpy2.at(i).at(0).toString() == "create_palette")
+            {
+                gotCreatePalette = true;
+                break;
+            }
+        }
+    }
+
+    QVERIFY2(gotCreatePalette, "v2 BUILD: expected create_palette command");
+
+    // Palette count should have increased
+    int paletteCountAfter = m_doc->palettes().count();
+    qDebug() << "v2 palettes after create:" << paletteCountAfter;
+    QVERIFY2(paletteCountAfter > paletteCountBefore,
+             "v2 BUILD: palette count should have increased");
+
+    // Find the new palette and verify properties
+    QLCPalette *pal = nullptr;
+    for (QLCPalette *p : m_doc->palettes())
+    {
+        if (p->name().contains("Blue", Qt::CaseInsensitive) ||
+            p->name().contains("Deep", Qt::CaseInsensitive))
+        {
+            pal = p;
+            break;
+        }
+    }
+
+    if (pal != nullptr)
+    {
+        qDebug() << "v2 created palette:" << pal->name()
+                 << "type:" << QLCPalette::typeToString(pal->type())
+                 << "values:" << pal->values();
+        QCOMPARE(pal->type(), QLCPalette::Color);
+        QVERIFY2(!pal->values().isEmpty(), "Palette should have at least one value");
+    }
+    else
+    {
+        qDebug() << "v2 palette not found by name — listing all palettes:";
+        for (QLCPalette *p : m_doc->palettes())
+            qDebug() << "  id:" << p->id() << "name:" << p->name();
+    }
 
     m_conn->setGraphVersion("v1");
 }

@@ -152,6 +152,9 @@ private slots:
     void v2CreateFixtureAtAddress();
     void v2DeleteFixtureWithConfirmation();
 
+    // Palette CRUD — create_palette via agent
+    void v2CreateColorPalette();
+
 private:
     bool loadWorkspace(const QString &path);
     bool waitForState(int expectedState, int timeoutMs = 5000);

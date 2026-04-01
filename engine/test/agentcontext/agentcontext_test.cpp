@@ -19,12 +19,14 @@
 #include "qlcfixturedef.h"
 #include "qlcfixturedefcache.h"
 #include "qlcfixturemode.h"
+#include "qlcphysical.h"
 #include "qlcchannel.h"
 #include "collection.h"
 #include "fixture.h"
 #include "chaser.h"
 #include "scene.h"
 #include "script.h"
+#include "qlcpalette.h"
 #include "efx.h"
 #include "doc.h"
 #undef private
@@ -1563,6 +1565,179 @@ void AgentContext_Test::destructorSafety()
     // Verify Doc is still valid after AgentConnection destruction
     QVERIFY(m_doc != nullptr);
     QCOMPARE(m_doc->fixtures().count() + 1, m_doc->fixtures().count() + 1); // just access it
+}
+
+void AgentContext_Test::createPaletteHandler()
+{
+    int countBefore = m_doc->palettes().count();
+
+    AgentConnection conn(m_doc);
+
+    QJsonObject msg;
+    msg["type"] = "create_palette";
+    msg["requestId"] = "test-cp-1";
+    msg["name"] = "Deep Blue";
+    msg["paletteType"] = "Color";
+    QJsonArray vals;
+    vals.append(QString("#0000cc"));
+    msg["values"] = vals;
+
+    conn.handleCreatePalette(msg);
+
+    QCOMPARE(m_doc->palettes().count(), countBefore + 1);
+
+    // Find the newly created palette
+    QLCPalette *pal = nullptr;
+    for (QLCPalette *p : m_doc->palettes())
+    {
+        if (p->name() == "Deep Blue")
+        {
+            pal = p;
+            break;
+        }
+    }
+    QVERIFY(pal != nullptr);
+    QCOMPARE(pal->type(), QLCPalette::Color);
+    QCOMPARE(pal->values().count(), 1);
+    QCOMPARE(pal->values().at(0).toString(), QString("#0000cc"));
+}
+
+void AgentContext_Test::modifyPaletteHandler()
+{
+    // First create a palette
+    QLCPalette *pal = new QLCPalette(QLCPalette::PanTilt);
+    pal->setName("Original");
+    pal->setValue(QVariant(180), QVariant(90));
+    m_doc->addPalette(pal);
+    quint32 palId = pal->id();
+
+    AgentConnection conn(m_doc);
+
+    QJsonObject msg;
+    msg["type"] = "modify_palette";
+    msg["requestId"] = "test-mp-1";
+    msg["paletteId"] = (int)palId;
+    msg["name"] = "Center Stage";
+    QJsonArray vals;
+    vals.append(128);
+    vals.append(64);
+    msg["values"] = vals;
+    msg["fanningType"] = "Linear";
+    msg["fanningLayout"] = "XCentered";
+
+    conn.handleModifyPalette(msg);
+
+    QLCPalette *modified = m_doc->palette(palId);
+    QVERIFY(modified != nullptr);
+    QCOMPARE(modified->name(), QString("Center Stage"));
+    QCOMPARE(modified->values().count(), 2);
+    QCOMPARE(modified->values().at(0).toInt(), 128);
+    QCOMPARE(modified->values().at(1).toInt(), 64);
+    QCOMPARE(modified->fanningType(), QLCPalette::Linear);
+    QCOMPARE(modified->fanningLayout(), QLCPalette::XCentered);
+}
+
+void AgentContext_Test::deletePaletteHandler()
+{
+    // First create a palette
+    QLCPalette *pal = new QLCPalette(QLCPalette::Dimmer);
+    pal->setName("Half");
+    pal->setValue(QVariant(128));
+    m_doc->addPalette(pal);
+    quint32 palId = pal->id();
+
+    QVERIFY(m_doc->palette(palId) != nullptr);
+
+    AgentConnection conn(m_doc);
+
+    QJsonObject msg;
+    msg["type"] = "delete_palette";
+    msg["requestId"] = "test-dp-1";
+    msg["paletteId"] = (int)palId;
+
+    conn.handleDeletePalette(msg);
+
+    QVERIFY(m_doc->palette(palId) == nullptr);
+}
+
+void AgentContext_Test::deletePaletteNotFound()
+{
+    AgentConnection conn(m_doc);
+
+    QJsonObject msg;
+    msg["type"] = "delete_palette";
+    msg["requestId"] = "test-dp-notfound";
+    msg["paletteId"] = 99999;
+
+    // Should not crash — just sends error result
+    conn.handleDeletePalette(msg);
+
+    // Verify it didn't crash (test passes if we get here)
+    QVERIFY(true);
+}
+
+void AgentContext_Test::fixtureDefPhysicalSerialization()
+{
+    // Create a fixture def with physical properties
+    QLCFixtureDef *def = new QLCFixtureDef();
+    def->setManufacturer("TestMfg");
+    def->setModel("PhysModel");
+    def->setType(QLCFixtureDef::MovingHead);
+
+    QLCPhysical phys;
+    phys.setFocusPanMax(540);
+    phys.setFocusTiltMax(270);
+    phys.setFocusType("Head");
+    phys.setLensDegreesMin(15.0);
+    phys.setLensDegreesMax(30.0);
+    def->setPhysical(phys);
+
+    // Add a channel so the def is valid
+    QLCChannel *ch = new QLCChannel();
+    ch->setName("Pan");
+    ch->setGroup(QLCChannel::Pan);
+    def->addChannel(ch);
+
+    // Add a mode referencing the channel
+    QLCFixtureMode *mode = new QLCFixtureMode(def);
+    mode->setName("Default");
+    mode->insertChannel(ch, 0);
+    def->addMode(mode);
+
+    // Add def to cache and create a fixture using it
+    m_doc->fixtureDefCache()->addFixtureDef(def);
+
+    Fixture *fxi = new Fixture(m_doc);
+    fxi->setName("Phys Test");
+    fxi->setFixtureDefinition(def, mode);
+    fxi->setUniverse(0);
+    fxi->setAddress(0);
+    m_doc->addFixture(fxi);
+
+    // Serialize and verify
+    AgentConnection conn(m_doc);
+    QJsonObject sync = conn.buildWorkspaceSync();
+
+    QJsonArray defs = sync["fixtureDefs"].toArray();
+    bool found = false;
+    for (const QJsonValue &v : defs)
+    {
+        QJsonObject dj = v.toObject();
+        if (dj["manufacturer"].toString() == "TestMfg" &&
+            dj["model"].toString() == "PhysModel")
+        {
+            found = true;
+            QVERIFY(dj.contains("physical"));
+            QJsonObject pj = dj["physical"].toObject();
+            QCOMPARE(pj["focusPanMax"].toInt(), 540);
+            QCOMPARE(pj["focusTiltMax"].toInt(), 270);
+            QCOMPARE(pj["focusType"].toString(), QString("Head"));
+            QCOMPARE(pj["lensDegreesMin"].toDouble(), 15.0);
+            QCOMPARE(pj["lensDegreesMax"].toDouble(), 30.0);
+            break;
+        }
+    }
+    QVERIFY2(found, "TestMfg/PhysModel fixture def not found in serialization");
 }
 
 #ifdef QMLUI

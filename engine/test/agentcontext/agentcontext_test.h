@@ -109,6 +109,15 @@ private slots:
     void handlePastedJWT();
     void destructorSafety();
 
+    // Palette CRUD handlers
+    void createPaletteHandler();
+    void modifyPaletteHandler();
+    void deletePaletteHandler();
+    void deletePaletteNotFound();
+
+    // Physical properties in fixture def serialization
+    void fixtureDefPhysicalSerialization();
+
 private:
     Doc *m_doc;
 };
