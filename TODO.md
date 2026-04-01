@@ -43,12 +43,8 @@
 - [x] .aqw/.aqf file extension support in v5 file dialogs and save logic
 - [x] Destructor crash fix (WebSocket signals during shutdown)
 
-### Session Sidebar — TODO
-- [ ] **Expose sessions to QML**: Add `Q_INVOKABLE QJsonArray getSessions()` to AgentConnection that returns `m_doc->sessions()` as JSON (sessionId, title, createdAt)
-- [ ] **Session list UI**: Collapsible sidebar (or panel) in agent window showing sessions newest-first. Display title (or session ID prefix) + date. Click to resume via `sendSessionResume(sessionId)`.
-- [ ] **New Session button**: Clears chat, disconnects current session so next message creates fresh one
-- [ ] **Refresh on signals**: Connect `sessionCreated` and `sessionMetadataUpdated` signals to refresh the list
-- [ ] **Refresh on file open**: Rebuild list when workspace loads (sessions persisted in .aqw)
+### Session Sidebar — DONE (v5 QML)
+- [x] Implemented in v5 QML port (see PLAN.md Phase C)
 
 ### Account Info — TODO
 - [ ] **Show email when connected**: Decode JWT client-side (base64 payload) to extract `email` claim. Display in status bar (e.g., "Connected — user@example.com"). JWT also has `user_id`, `sub`, `groups`.
