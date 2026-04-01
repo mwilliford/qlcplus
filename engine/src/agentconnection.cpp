@@ -38,6 +38,7 @@
 #include "inputpatch.h"
 #include "outputpatch.h"
 #include "qlcinputprofile.h"
+#include "qlcphysical.h"
 #include "qlcchannel.h"
 #include "grandmaster.h"
 #include "mastertimer.h"
@@ -505,6 +506,21 @@ void AgentConnection::onWsTextMessage(const QString &message)
     {
         emit commandExecuting("delete_fixture_group");
         handleDeleteFixtureGroup(msg);
+    }
+    else if (type == "create_palette")
+    {
+        emit commandExecuting("create_palette");
+        handleCreatePalette(msg);
+    }
+    else if (type == "modify_palette")
+    {
+        emit commandExecuting("modify_palette");
+        handleModifyPalette(msg);
+    }
+    else if (type == "delete_palette")
+    {
+        emit commandExecuting("delete_palette");
+        handleDeletePalette(msg);
     }
     else if (type == "create_widget" || type == "modify_widget" ||
              type == "delete_widget" || type == "set_widget_input" ||
@@ -1695,6 +1711,106 @@ void AgentConnection::handleDeleteFixtureGroup(const QJsonObject &msg)
     sendCommandResult(requestId, ok, extra);
 }
 
+void AgentConnection::handleCreatePalette(const QJsonObject &msg)
+{
+    QString requestId = msg["requestId"].toString();
+    QString name = msg["name"].toString();
+    QString typeStr = msg["paletteType"].toString();
+
+    QLCPalette *pal = new QLCPalette(QLCPalette::stringToType(typeStr));
+    pal->setName(name);
+
+    // Set values from JSON array → QVariantList
+    if (msg.contains("values"))
+    {
+        QJsonArray vals = msg["values"].toArray();
+        QVariantList varList;
+        for (const QJsonValue &v : vals)
+            varList.append(v.toVariant());
+        pal->setValues(varList);
+    }
+
+    // Fanning (optional)
+    if (msg.contains("fanningType"))
+        pal->setFanningType(QLCPalette::stringToFanningType(msg["fanningType"].toString()));
+    if (msg.contains("fanningLayout"))
+        pal->setFanningLayout(QLCPalette::stringToFanningLayout(msg["fanningLayout"].toString()));
+
+    bool ok = m_doc->addPalette(pal);
+
+    if (ok)
+    {
+        QJsonObject extra;
+        extra["paletteId"] = (int)pal->id();
+        sendCommandResult(requestId, true, extra);
+    }
+    else
+    {
+        QJsonObject extra;
+        extra["error"] = "Failed to add palette to document";
+        sendCommandResult(requestId, false, extra);
+        delete pal;
+    }
+}
+
+void AgentConnection::handleModifyPalette(const QJsonObject &msg)
+{
+    QString requestId = msg["requestId"].toString();
+    quint32 paletteId = (quint32)msg["paletteId"].toInt();
+
+    QLCPalette *pal = m_doc->palette(paletteId);
+    if (pal == nullptr)
+    {
+        QJsonObject extra;
+        extra["error"] = QString("Palette %1 not found").arg(paletteId);
+        sendCommandResult(requestId, false, extra);
+        return;
+    }
+
+    if (msg.contains("name"))
+        pal->setName(msg["name"].toString());
+
+    if (msg.contains("values"))
+    {
+        QJsonArray vals = msg["values"].toArray();
+        QVariantList varList;
+        for (const QJsonValue &v : vals)
+            varList.append(v.toVariant());
+        pal->setValues(varList);
+    }
+
+    if (msg.contains("fanningType"))
+        pal->setFanningType(QLCPalette::stringToFanningType(msg["fanningType"].toString()));
+    if (msg.contains("fanningLayout"))
+        pal->setFanningLayout(QLCPalette::stringToFanningLayout(msg["fanningLayout"].toString()));
+
+    QJsonObject extra;
+    extra["paletteId"] = (int)paletteId;
+    sendCommandResult(requestId, true, extra);
+}
+
+void AgentConnection::handleDeletePalette(const QJsonObject &msg)
+{
+    QString requestId = msg["requestId"].toString();
+    quint32 paletteId = (quint32)msg["paletteId"].toInt();
+
+    QLCPalette *pal = m_doc->palette(paletteId);
+    if (pal == nullptr)
+    {
+        QJsonObject extra;
+        extra["error"] = QString("Palette %1 not found").arg(paletteId);
+        sendCommandResult(requestId, false, extra);
+        return;
+    }
+
+    bool ok = m_doc->deletePalette(paletteId);
+
+    QJsonObject extra;
+    if (!ok)
+        extra["error"] = "Failed to delete palette";
+    sendCommandResult(requestId, ok, extra);
+}
+
 QJsonObject AgentConnection::serializeFixtureGroup(quint32 id)
 {
     FixtureGroup *grp = m_doc->fixtureGroup(id);
@@ -2130,6 +2246,25 @@ QJsonArray AgentConnection::serializeFixtureDefs()
 
         if (!def->agentContext().isEmpty())
             dj["agentContext"] = serializeAgentContext(def->agentContext());
+
+        // Physical properties (for spatial calculations)
+        QLCPhysical phys = def->physical();
+        if (phys.focusPanMax() > 0 || phys.focusTiltMax() > 0
+            || phys.lensDegreesMin() > 0 || phys.lensDegreesMax() > 0)
+        {
+            QJsonObject pj;
+            if (phys.focusPanMax() > 0)
+                pj["focusPanMax"] = phys.focusPanMax();
+            if (phys.focusTiltMax() > 0)
+                pj["focusTiltMax"] = phys.focusTiltMax();
+            if (!phys.focusType().isEmpty())
+                pj["focusType"] = phys.focusType();
+            if (phys.lensDegreesMin() > 0)
+                pj["lensDegreesMin"] = phys.lensDegreesMin();
+            if (phys.lensDegreesMax() > 0)
+                pj["lensDegreesMax"] = phys.lensDegreesMax();
+            dj["physical"] = pj;
+        }
 
         arr.append(dj);
     }
@@ -2627,6 +2762,10 @@ void AgentConnection::connectDocSignals()
             this, &AgentConnection::onFixtureGroupAdded);
     connect(m_doc, &Doc::fixtureGroupRemoved,
             this, &AgentConnection::onFixtureGroupRemoved);
+    connect(m_doc, &Doc::paletteAdded,
+            this, &AgentConnection::onPaletteAdded);
+    connect(m_doc, &Doc::paletteRemoved,
+            this, &AgentConnection::onPaletteRemoved);
     connect(m_doc, &Doc::modeChanged,
             this, &AgentConnection::onModeChanged);
 
@@ -2647,6 +2786,8 @@ void AgentConnection::disconnectDocSignals()
     disconnect(m_doc, &Doc::fixtureChanged, this, nullptr);
     disconnect(m_doc, &Doc::fixtureGroupAdded, this, nullptr);
     disconnect(m_doc, &Doc::fixtureGroupRemoved, this, nullptr);
+    disconnect(m_doc, &Doc::paletteAdded, this, nullptr);
+    disconnect(m_doc, &Doc::paletteRemoved, this, nullptr);
     disconnect(m_doc, &Doc::modeChanged, this, nullptr);
     // Keep loading/loaded connected — those are set in constructor
 
@@ -2743,6 +2884,41 @@ void AgentConnection::onFixtureGroupRemoved(quint32 id)
     QJsonObject change;
     change["action"] = "fixture_group_removed";
     change["fixtureGroupId"] = (int)id;
+    sendDelta(QJsonArray{change});
+}
+
+void AgentConnection::onPaletteAdded(quint32 id)
+{
+    // Serialize palette using same format as serializePalettes()
+    QLCPalette *pal = m_doc->palette(id);
+    if (pal == nullptr) return;
+
+    QJsonObject pj;
+    pj["id"] = (int)pal->id();
+    pj["name"] = pal->name();
+    pj["type"] = QLCPalette::typeToString(pal->type());
+
+    QVariantList vals = pal->values();
+    QJsonArray valArr;
+    for (const QVariant &v : vals)
+        valArr.append(QJsonValue::fromVariant(v));
+    if (!valArr.isEmpty())
+        pj["values"] = valArr;
+
+    pj["fanningType"] = QLCPalette::fanningTypeToString(pal->fanningType());
+    pj["fanningLayout"] = QLCPalette::fanningLayoutToString(pal->fanningLayout());
+
+    QJsonObject change;
+    change["action"] = "palette_added";
+    change["palette"] = pj;
+    sendDelta(QJsonArray{change});
+}
+
+void AgentConnection::onPaletteRemoved(quint32 id)
+{
+    QJsonObject change;
+    change["action"] = "palette_removed";
+    change["paletteId"] = (int)id;
     sendDelta(QJsonArray{change});
 }
 

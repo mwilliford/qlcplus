@@ -129,6 +129,8 @@ private slots:
     void onFixtureChanged(quint32 id);
     void onFixtureGroupAdded(quint32 id);
     void onFixtureGroupRemoved(quint32 id);
+    void onPaletteAdded(quint32 id);
+    void onPaletteRemoved(quint32 id);
     void onModeChanged();
     void onGrandMasterValueChanged(uchar value);
     void onBlackoutChanged(bool state);
@@ -180,6 +182,9 @@ private:
     void handleResetSimpleDesk(const QJsonObject &msg);
     void handleGetRunningFunctions(const QJsonObject &msg);
     void handleCreateScript(const QJsonObject &msg);
+    void handleCreatePalette(const QJsonObject &msg);
+    void handleModifyPalette(const QJsonObject &msg);
+    void handleDeletePalette(const QJsonObject &msg);
 
     // Virtual Console command handlers (delegated to UI layer via callback)
     void handleVCCommand(const QJsonObject &msg, const QString &command);
