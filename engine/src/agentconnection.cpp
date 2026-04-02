@@ -560,6 +560,11 @@ void AgentConnection::onWsTextMessage(const QString &message)
     {
         handleGetRunningFunctions(msg);
     }
+    else if (type == "set_fixture_position")
+    {
+        emit commandExecuting("set_fixture_position");
+        handleSetFixturePosition(msg);
+    }
     else if (type == "compacting")
     {
         emit compactingStarted();
@@ -1809,6 +1814,40 @@ void AgentConnection::handleDeletePalette(const QJsonObject &msg)
     if (!ok)
         extra["error"] = "Failed to delete palette";
     sendCommandResult(requestId, ok, extra);
+}
+
+void AgentConnection::handleSetFixturePosition(const QJsonObject &msg)
+{
+    QString requestId = msg["requestId"].toString();
+    quint32 fixtureId = (quint32)msg["fixtureId"].toInt();
+    double xPos = msg["xPos"].toDouble();
+    double yPos = msg["yPos"].toDouble();
+    double zPos = msg["zPos"].toDouble(0.0);
+
+    Fixture *fxi = m_doc->fixture(fixtureId);
+    if (fxi == nullptr)
+    {
+        QJsonObject extra;
+        extra["error"] = QString("Fixture %1 not found").arg(fixtureId);
+        sendCommandResult(requestId, false, extra);
+        return;
+    }
+
+    MonitorProperties *props = m_doc->monitorProperties();
+    props->setFixturePosition(fixtureId, 0, 0, QVector3D(xPos, yPos, zPos));
+
+    m_doc->setModified();
+
+    // Send delta so server updates its stage layout
+    QJsonObject change;
+    change["action"] = "fixture_position_changed";
+    change["fixtureId"] = (int)fixtureId;
+    change["xPos"] = xPos;
+    change["yPos"] = yPos;
+    change["zPos"] = zPos;
+    sendDelta(QJsonArray{change});
+
+    sendCommandResult(requestId, true);
 }
 
 QJsonObject AgentConnection::serializeFixtureGroup(quint32 id)
