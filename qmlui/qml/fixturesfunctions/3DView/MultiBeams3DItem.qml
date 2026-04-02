@@ -275,7 +275,9 @@ Entity
         ]
     }
 
-    property Texture2D goboTexture: Texture2D { }
+    property Texture2D goboTexture: Texture2D {
+        TextureImage { source: "qrc:/white1x1.png" }
+    }
 
     components: [
         baseMesh,

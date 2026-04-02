@@ -458,11 +458,11 @@ void MainView3D::initialize3DProperties()
 
 QString MainView3D::makeShader(QString str) {
 
-   QString prefix = R"(#version 150
+   QString prefix = R"(#version 150 core
 #define GL3
 
 #ifdef GL3
-#define DECLARE_GBUFFER_OUTPUT out vec4 [3] gOutput;
+#define DECLARE_GBUFFER_OUTPUT out vec4 gOutput[3];
 #define DECLARE_FRAG_COLOR out vec4 fragColor;
 #define VS_IN_ATTRIB in
 #define VS_OUT_ATTRIB out

@@ -295,7 +295,9 @@ Entity
         }
 
     /* **************** Gobo properties **************** */
-    property Texture2D goboTexture: Texture2D { }
+    property Texture2D goboTexture: Texture2D {
+        TextureImage { source: "qrc:/white1x1.png" }
+    }
     property real goboRotation: 0
 
     function setGoboSpeed(cw, speed)
