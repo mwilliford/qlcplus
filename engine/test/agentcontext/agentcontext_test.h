@@ -118,6 +118,14 @@ private slots:
     // Physical properties in fixture def serialization
     void fixtureDefPhysicalSerialization();
 
+    // structuredData on AgentContext
+    void structuredDataIsEmpty();
+    void saveAndLoadStructuredData();
+    void saveAndLoadAllFields();
+    void serializeStructuredDataInSync();
+    void updateAgentNoteWithStructuredData();
+    void deltaIncludesStructuredData();
+
 private:
     Doc *m_doc;
 };

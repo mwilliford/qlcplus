@@ -363,6 +363,7 @@ public:
     const AgentContext &agentContext() const { return m_agentContext; }
     void setAgentNote(const QString &note) { m_agentContext.agentNote = note; }
     void setUserNote(const QString &note) { m_agentContext.userNote = note; }
+    void setStructuredData(const QJsonObject &data) { m_agentContext.structuredData = data; }
 
 private:
     AgentContext m_agentContext;

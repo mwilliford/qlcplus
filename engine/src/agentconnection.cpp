@@ -1546,9 +1546,12 @@ void AgentConnection::handleUpdateAgentNote(const QJsonObject &msg)
     QJsonObject target = msg["target"].toObject();
     QString targetType = target["type"].toString();
     QString agentNote = msg["agentNote"].toString();
+    bool hasStructuredData = msg.contains("structuredData");
+    QJsonObject structuredData;
+    if (hasStructuredData)
+        structuredData = msg["structuredData"].toObject();
     bool success = false;
     QString error;
-
 
     if (targetType == "fixture")
     {
@@ -1557,6 +1560,8 @@ void AgentConnection::handleUpdateAgentNote(const QJsonObject &msg)
         if (fxi)
         {
             fxi->setAgentNote(agentNote);
+            if (hasStructuredData)
+                fxi->setStructuredData(structuredData);
             success = true;
         }
         else
@@ -1570,6 +1575,8 @@ void AgentConnection::handleUpdateAgentNote(const QJsonObject &msg)
         if (def)
         {
             def->setAgentNote(agentNote);
+            if (hasStructuredData)
+                def->setStructuredData(structuredData);
             success = true;
         }
         else
@@ -1582,6 +1589,8 @@ void AgentConnection::handleUpdateAgentNote(const QJsonObject &msg)
         if (fn)
         {
             fn->setAgentNote(agentNote);
+            if (hasStructuredData)
+                fn->setStructuredData(structuredData);
             success = true;
         }
         else
@@ -1590,13 +1599,14 @@ void AgentConnection::handleUpdateAgentNote(const QJsonObject &msg)
     else if (targetType == "workspace")
     {
         m_doc->setAgentNote(agentNote);
+        if (hasStructuredData)
+            m_doc->setStructuredData(structuredData);
         success = true;
     }
     else
     {
         error = QString("Unknown target type: %1").arg(targetType);
     }
-
 
     if (success)
     {
@@ -1607,6 +1617,8 @@ void AgentConnection::handleUpdateAgentNote(const QJsonObject &msg)
         change["action"] = "agent_note_changed";
         change["targetType"] = targetType;
         change["agentNote"] = agentNote;
+        if (hasStructuredData)
+            change["structuredData"] = structuredData;
         if (targetType == "fixture")
             change["targetId"] = target["id"].toInt();
         else if (targetType == "fixtureDef")
@@ -2779,6 +2791,8 @@ QJsonObject AgentConnection::serializeAgentContext(const AgentContext &ctx)
         ac["userNote"] = ctx.userNote;
     if (!ctx.agentNote.isEmpty())
         ac["agentNote"] = ctx.agentNote;
+    if (!ctx.structuredData.isEmpty())
+        ac["structuredData"] = ctx.structuredData;
     return ac;
 }
 
