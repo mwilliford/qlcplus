@@ -185,6 +185,7 @@ private:
     void handleCreatePalette(const QJsonObject &msg);
     void handleModifyPalette(const QJsonObject &msg);
     void handleDeletePalette(const QJsonObject &msg);
+    void handleSetFixturePosition(const QJsonObject &msg);
 
     // Virtual Console command handlers (delegated to UI layer via callback)
     void handleVCCommand(const QJsonObject &msg, const QString &command);
