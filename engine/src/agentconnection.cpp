@@ -2619,9 +2619,12 @@ QJsonObject AgentConnection::serializeStageLayout()
 
     QJsonObject gridSize;
     QVector3D gs = props->gridSize();
-    gridSize["width"] = gs.x();
-    gridSize["height"] = gs.y();
-    gridSize["depth"] = gs.z();
+    // Convert grid dimensions to millimeters for protocol consistency.
+    // All spatial values on the wire are mm, regardless of gridUnits setting.
+    float unitToMm = (props->gridUnits() == MonitorProperties::Meters) ? 1000.0f : 304.8f;
+    gridSize["width"] = gs.x() * unitToMm;
+    gridSize["height"] = gs.y() * unitToMm;
+    gridSize["depth"] = gs.z() * unitToMm;
     layout["gridSize"] = gridSize;
 
     layout["gridUnits"] = (props->gridUnits() == MonitorProperties::Meters)
