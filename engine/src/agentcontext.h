@@ -22,23 +22,27 @@
 
 #include <QString>
 #include <QList>
+#include <QJsonObject>
+#include <QJsonDocument>
 #include <QXmlStreamReader>
 #include <QXmlStreamWriter>
 
 #include "agentsession.h"
 
-#define KXMLAgentContext   QStringLiteral("AgentContext")
-#define KXMLAgentUserNote  QStringLiteral("UserNote")
-#define KXMLAgentAgentNote QStringLiteral("AgentNote")
+#define KXMLAgentContext        QStringLiteral("AgentContext")
+#define KXMLAgentUserNote       QStringLiteral("UserNote")
+#define KXMLAgentAgentNote      QStringLiteral("AgentNote")
+#define KXMLAgentStructuredData QStringLiteral("StructuredData")
 
 class AgentContext
 {
 public:
     QString userNote;
     QString agentNote;
+    QJsonObject structuredData;
     QList<AgentSession> sessions;  // Only used at workspace level
 
-    bool isEmpty() const { return userNote.isEmpty() && agentNote.isEmpty() && sessions.isEmpty(); }
+    bool isEmpty() const { return userNote.isEmpty() && agentNote.isEmpty() && structuredData.isEmpty() && sessions.isEmpty(); }
 
     bool loadXML(QXmlStreamReader &doc);
     bool saveXML(QXmlStreamWriter *doc) const;

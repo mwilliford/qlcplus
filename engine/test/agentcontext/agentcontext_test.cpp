@@ -1740,6 +1740,183 @@ void AgentContext_Test::fixtureDefPhysicalSerialization()
     QVERIFY2(found, "TestMfg/PhysModel fixture def not found in serialization");
 }
 
+/*****************************************************************************
+ * structuredData on AgentContext
+ *****************************************************************************/
+
+void AgentContext_Test::structuredDataIsEmpty()
+{
+    AgentContext ctx;
+    QVERIFY(ctx.isEmpty());
+
+    // Only structuredData set — should not be empty
+    QJsonObject sd;
+    sd["key"] = "value";
+    ctx.structuredData = sd;
+    QVERIFY(!ctx.isEmpty());
+
+    // Clear it — should be empty again
+    ctx.structuredData = QJsonObject();
+    QVERIFY(ctx.isEmpty());
+}
+
+void AgentContext_Test::saveAndLoadStructuredData()
+{
+    AgentContext ctx;
+    QJsonObject sd;
+    sd["pan_offset"] = 12.5;
+    sd["tilt_inverted"] = true;
+    ctx.structuredData = sd;
+
+    // Save
+    QBuffer buffer;
+    buffer.open(QIODevice::WriteOnly | QIODevice::Text);
+    QXmlStreamWriter writer(&buffer);
+    writer.writeStartElement("Root");
+    ctx.saveXML(&writer);
+    writer.writeEndElement();
+    writer.writeEndDocument();
+    writer.setDevice(NULL);
+    buffer.close();
+
+    // Verify XML contains StructuredData element
+    buffer.open(QIODevice::ReadOnly | QIODevice::Text);
+    QString xml = QString::fromUtf8(buffer.readAll());
+    QVERIFY(xml.contains("StructuredData"));
+    QVERIFY(xml.contains("pan_offset"));
+    buffer.close();
+
+    // Load
+    buffer.open(QIODevice::ReadOnly | QIODevice::Text);
+    QXmlStreamReader reader(&buffer);
+    reader.readNextStartElement(); // Root
+    reader.readNextStartElement(); // AgentContext
+
+    AgentContext ctx2;
+    QVERIFY(ctx2.loadXML(reader));
+    QVERIFY(ctx2.userNote.isEmpty());
+    QVERIFY(ctx2.agentNote.isEmpty());
+    QVERIFY(!ctx2.structuredData.isEmpty());
+    QCOMPARE(ctx2.structuredData["pan_offset"].toDouble(), 12.5);
+    QCOMPARE(ctx2.structuredData["tilt_inverted"].toBool(), true);
+}
+
+void AgentContext_Test::saveAndLoadAllFields()
+{
+    AgentContext ctx;
+    ctx.userNote = "User note";
+    ctx.agentNote = "Agent note";
+    QJsonObject sd;
+    sd["calibration"] = QJsonObject({{"pan_offset", 5.0}});
+    ctx.structuredData = sd;
+
+    QBuffer buffer;
+    buffer.open(QIODevice::WriteOnly | QIODevice::Text);
+    QXmlStreamWriter writer(&buffer);
+    writer.writeStartElement("Root");
+    ctx.saveXML(&writer);
+    writer.writeEndElement();
+    writer.writeEndDocument();
+    writer.setDevice(NULL);
+    buffer.close();
+
+    buffer.open(QIODevice::ReadOnly | QIODevice::Text);
+    QXmlStreamReader reader(&buffer);
+    reader.readNextStartElement();
+    reader.readNextStartElement();
+
+    AgentContext ctx2;
+    QVERIFY(ctx2.loadXML(reader));
+    QCOMPARE(ctx2.userNote, QString("User note"));
+    QCOMPARE(ctx2.agentNote, QString("Agent note"));
+    QVERIFY(!ctx2.structuredData.isEmpty());
+    QVERIFY(ctx2.structuredData.contains("calibration"));
+}
+
+void AgentContext_Test::serializeStructuredDataInSync()
+{
+    QJsonObject sd;
+    sd["session"] = QJsonObject({{"phase", "discovery"}});
+    m_doc->setStructuredData(sd);
+    m_doc->setAgentNote("workspace note");
+
+    AgentConnection conn(m_doc);
+    QJsonObject sync = conn.buildWorkspaceSync();
+
+    QVERIFY(sync.contains("agentContext"));
+    QJsonObject wsCtx = sync["agentContext"].toObject();
+    QVERIFY(wsCtx.contains("structuredData"));
+    QJsonObject syncSd = wsCtx["structuredData"].toObject();
+    QVERIFY(syncSd.contains("session"));
+    QCOMPARE(syncSd["session"].toObject()["phase"].toString(), QString("discovery"));
+}
+
+void AgentContext_Test::updateAgentNoteWithStructuredData()
+{
+    Fixture *fxi = new Fixture(m_doc);
+    fxi->setName("SD Test");
+    fxi->setUniverse(0);
+    fxi->setAddress(0);
+    fxi->setChannels(4);
+    m_doc->addFixture(fxi);
+    quint32 fxiId = fxi->id();
+
+    AgentConnection conn(m_doc);
+
+    QJsonObject msg;
+    msg["type"] = "update_agent_note";
+    msg["requestId"] = "test-sd-1";
+    msg["agentNote"] = "Some note";
+    QJsonObject sd;
+    sd["calibration"] = QJsonObject({{"pan_offset", 10.0}});
+    msg["structuredData"] = sd;
+    QJsonObject target;
+    target["type"] = "fixture";
+    target["id"] = (int)fxiId;
+    msg["target"] = target;
+
+    conn.handleUpdateAgentNote(msg);
+
+    // Verify both agentNote and structuredData were set
+    QCOMPARE(m_doc->fixture(fxiId)->agentContext().agentNote, QString("Some note"));
+    QVERIFY(!m_doc->fixture(fxiId)->agentContext().structuredData.isEmpty());
+    QCOMPARE(m_doc->fixture(fxiId)->agentContext().structuredData["calibration"].toObject()["pan_offset"].toDouble(), 10.0);
+}
+
+void AgentContext_Test::deltaIncludesStructuredData()
+{
+    // Test that update without structuredData does not set it
+    Fixture *fxi = new Fixture(m_doc);
+    fxi->setName("Delta Test");
+    fxi->setUniverse(0);
+    fxi->setAddress(0);
+    fxi->setChannels(4);
+    QJsonObject existingSd;
+    existingSd["existing"] = "data";
+    fxi->setStructuredData(existingSd);
+    m_doc->addFixture(fxi);
+    quint32 fxiId = fxi->id();
+
+    AgentConnection conn(m_doc);
+
+    // Send update WITHOUT structuredData — existing should be preserved
+    QJsonObject msg;
+    msg["type"] = "update_agent_note";
+    msg["requestId"] = "test-delta-1";
+    msg["agentNote"] = "New note";
+    QJsonObject target;
+    target["type"] = "fixture";
+    target["id"] = (int)fxiId;
+    msg["target"] = target;
+
+    conn.handleUpdateAgentNote(msg);
+
+    QCOMPARE(m_doc->fixture(fxiId)->agentContext().agentNote, QString("New note"));
+    // structuredData should be preserved (not cleared)
+    QVERIFY(!m_doc->fixture(fxiId)->agentContext().structuredData.isEmpty());
+    QCOMPARE(m_doc->fixture(fxiId)->agentContext().structuredData["existing"].toString(), QString("data"));
+}
+
 #ifdef QMLUI
 QTEST_MAIN(AgentContext_Test)
 #else

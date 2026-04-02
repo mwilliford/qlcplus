@@ -32,6 +32,13 @@ bool AgentContext::loadXML(QXmlStreamReader &doc)
             userNote = doc.readElementText();
         else if (doc.name() == KXMLAgentAgentNote)
             agentNote = doc.readElementText();
+        else if (doc.name() == KXMLAgentStructuredData)
+        {
+            QString jsonStr = doc.readElementText();
+            QJsonDocument jdoc = QJsonDocument::fromJson(jsonStr.toUtf8());
+            if (jdoc.isObject())
+                structuredData = jdoc.object();
+        }
         else if (doc.name() == KXMLAgentSessions)
         {
             while (doc.readNextStartElement())
@@ -64,6 +71,8 @@ bool AgentContext::saveXML(QXmlStreamWriter *doc) const
         doc->writeTextElement(KXMLAgentUserNote, userNote);
     if (!agentNote.isEmpty())
         doc->writeTextElement(KXMLAgentAgentNote, agentNote);
+    if (!structuredData.isEmpty())
+        doc->writeTextElement(KXMLAgentStructuredData, QJsonDocument(structuredData).toJson(QJsonDocument::Compact));
 
     if (!sessions.isEmpty())
     {
