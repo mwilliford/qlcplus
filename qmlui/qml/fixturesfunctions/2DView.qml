@@ -418,58 +418,85 @@ Rectangle
         onAccepted: View2D.pointOfView = selectedPov
     }
 
-    // Point-of-view indicator — bottom-left corner
-    Rectangle
+    // Point-of-view selector + axis indicator — bottom-left corner
+    Column
     {
         z: 5
         anchors.bottom: parent.bottom
         anchors.left: parent.left
         anchors.margins: 8
-        width: povColumn.width + 16
-        height: povColumn.height + 10
-        radius: 4
-        color: "#CC333333"
-        border.width: 1
-        border.color: "#666"
-        visible: View2D.pointOfView > 0
+        spacing: 4
 
-        Column
+        // Axis label for current view
+        Rectangle
         {
-            id: povColumn
-            anchors.centerIn: parent
-            spacing: 1
+            width: axisLabel.width + 12
+            height: axisLabel.height + 6
+            radius: 4
+            color: "#CC333333"
+            visible: View2D.pointOfView > 0
 
             Text
             {
-                text: {
-                    switch (View2D.pointOfView) {
-                        case 1: return "Top View"
-                        case 2: return "Front View"
-                        case 3: return "Right Side"
-                        case 4: return "Left Side"
-                        default: return ""
-                    }
-                }
-                color: "white"
-                font.pixelSize: 11
-                font.bold: true
-                font.family: "Roboto"
-            }
-
-            Text
-            {
+                id: axisLabel
+                anchors.centerIn: parent
                 text: {
                     switch (View2D.pointOfView) {
                         case 1: return "\u2194 Left/Right  \u2195 Front/Back"
                         case 2: return "\u2194 Left/Right  \u2195 Up/Down"
-                        case 3: return "\u2194 Front/Back  \u2195 Up/Down"
-                        case 4: return "\u2194 Front/Back  \u2195 Up/Down"
+                        case 3: return "\u2190 Front  \u2192 Back  \u2195 Up/Down"
+                        case 4: return "\u2190 Back  \u2192 Front  \u2195 Up/Down"
                         default: return ""
                     }
                 }
                 color: "#AAA"
                 font.pixelSize: 9
                 font.family: "Roboto"
+            }
+        }
+
+        // View preset buttons
+        Row
+        {
+            spacing: 4
+
+            Repeater
+            {
+                model: [
+                    { label: "Top",   pov: 1 },
+                    { label: "Front", pov: 2 },
+                    { label: "Left",  pov: 4 },
+                    { label: "Right", pov: 3 },
+                ]
+
+                Rectangle
+                {
+                    width: 44
+                    height: 28
+                    radius: 4
+                    color: View2D.pointOfView === modelData.pov ? "#555" :
+                           (povMouse.containsMouse ? "#444" : "#333")
+                    border.width: 1
+                    border.color: View2D.pointOfView === modelData.pov ? "#AAA" : "#666"
+
+                    Text
+                    {
+                        anchors.centerIn: parent
+                        text: modelData.label
+                        color: View2D.pointOfView === modelData.pov ? "white" : "#CCC"
+                        font.pixelSize: 11
+                        font.bold: View2D.pointOfView === modelData.pov
+                        font.family: "Roboto"
+                    }
+
+                    MouseArea
+                    {
+                        id: povMouse
+                        anchors.fill: parent
+                        hoverEnabled: true
+                        onClicked: View2D.pointOfView = modelData.pov
+                    }
+                }
             }
         }
     }
