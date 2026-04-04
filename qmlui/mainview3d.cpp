@@ -1456,16 +1456,12 @@ void MainView3D::updateFixturePosition(quint32 itemID, QVector3D pos)
     if (mesh == nullptr || mesh->m_rootTransform == nullptr)
         return;
 
-    //qDebug() << "Update 3D fixture position" << pos;
+    // Convert Z-up world (mm) → Qt3D Y-up (meters)
+    // World X → Qt3D X, World Z (up) → Qt3D Y, World Y (upstage) → Qt3D -Z
+    float x = (pos.x() / 1000.0f) + (mesh->m_volume.m_extents.x() / 2);
+    float y = (pos.z() / 1000.0f) + (mesh->m_volume.m_extents.y() / 2);
+    float z = -(pos.y() / 1000.0f) + (mesh->m_volume.m_extents.z() / 2);
 
-    float unitScale = m_monProps->gridUnits() == MonitorProperties::Meters ? 1.0f : 0.3048f;
-    QVector3D gridMeters = m_monProps->gridSize() * unitScale;
-
-    float x = (pos.x() / 1000.0) - (gridMeters.x() / 2) + (mesh->m_volume.m_extents.x() / 2);
-    float y = (pos.y() / 1000.0) + (mesh->m_volume.m_extents.y() / 2);
-    float z = (pos.z() / 1000.0) - (gridMeters.z() / 2) + (mesh->m_volume.m_extents.z() / 2);
-
-    /* move the root mesh first */
     mesh->m_rootTransform->setTranslation(QVector3D(x, y, z));
 
     updateLightMatrix(mesh);
@@ -1480,12 +1476,12 @@ void MainView3D::updateFixtureRotation(quint32 itemID, QVector3D degrees)
     if (mesh == nullptr || mesh->m_rootTransform == nullptr)
         return;
 
-    qDebug() << Q_FUNC_INFO << degrees;
-
+    // Convert Z-up right-handed rotation → Qt3D Y-up
+    // World XRot (pitch) → Qt3D X, World ZRot (heading) → Qt3D Y, World YRot (yaw) → Qt3D -Z
     QQuaternion qRotation;
-    qRotation = Qt3DCore::QTransform::fromAxesAndAngles(QVector3D(1, 0, 0), -degrees.x(),
-                                                        QVector3D(0, 1, 0), -degrees.y(),
-                                                        QVector3D(0, 0, 1), -degrees.z());
+    qRotation = Qt3DCore::QTransform::fromAxesAndAngles(QVector3D(1, 0, 0), degrees.x(),
+                                                        QVector3D(0, 1, 0), degrees.z(),
+                                                        QVector3D(0, 0, 1), -degrees.y());
     mesh->m_rootTransform->setRotation(qRotation);
 
     updateLightMatrix(mesh);
@@ -1880,12 +1876,10 @@ void MainView3D::updateGenericItemPosition(quint32 itemID, QVector3D pos) const
     if (item == nullptr || item->m_rootTransform == nullptr)
         return;
 
-    float unitScale = m_monProps->gridUnits() == MonitorProperties::Meters ? 1.0f : 0.3048f;
-    QVector3D gridMeters = m_monProps->gridSize() * unitScale;
-
-    float x = (pos.x() / 1000.0) - (gridMeters.x() / 2) + (item->m_volume.m_extents.x() / 2);
-    float y = (pos.y() / 1000.0) + (item->m_volume.m_extents.y() / 2);
-    float z = (pos.z() / 1000.0) - (gridMeters.z() / 2) + (item->m_volume.m_extents.z() / 2);
+    // Convert Z-up world (mm) → Qt3D Y-up (meters)
+    float x = (pos.x() / 1000.0f) + (item->m_volume.m_extents.x() / 2);
+    float y = (pos.z() / 1000.0f) + (item->m_volume.m_extents.y() / 2);
+    float z = -(pos.y() / 1000.0f) + (item->m_volume.m_extents.z() / 2);
     item->m_rootTransform->setTranslation(QVector3D(x, y, z));
 }
 
@@ -1932,10 +1926,11 @@ void MainView3D::updateGenericItemRotation(quint32 itemID, QVector3D rot) const
     if (item == nullptr || item->m_rootTransform == nullptr)
         return;
 
+    // Convert Z-up right-handed rotation → Qt3D Y-up
     QQuaternion qRotation;
     qRotation = Qt3DCore::QTransform::fromAxesAndAngles(QVector3D(1, 0, 0), rot.x(),
-                                                        QVector3D(0, 1, 0), rot.y(),
-                                                        QVector3D(0, 0, 1), rot.z());
+                                                        QVector3D(0, 1, 0), rot.z(),
+                                                        QVector3D(0, 0, 1), -rot.y());
     item->m_rootTransform->setRotation(qRotation);
 }
 

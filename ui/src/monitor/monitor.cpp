@@ -243,24 +243,32 @@ void Monitor::fillGraphicsView()
         m_unitsCombo->setCurrentIndex(1);
     }
 
+    // Z-up grid: X = width (stage L/R), Y = depth (DS/US)
     m_gridWSpin->setValue(m_props->gridSize().x());
-    m_gridHSpin->setValue(m_props->gridSize().z());
+    m_gridHSpin->setValue(m_props->gridSize().y());
     m_gridWSpin->blockSignals(false);
     m_gridHSpin->blockSignals(false);
     m_unitsCombo->blockSignals(false);
 
-    m_graphicsView->setGridSize(QSize(m_props->gridSize().x(), m_props->gridSize().z()));
+    m_graphicsView->setGridSize(QSize(m_props->gridSize().x(), m_props->gridSize().y()));
     m_graphicsView->setBackgroundImage(m_props->commonBackgroundImage());
+
+    float gu = (m_props->gridUnits() == MonitorProperties::Meters) ? 1000.0f : 304.8f;
+    float gridWmm = m_props->gridSize().x() * gu;
+    float gridDmm = m_props->gridSize().y() * gu;
 
     foreach (quint32 fid, m_props->fixtureItemsID())
     {
         if (m_doc->fixture(fid) != NULL)
         {
             PreviewItem item = m_props->fixtureItem(fid, 0, 0);
-            m_graphicsView->addFixture(fid, QPointF(item.m_position.x(), item.m_position.y()));
+            // Z-up center-stage → positive screen coords (upstage at top)
+            QPointF screenPos(item.m_position.x() + gridWmm / 2,
+                              gridDmm / 2 - item.m_position.y());
+            m_graphicsView->addFixture(fid, screenPos);
             qDebug() << "Gel color:" << item.m_color;
             m_graphicsView->setFixtureGelColor(fid, item.m_color);
-            m_graphicsView->setFixtureRotation(fid, item.m_rotation.y());
+            m_graphicsView->setFixtureRotation(fid, item.m_rotation.z());
         }
     }
 
@@ -510,7 +518,7 @@ void Monitor::initGraphicsToolbar()
     m_graphicsToolBar->addWidget(xlabel);
     m_gridHSpin = new QSpinBox();
     m_gridHSpin->setMinimum(1);
-    m_gridHSpin->setValue(gridSize.z());
+    m_gridHSpin->setValue(gridSize.y());  // Z-up: Y = depth
     m_graphicsToolBar->addWidget(m_gridHSpin);
     connect(m_gridHSpin, SIGNAL(valueChanged(int)),
             this, SLOT(slotGridHeightChanged(int)));
@@ -690,7 +698,8 @@ void Monitor::slotGridWidthChanged(int value)
     Q_ASSERT(m_graphicsView != NULL);
 
     m_graphicsView->setGridSize(QSize(value, m_gridHSpin->value()));
-    m_props->setGridSize(QVector3D(value, m_props->gridSize().y(), m_gridHSpin->value()));
+    // Z-up grid: (width_X, depth_Y, height_Z) — preserve height
+    m_props->setGridSize(QVector3D(value, m_gridHSpin->value(), m_props->gridSize().z()));
 }
 
 void Monitor::slotGridHeightChanged(int value)
@@ -698,7 +707,8 @@ void Monitor::slotGridHeightChanged(int value)
     Q_ASSERT(m_graphicsView != NULL);
 
     m_graphicsView->setGridSize(QSize(m_gridWSpin->value(), value));
-    m_props->setGridSize(QVector3D(m_gridWSpin->value(), m_props->gridSize().y(), value));
+    // Z-up grid: (width_X, depth_Y, height_Z) — preserve height
+    m_props->setGridSize(QVector3D(m_gridWSpin->value(), value, m_props->gridSize().z()));
 }
 
 void Monitor::slotGridUnitsChanged(int index)
@@ -783,8 +793,15 @@ void Monitor::slotFixtureMoved(quint32 fid, QPointF pos)
 {
     Q_ASSERT(m_graphicsView != NULL);
 
+    // Convert screen mm back to Z-up center-stage coords
+    float gu = (m_props->gridUnits() == MonitorProperties::Meters) ? 1000.0f : 304.8f;
+    float gridWmm = m_props->gridSize().x() * gu;
+    float gridDmm = m_props->gridSize().y() * gu;
+    float worldX = pos.x() - gridWmm / 2;
+    float worldY = -(pos.y() - gridDmm / 2);
+
     showFixtureItemEditor();
-    m_props->setFixturePosition(fid, 0, 0, QVector3D(pos.x(), pos.y(), 0));
+    m_props->setFixturePosition(fid, 0, 0, QVector3D(worldX, worldY, 0));
     m_doc->setModified();
 }
 

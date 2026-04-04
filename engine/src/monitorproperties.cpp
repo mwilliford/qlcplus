@@ -70,16 +70,19 @@
 #define KXMLQLCMonitorFixtureInvPanFlag     QStringLiteral("InvertedPan")
 #define KXMLQLCMonitorFixtureInvTiltFlag    QStringLiteral("InvertedTilt")
 
+// Z-up defaults: width (X, stage L/R), depth (Y, DS/US), height (Z, up)
 #define GRID_DEFAULT_WIDTH  5
 #define GRID_DEFAULT_HEIGHT 3
 #define GRID_DEFAULT_DEPTH  5
+
+bool MonitorProperties::s_saveLegacyFormat = false;
 
 MonitorProperties::MonitorProperties()
     : m_font(QFont("Arial", 12))
     , m_displayMode(DMX)
     , m_channelStyle(DMXChannels)
     , m_valueStyle(DMXValues)
-    , m_gridSize(QVector3D(GRID_DEFAULT_WIDTH, GRID_DEFAULT_HEIGHT, GRID_DEFAULT_DEPTH))
+    , m_gridSize(QVector3D(GRID_DEFAULT_WIDTH, GRID_DEFAULT_DEPTH, GRID_DEFAULT_HEIGHT))
     , m_gridUnits(Meters)
     , m_pointOfView(Undefined)
     , m_stageType(StageSimple)
@@ -87,9 +90,60 @@ MonitorProperties::MonitorProperties()
 {
 }
 
+/*********************************************************************
+ * Coordinate system conversion
+ *
+ * Legacy (Y-up): origin at back-left corner, X=left-right, Y=up, Z=toward audience
+ * Z-up:          origin at center stage floor, X=stage-left, Y=upstage, Z=up
+ *
+ * gridSizeMm is in the SOURCE convention for position conversions.
+ *********************************************************************/
+
+QVector3D MonitorProperties::legacyToZUpPosition(const QVector3D &pos, const QVector3D &gridSizeMm)
+{
+    // gridSizeMm is legacy: (width_X, height_Y, depth_Z) in mm
+    return QVector3D(
+        pos.x() - (gridSizeMm.x() / 2.0f),          // center X
+        -(pos.z() - (gridSizeMm.z() / 2.0f)),        // legacy Z (toward audience) → -Y (upstage +)
+        pos.y()                                        // legacy Y (up) → Z (up)
+    );
+}
+
+QVector3D MonitorProperties::zUpToLegacyPosition(const QVector3D &pos, const QVector3D &gridSizeMm)
+{
+    // gridSizeMm is Z-up: (width_X, depth_Y, height_Z) in mm
+    return QVector3D(
+        pos.x() + (gridSizeMm.x() / 2.0f),           // un-center X
+        pos.z(),                                        // Z-up Z (up) → legacy Y (up)
+        -(pos.y() - (gridSizeMm.y() / 2.0f))          // Z-up Y (upstage) → legacy Z (toward audience)
+    );
+}
+
+QVector3D MonitorProperties::legacyToZUpRotation(const QVector3D &rot)
+{
+    return QVector3D(-rot.x(), rot.z(), rot.y());
+}
+
+QVector3D MonitorProperties::zUpToLegacyRotation(const QVector3D &rot)
+{
+    return QVector3D(-rot.x(), rot.z(), rot.y());
+}
+
+QVector3D MonitorProperties::legacyToZUpGridSize(const QVector3D &grid)
+{
+    // legacy (width, height, depth) → Z-up (width, depth, height)
+    return QVector3D(grid.x(), grid.z(), grid.y());
+}
+
+QVector3D MonitorProperties::zUpToLegacyGridSize(const QVector3D &grid)
+{
+    // Z-up (width, depth, height) → legacy (width, height, depth)
+    return QVector3D(grid.x(), grid.z(), grid.y());
+}
+
 void MonitorProperties::reset()
 {
-    m_gridSize = QVector3D(GRID_DEFAULT_WIDTH, GRID_DEFAULT_HEIGHT, GRID_DEFAULT_DEPTH);
+    m_gridSize = QVector3D(GRID_DEFAULT_WIDTH, GRID_DEFAULT_DEPTH, GRID_DEFAULT_HEIGHT);
     m_gridUnits = Meters;
     m_pointOfView = Undefined;
     m_stageType = StageSimple;
@@ -108,27 +162,13 @@ void MonitorProperties::setPointOfView(MonitorProperties::PointOfView pov)
     if (pov == m_pointOfView)
         return;
 
+    // When transitioning from Undefined (2D-only) to a 3D-aware POV,
+    // we need to promote 2D positions into 3D.
+    // In Z-up: X = stage L/R, Y = upstage, Z = up.
+    // Undefined positions are (x, y, 0) in 2D screen space.
     if (m_pointOfView == Undefined)
     {
-        QVector3D gSize = gridSize();
         float units = gridUnits() == MonitorProperties::Meters ? 1000.0 : 304.8;
-
-        if (gSize.z() == 0)
-        {
-            // convert the grid size first
-            switch (pov)
-            {
-                case TopView:
-                    setGridSize(QVector3D(gSize.x(), GRID_DEFAULT_HEIGHT, gSize.y()));
-                break;
-                case RightSideView:
-                case LeftSideView:
-                    setGridSize(QVector3D(GRID_DEFAULT_WIDTH, gSize.x(), gSize.x()));
-                break;
-                default:
-                break;
-            }
-        }
 
         foreach (quint32 fid, fixtureItemsID())
         {
@@ -140,22 +180,23 @@ void MonitorProperties::setPointOfView(MonitorProperties::PointOfView pov)
                 switch (pov)
                 {
                     case TopView:
-                    {
-                        newPos = QVector3D(pos.x(), 1000, pos.y());
-                    }
+                        // 2D (x, y) → 3D: X stays, Y stays, Z = 1m above floor
+                        newPos = QVector3D(pos.x(), pos.y(), 1000);
+                    break;
+                    case FrontView:
+                        // 2D (x, y) → 3D: X stays, Y = 0 (center depth), Z from screen Y
+                        newPos = QVector3D(pos.x(), 0, (gridSize().z() * units) - pos.y());
                     break;
                     case RightSideView:
-                    {
-                        newPos = QVector3D(0, pos.y(), (gridSize().z() * units) - pos.x());
-                    }
+                        // 2D (x, y) → 3D: X = 0, Y from screen X, Z from screen Y
+                        newPos = QVector3D(0, pos.x(), (gridSize().z() * units) - pos.y());
                     break;
                     case LeftSideView:
-                    {
-                        newPos = QVector3D(0, pos.y(), pos.x());
-                    }
+                        // 2D (x, y) → 3D: X = 0, Y from screen X, Z from screen Y
+                        newPos = QVector3D(0, (gridSize().y() * units) - pos.x(), (gridSize().z() * units) - pos.y());
                     break;
                     default:
-                        newPos = QVector3D(pos.x(), (gridSize().y() * units) - pos.y(), 1000);
+                        newPos = pos;
                     break;
                 }
                 setFixturePosition(fid, fixtureHeadIndex(subID), fixtureLinkedIndex(subID), newPos);
@@ -512,6 +553,8 @@ QString MonitorProperties::customBackground(quint32 fid) const
 
 bool MonitorProperties::loadXML(QXmlStreamReader &root, const Doc *mainDocument)
 {
+    static const QString KXMLQLCMonitorCoordSys = QStringLiteral("CoordSys");
+
     if (root.name() != KXMLQLCMonitorProperties)
     {
         qWarning() << Q_FUNC_INFO << "Monitor node not found";
@@ -524,6 +567,14 @@ bool MonitorProperties::loadXML(QXmlStreamReader &root, const Doc *mainDocument)
     {
         qWarning() << Q_FUNC_INFO << "Cannot determine Monitor display mode !";
         return false;
+    }
+
+    // Detect coordinate system version
+    bool isLegacy = true;
+    if (attrs.hasAttribute(KXMLQLCMonitorCoordSys))
+    {
+        if (attrs.value(KXMLQLCMonitorCoordSys).toString() == QStringLiteral("Z-up"))
+            isLegacy = false;
     }
 
     setDisplayMode(DisplayMode(attrs.value(KXMLQLCMonitorDisplay).toString().toInt()));
@@ -714,17 +765,74 @@ bool MonitorProperties::loadXML(QXmlStreamReader &root, const Doc *mainDocument)
             root.skipCurrentElement();
         }
     }
+
+    // Convert legacy Y-up data to Z-up
+    if (isLegacy)
+    {
+        float units = (m_gridUnits == Meters) ? 1000.0f : 304.8f;
+        QVector3D legacyGridMm = m_gridSize * units;  // legacy grid in mm
+
+        // Convert grid size: legacy (width, height, depth) → Z-up (width, depth, height)
+        m_gridSize = legacyToZUpGridSize(m_gridSize);
+
+        // Convert fixture positions and rotations
+        QMapIterator<quint32, FixturePreviewItem> fit(m_fixtureItems);
+        while (fit.hasNext())
+        {
+            fit.next();
+            quint32 fid = fit.key();
+
+            // Base item
+            m_fixtureItems[fid].m_baseItem.m_position =
+                legacyToZUpPosition(m_fixtureItems[fid].m_baseItem.m_position, legacyGridMm);
+            m_fixtureItems[fid].m_baseItem.m_rotation =
+                legacyToZUpRotation(m_fixtureItems[fid].m_baseItem.m_rotation);
+
+            // Sub items (heads/linked fixtures)
+            QList<quint32> subIDs = m_fixtureItems[fid].m_subItems.keys();
+            for (quint32 subID : subIDs)
+            {
+                m_fixtureItems[fid].m_subItems[subID].m_position =
+                    legacyToZUpPosition(m_fixtureItems[fid].m_subItems[subID].m_position, legacyGridMm);
+                m_fixtureItems[fid].m_subItems[subID].m_rotation =
+                    legacyToZUpRotation(m_fixtureItems[fid].m_subItems[subID].m_rotation);
+            }
+        }
+
+        // Convert generic item positions and rotations
+        QMapIterator<quint32, PreviewItem> git(m_genericItems);
+        while (git.hasNext())
+        {
+            git.next();
+            quint32 itemID = git.key();
+            m_genericItems[itemID].m_position =
+                legacyToZUpPosition(m_genericItems[itemID].m_position, legacyGridMm);
+            m_genericItems[itemID].m_rotation =
+                legacyToZUpRotation(m_genericItems[itemID].m_rotation);
+        }
+
+        qDebug() << "MonitorProperties: Converted legacy Y-up data to Z-up";
+    }
+
     return true;
 }
 
 bool MonitorProperties::saveXML(QXmlStreamWriter *doc, const Doc *mainDocument) const
 {
+    static const QString KXMLQLCMonitorCoordSys = QStringLiteral("CoordSys");
+
     Q_ASSERT(doc != NULL);
+
+    const bool legacy = s_saveLegacyFormat;
+    float units = (m_gridUnits == Meters) ? 1000.0f : 304.8f;
+    QVector3D zUpGridMm = m_gridSize * units;  // current grid in mm (Z-up)
 
     /* Create the master Monitor node */
     doc->writeStartElement(KXMLQLCMonitorProperties);
     doc->writeAttribute(KXMLQLCMonitorDisplay, QString::number(displayMode()));
     doc->writeAttribute(KXMLQLCMonitorShowLabels, QString::number(labelsVisible()));
+    if (!legacy)
+        doc->writeAttribute(KXMLQLCMonitorCoordSys, QStringLiteral("Z-up"));
 
     /* Font */
     doc->writeTextElement(KXMLQLCMonitorFont, font().toString());
@@ -753,10 +861,11 @@ bool MonitorProperties::saveXML(QXmlStreamWriter *doc, const Doc *mainDocument) 
         }
     }
 
+    QVector3D saveGrid = legacy ? zUpToLegacyGridSize(gridSize()) : gridSize();
     doc->writeStartElement(KXMLQLCMonitorGrid);
-    doc->writeAttribute(KXMLQLCMonitorGridWidth, QString::number(gridSize().x()));
-    doc->writeAttribute(KXMLQLCMonitorGridHeight, QString::number(gridSize().y()));
-    doc->writeAttribute(KXMLQLCMonitorGridDepth, QString::number(gridSize().z()));
+    doc->writeAttribute(KXMLQLCMonitorGridWidth, QString::number(saveGrid.x()));
+    doc->writeAttribute(KXMLQLCMonitorGridHeight, QString::number(saveGrid.y()));
+    doc->writeAttribute(KXMLQLCMonitorGridDepth, QString::number(saveGrid.z()));
     doc->writeAttribute(KXMLQLCMonitorGridUnits, QString::number(gridUnits()));
     if (m_pointOfView != Undefined)
         doc->writeAttribute(KXMLQLCMonitorPointOfView, QString::number(pointOfView()));
@@ -800,24 +909,22 @@ bool MonitorProperties::saveXML(QXmlStreamWriter *doc, const Doc *mainDocument) 
             if (item.m_flags & InvertedTiltFlag)
                 doc->writeAttribute(KXMLQLCMonitorFixtureInvTiltFlag, KXMLQLCTrue);
 
-            // always write position
-            doc->writeAttribute(KXMLQLCMonitorItemXPosition, QString::number(item.m_position.x()));
-            doc->writeAttribute(KXMLQLCMonitorItemYPosition, QString::number(item.m_position.y()));
+            // Convert position/rotation if saving in legacy format
+            QVector3D savePos = legacy ? zUpToLegacyPosition(item.m_position, zUpGridMm) : item.m_position;
+            QVector3D saveRot = legacy ? zUpToLegacyRotation(item.m_rotation) : item.m_rotation;
 
-#ifdef QMLUI
-            doc->writeAttribute(KXMLQLCMonitorItemZPosition, QString::number(item.m_position.z()));
+            // always write position
+            doc->writeAttribute(KXMLQLCMonitorItemXPosition, QString::number(savePos.x()));
+            doc->writeAttribute(KXMLQLCMonitorItemYPosition, QString::number(savePos.y()));
+            doc->writeAttribute(KXMLQLCMonitorItemZPosition, QString::number(savePos.z()));
 
             // write rotation, if set
-            if (item.m_rotation.x() != 0)
-                doc->writeAttribute(KXMLQLCMonitorItemXRotation, QString::number(item.m_rotation.x()));
-            if (item.m_rotation.y() != 0)
-                doc->writeAttribute(KXMLQLCMonitorItemYRotation, QString::number(item.m_rotation.y()));
-            if (item.m_rotation.z() != 0)
-                doc->writeAttribute(KXMLQLCMonitorItemZRotation, QString::number(item.m_rotation.z()));
-#else
-            if (item.m_rotation != QVector3D(0, 0, 0))
-                doc->writeAttribute(KXMLQLCMonitorFixtureRotation, QString::number(item.m_rotation.y()));
-#endif
+            if (saveRot.x() != 0)
+                doc->writeAttribute(KXMLQLCMonitorItemXRotation, QString::number(saveRot.x()));
+            if (saveRot.y() != 0)
+                doc->writeAttribute(KXMLQLCMonitorItemYRotation, QString::number(saveRot.y()));
+            if (saveRot.z() != 0)
+                doc->writeAttribute(KXMLQLCMonitorItemZRotation, QString::number(saveRot.z()));
             if (item.m_color.isValid())
                 doc->writeAttribute(KXMLQLCMonitorFixtureGelColor, item.m_color.name());
 
@@ -849,18 +956,22 @@ bool MonitorProperties::saveXML(QXmlStreamWriter *doc, const Doc *mainDocument) 
         if (item.m_flags & HiddenFlag)
             doc->writeAttribute(KXMLQLCMonitorFixtureHiddenFlag, KXMLQLCTrue);
 
+        // Convert position/rotation if saving in legacy format
+        QVector3D meshPos = legacy ? zUpToLegacyPosition(item.m_position, zUpGridMm) : item.m_position;
+        QVector3D meshRot = legacy ? zUpToLegacyRotation(item.m_rotation) : item.m_rotation;
+
         // always write position
-        doc->writeAttribute(KXMLQLCMonitorItemXPosition, QString::number(item.m_position.x()));
-        doc->writeAttribute(KXMLQLCMonitorItemYPosition, QString::number(item.m_position.y()));
-        doc->writeAttribute(KXMLQLCMonitorItemZPosition, QString::number(item.m_position.z()));
+        doc->writeAttribute(KXMLQLCMonitorItemXPosition, QString::number(meshPos.x()));
+        doc->writeAttribute(KXMLQLCMonitorItemYPosition, QString::number(meshPos.y()));
+        doc->writeAttribute(KXMLQLCMonitorItemZPosition, QString::number(meshPos.z()));
 
         // write rotation, if set
-        if (item.m_rotation.x() != 0)
-            doc->writeAttribute(KXMLQLCMonitorItemXRotation, QString::number(item.m_rotation.x()));
-        if (item.m_rotation.y() != 0)
-            doc->writeAttribute(KXMLQLCMonitorItemYRotation, QString::number(item.m_rotation.y()));
-        if (item.m_rotation.z() != 0)
-            doc->writeAttribute(KXMLQLCMonitorItemZRotation, QString::number(item.m_rotation.z()));
+        if (meshRot.x() != 0)
+            doc->writeAttribute(KXMLQLCMonitorItemXRotation, QString::number(meshRot.x()));
+        if (meshRot.y() != 0)
+            doc->writeAttribute(KXMLQLCMonitorItemYRotation, QString::number(meshRot.y()));
+        if (meshRot.z() != 0)
+            doc->writeAttribute(KXMLQLCMonitorItemZRotation, QString::number(meshRot.z()));
 
         // write scale, if set
         if (item.m_scale.x() != 1.0)

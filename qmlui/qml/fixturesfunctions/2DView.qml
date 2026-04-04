@@ -472,13 +472,14 @@ Rectangle
                         font.pixelSize: 10; font.family: "Roboto"
                         color: "#E74C3C"
                         text: {
+                            // Z-up: TopView=XY, FrontView=XZ, Right/Left=YZ
                             var p = contextManager.fixturesPosition
                             var dx = contentsDragArea.dragXmm
                             switch (View2D.pointOfView) {
                                 case 1: return "\u2194 X: " + parent.fmt(p.x + dx)
                                 case 2: return "\u2194 X: " + parent.fmt(p.x + dx)
-                                case 3: return "\u2194 Z: " + parent.fmt(p.z - dx)
-                                case 4: return "\u2194 Z: " + parent.fmt(p.z + dx)
+                                case 3: return "\u2194 Y: " + parent.fmt(p.y - dx)
+                                case 4: return "\u2194 Y: " + parent.fmt(p.y + dx)
                                 default: return ""
                             }
                         }
@@ -491,10 +492,10 @@ Rectangle
                             var p = contextManager.fixturesPosition
                             var dy = contentsDragArea.dragYmm
                             switch (View2D.pointOfView) {
-                                case 1: return "\u2195 Z: " + parent.fmt(p.z + dy)
-                                case 2: return "\u2195 Y: " + parent.fmt(p.y - dy)
-                                case 3: return "\u2195 Y: " + parent.fmt(p.y - dy)
-                                case 4: return "\u2195 Y: " + parent.fmt(p.y - dy)
+                                case 1: return "\u2195 Y: " + parent.fmt(p.y - dy)
+                                case 2: return "\u2195 Z: " + parent.fmt(p.z - dy)
+                                case 3: return "\u2195 Z: " + parent.fmt(p.z - dy)
+                                case 4: return "\u2195 Z: " + parent.fmt(p.z - dy)
                                 default: return ""
                             }
                         }
@@ -506,11 +507,12 @@ Rectangle
                 {
                     id: axisLabel
                     text: {
+                        // Z-up: X=stage L/R, Y=upstage/downstage, Z=up/down
                         switch (View2D.pointOfView) {
-                            case 1: return "\u2194 Left/Right  \u2195 Front/Back"
-                            case 2: return "\u2194 Left/Right  \u2195 Up/Down"
-                            case 3: return "\u2190 Front  \u2192 Back  \u2195 Up/Down"
-                            case 4: return "\u2190 Back  \u2192 Front  \u2195 Up/Down"
+                            case 1: return "\u2194 X: Stage L/R  \u2195 Y: DS/US"
+                            case 2: return "\u2194 X: Stage L/R  \u2195 Z: Up/Down"
+                            case 3: return "\u2194 Y: DS/US  \u2195 Z: Up/Down"
+                            case 4: return "\u2194 Y: DS/US  \u2195 Z: Up/Down"
                             default: return ""
                         }
                     }

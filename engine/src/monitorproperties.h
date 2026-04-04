@@ -38,6 +38,9 @@ class Doc;
 
 #define KXMLQLCMonitorProperties QStringLiteral("Monitor")
 
+/** Coordinate system convention for position/rotation data */
+enum CoordSystem { LegacyYUp, ZUp };
+
 typedef struct
 {
     QVector3D m_position;       ///< 3D item position
@@ -86,6 +89,31 @@ public:
 
     /** Reset all the Monitor properties */
     void reset();
+
+    /*********************************************************************
+     * Coordinate system conversion (legacy Y-up ↔ Z-up)
+     *
+     * In-memory data is always Z-up (center-stage origin, right-hand rule).
+     * Legacy files (no CoordSys attribute) are converted on load.
+     * Save format depends on s_saveLegacyFormat (set by App before save).
+     *********************************************************************/
+
+    /** Bidirectional position conversion.
+     *  gridSizeMm is the grid dimensions in mm (in the SOURCE convention). */
+    static QVector3D legacyToZUpPosition(const QVector3D &pos, const QVector3D &gridSizeMm);
+    static QVector3D zUpToLegacyPosition(const QVector3D &pos, const QVector3D &gridSizeMm);
+
+    /** Bidirectional rotation conversion */
+    static QVector3D legacyToZUpRotation(const QVector3D &rot);
+    static QVector3D zUpToLegacyRotation(const QVector3D &rot);
+
+    /** Bidirectional grid size conversion (same swap in both directions) */
+    static QVector3D legacyToZUpGridSize(const QVector3D &grid);
+    static QVector3D zUpToLegacyGridSize(const QVector3D &grid);
+
+    /** Set by App before saveXML to control output format.
+     *  true = legacy Y-up (for .qxw), false = Z-up (for .aqw). */
+    static bool s_saveLegacyFormat;
 
 private:
     QFont m_font;
