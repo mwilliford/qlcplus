@@ -1848,6 +1848,16 @@ void AgentConnection::handleSetFixturePosition(const QJsonObject &msg)
     MonitorProperties *props = m_doc->monitorProperties();
     props->setFixturePosition(fixtureId, 0, 0, QVector3D(xPos, yPos, zPos));
 
+    // Optional rotation (Euler angles in degrees: pitch, yaw, roll)
+    bool hasRotation = msg.contains("rotX") || msg.contains("rotY") || msg.contains("rotZ");
+    if (hasRotation)
+    {
+        double rotX = msg["rotX"].toDouble(0.0);
+        double rotY = msg["rotY"].toDouble(0.0);
+        double rotZ = msg["rotZ"].toDouble(0.0);
+        props->setFixtureRotation(fixtureId, 0, 0, QVector3D(rotX, rotY, rotZ));
+    }
+
     m_doc->setModified();
 
     // Send delta so server updates its stage layout
@@ -1857,6 +1867,12 @@ void AgentConnection::handleSetFixturePosition(const QJsonObject &msg)
     change["xPos"] = xPos;
     change["yPos"] = yPos;
     change["zPos"] = zPos;
+    if (hasRotation)
+    {
+        change["rotX"] = msg["rotX"].toDouble(0.0);
+        change["rotY"] = msg["rotY"].toDouble(0.0);
+        change["rotZ"] = msg["rotZ"].toDouble(0.0);
+    }
     sendDelta(QJsonArray{change});
 
     sendCommandResult(requestId, true);

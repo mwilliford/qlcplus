@@ -64,6 +64,10 @@
 
 - [x] **Input disabled during streaming**: Fixed in v5 QML — input always enabled, send during streaming does implicit cancel.
 
+## Bugs: Connection
+
+- [ ] **Segfault on WebSocket 403 rejection**: v5 client crashes when the WebSocket upgrade is rejected (e.g., wrong URL path, auth failure). The auth-refresh-on-disconnect path dereferences a destroyed QTcpSocket (`QObject::disconnect: wildcard call disconnects from destroyed signal of QTcpSocket::unnamed`). Likely null pointer in AgentAuthManager or AgentConnection reconnect logic after socket teardown.
+
 ## Bugs: Missing signal handlers (deletion safety)
 
 - [ ] **RGBMatrix: fixtureGroupRemoved** — RGBMatrix stores raw `m_group` pointer
@@ -148,11 +152,41 @@ See server TODO for this step. Python utility that takes workspace_sync JSON and
 - [x] **Palettes** — create/modify/delete handlers, protocol, deltas, workspace sync
 - [x] **Fixture Groups** — create/modify/delete handlers, protocol, deltas, workspace sync
 
+## Phase 0: Fix 2D/3D Rendering (macOS) — PREREQUISITE
+
+**Branch:** `worktree-fix-3d` (started — GLSL syntax fix + null texture fallbacks)
+
+Prerequisite for all spatial/calibration visualization work. Can't test color-coded constraints, fixture dragging as observations, or calibration overlays without working rendering.
+
+- [ ] **2D Monitor renders fixture positions correctly** on macOS
+- [ ] **3D venue view renders with fixture models** on macOS (GLSL/OpenGL fixes)
+- [ ] **Fixture drag/drop works** in both 2D and 3D views
+- [ ] **Merge `worktree-fix-3d` into `feature/agent-client`**
+
 ## Stage Layout / Monitor Position Deltas
 
 - [ ] **Add signals to MonitorProperties**: Emit `fixturePositionChanged(quint32 fid)` (and rotation/gelColor) from setters so AgentConnection can detect changes.
 - [ ] **Send stage layout delta**: AgentConnection listens to MonitorProperties signals, sends `stage_layout_changed` delta with updated fixture position/rotation/gelColor.
 - [ ] **Currently**: Stage layout only sent on initial workspace_sync; moving a fixture in Monitor view while connected does NOT notify the agent.
+
+## rigmath Integration — Client Side
+
+Design doc: `../docs/PRD-rigmath-integration.md` (TBD). Plan: `../.claude/plans/vivid-fluttering-piglet.md`.
+
+### Phase 3: Calibration UI + 3D Visualization (depends on Phase 0)
+- [ ] **Color-coded constraint groups in 3D view**: Green (connected), Yellow (weak), Red (isolated), Gray (excluded). Per-island colors for disconnected groups.
+- [ ] **Handle `calibration_state_update` message** (server→client): Parse fixture constraint status, observation list, connectivity groups. Update 3D view fixture colors.
+- [ ] **Send `add_observation` message** (client→server): Client-initiated observation entry bypassing LLM.
+- [ ] **Record Crossing button**: Read current DMX for selected fixtures, send as crossing observation.
+- [ ] **Fixture drag = position observation**: Dragging fixture in 3D view sends `known_position` observation (MEASURED certainty).
+- [ ] **Calibration panel**: Docked panel — fixture list with status chips, observation list, action buttons, solvable indicator.
+- [ ] **set_grid_size command handler**: Agent resizes Monitor grid to match stage dimensions.
+
+### Phase 4: rigmath C++ Integration
+- [ ] **Link rigmath C++ lib**: CMake ExternalProject or submodule. `rigmath_core` static lib target (C++ only, no pybind11).
+- [ ] **Handle `calibration_config` message** (server→client): Parse solved fixture kinematics + mount data.
+- [ ] **CalibrationModel class**: Holds rigmath C++ fixture instances from pushed config.
+- [ ] **Client-side `aim_at`**: Real-time world→DMX via rigmath C++ inverse kinematics, no server round-trip.
 
 ## Build / CI
 

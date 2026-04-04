@@ -148,10 +148,12 @@ Rectangle
 
     function setGoboPicture(headIndex, resource)
     {
+        if (resource === "" || resource === undefined)
+            return
         if (Qt.platform.os === "android")
             headsRepeater.itemAt(headIndex).goboSource = resource
         else
-            headsRepeater.itemAt(headIndex).goboSource = "file:/" + resource
+            headsRepeater.itemAt(headIndex).goboSource = "file://" + resource
     }
 
     Grid

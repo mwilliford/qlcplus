@@ -52,6 +52,21 @@ if [ -d "$GOBOS_BUILD" ] && [ ! -e "$GOBOS_BUILD/Others" ]; then
     done
 fi
 
+# Symlink 3D mesh files (fixtures, generic, stage)
+MESHES_BUILD="$BUILD_DIR/Resources/Meshes"
+MESHES_SRC="$SCRIPT_DIR/resources/meshes"
+for subdir in fixtures generic stage; do
+    srcdir="$MESHES_SRC/$subdir"
+    dstdir="$MESHES_BUILD/$subdir"
+    if [ -d "$srcdir" ] && [ -d "$dstdir" ]; then
+        for f in "$srcdir"/*; do
+            [ -f "$f" ] || continue
+            base="$(basename "$f")"
+            [ ! -e "$dstdir/$base" ] && ln -sf "$f" "$dstdir/$base"
+        done
+    fi
+done
+
 if [ "$VERSION" = "v4" ]; then
     QT_PLUGIN_PATH="/opt/homebrew/opt/qt/share/qt/plugins" \
     DYLD_LIBRARY_PATH="$BUILD_DIR/engine/src:$BUILD_DIR/ui/src:$BUILD_DIR/webaccess/src" \

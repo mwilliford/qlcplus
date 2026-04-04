@@ -149,5 +149,4 @@ void main()
         p += rd * stepLength;
     }
     MGL_FRAG_COLOR = vec4(accum * lightIntensity * smokeAmount * lightColor, 0.0);
-    //MGL_FRAG_COLOR = vec4(1.0, 0.0, 0.0, 0.0);
 }

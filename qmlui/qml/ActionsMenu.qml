@@ -75,6 +75,11 @@ Popup
             case App.SaveAsMode:
                 dialogTitle = qsTr("Save project as...")
                 dialogFileMode = FileDialog.SaveFile
+                dialogNameFilters = [
+                    qsTr("Agent workspace") + " (*.aqw)",
+                    qsTr("QLC+ workspace") + " (*.qxw)",
+                    qsTr("All files") + " (*)"
+                ]
             break
             case App.ImportMode:
                 dialogTitle = qsTr("Import from project")

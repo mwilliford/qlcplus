@@ -33,12 +33,18 @@ TechniqueFilter
 
     property Entity fixtureItem
 
+    // macOS OpenGL driver requires all sampler uniforms to have valid textures bound
+    Texture2D {
+        id: fallbackTex
+        TextureImage { source: "qrc:/white1x1.png" }
+    }
+
     parameters: [
-        Parameter { name: "frontDepthTex"; value: frontDepth ? frontDepth.positionTex : null },
-        Parameter { name: "depthTex"; value: gBuffer ? gBuffer.depth : null },
+        Parameter { name: "frontDepthTex"; value: frontDepth ? frontDepth.positionTex : fallbackTex },
+        Parameter { name: "depthTex"; value: gBuffer ? gBuffer.depth : fallbackTex },
         Parameter { name: "lightColor"; value:  fixtureItem ? fixtureItem.lightColor : Qt.rgba(0, 0, 0, 1) },
         Parameter { name: "lightIntensity"; value: fixtureItem ? fixtureItem.lightIntensity : 0.0 },
-        Parameter { name: "shadowTex"; value: shadowTex },
+        Parameter { name: "shadowTex"; value: shadowTex ? shadowTex : fallbackTex },
         Parameter { name: "useShadows"; value: (useShadows ? 1 : 0) }
     ]
 
