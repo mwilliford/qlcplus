@@ -434,6 +434,62 @@ Rectangle
         onAccepted: View2D.pointOfView = selectedPov
     }
 
+    // Point-of-view indicator — bottom-left corner
+    Rectangle
+    {
+        z: 5
+        anchors.bottom: parent.bottom
+        anchors.left: parent.left
+        anchors.margins: 8
+        width: povColumn.width + 16
+        height: povColumn.height + 10
+        radius: 4
+        color: "#CC333333"
+        border.width: 1
+        border.color: "#666"
+        visible: View2D.pointOfView > 0
+
+        Column
+        {
+            id: povColumn
+            anchors.centerIn: parent
+            spacing: 1
+
+            Text
+            {
+                text: {
+                    switch (View2D.pointOfView) {
+                        case 1: return "Top View"
+                        case 2: return "Front View"
+                        case 3: return "Right Side"
+                        case 4: return "Left Side"
+                        default: return ""
+                    }
+                }
+                color: "white"
+                font.pixelSize: 11
+                font.bold: true
+                font.family: "Roboto"
+            }
+
+            Text
+            {
+                text: {
+                    switch (View2D.pointOfView) {
+                        case 1: return "\u2194 Left/Right  \u2195 Front/Back"
+                        case 2: return "\u2194 Left/Right  \u2195 Up/Down"
+                        case 3: return "\u2194 Front/Back  \u2195 Up/Down"
+                        case 4: return "\u2194 Front/Back  \u2195 Up/Down"
+                        default: return ""
+                    }
+                }
+                color: "#AAA"
+                font.pixelSize: 9
+                font.family: "Roboto"
+            }
+        }
+    }
+
     SettingsView2D
     {
         id: twoDSettings
