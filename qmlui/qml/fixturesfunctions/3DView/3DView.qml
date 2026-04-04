@@ -845,6 +845,59 @@ Rectangle
         }
     }
 
+    // Camera preset buttons — bottom-left corner overlay
+    Row
+    {
+        z: 5
+        anchors.bottom: parent.bottom
+        anchors.left: parent.left
+        anchors.margins: 8
+        spacing: 4
+
+        Repeater
+        {
+            model: [
+                { label: "Home",  pos: Qt.vector3d(0, 3, 7.5),  up: Qt.vector3d(0, 1, 0),  center: Qt.vector3d(0, 1, 0) },
+                { label: "Front", pos: Qt.vector3d(0, 1, 12),    up: Qt.vector3d(0, 1, 0),  center: Qt.vector3d(0, 1, 0) },
+                { label: "Top",   pos: Qt.vector3d(0, 15, 0.01), up: Qt.vector3d(0, 0, -1), center: Qt.vector3d(0, 0, 0) },
+                { label: "Left",  pos: Qt.vector3d(-12, 3, 0),   up: Qt.vector3d(0, 1, 0),  center: Qt.vector3d(0, 1, 0) },
+                { label: "Right", pos: Qt.vector3d(12, 3, 0),    up: Qt.vector3d(0, 1, 0),  center: Qt.vector3d(0, 1, 0) },
+            ]
+
+            Rectangle
+            {
+                width: 44
+                height: 28
+                radius: 4
+                color: mouseArea.pressed ? "#555" : (mouseArea.containsMouse ? "#444" : "#333")
+                border.width: 1
+                border.color: "#666"
+
+                Text
+                {
+                    anchors.centerIn: parent
+                    text: modelData.label
+                    color: "white"
+                    font.pixelSize: 11
+                    font.family: "Roboto"
+                }
+
+                MouseArea
+                {
+                    id: mouseArea
+                    anchors.fill: parent
+                    hoverEnabled: true
+                    onClicked:
+                    {
+                        View3D.cameraPosition = modelData.pos
+                        View3D.cameraUpVector = modelData.up
+                        View3D.cameraViewCenter = modelData.center
+                    }
+                }
+            }
+        }
+    }
+
     SettingsView3D
     {
         id: threeDSettings
