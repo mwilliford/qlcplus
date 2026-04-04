@@ -352,8 +352,9 @@ Rectangle
 
                 function setZoom(amount)
                 {
-                    if ((amount < 0 && View3D.cameraPosition.z < 1) ||
-                        (amount > 0 && View3D.cameraPosition.z > 30))
+                    // Use distance to view center for zoom limits (orbit-independent)
+                    var dist = viewCamera.position.minus(viewCamera.viewCenter).length()
+                    if ((amount < 0 && dist < 1) || (amount > 0 && dist > 30))
                         return
 
                     translate(Qt.vector3d(0, 0, -amount), Camera.DontTranslateViewCenter)
@@ -417,7 +418,36 @@ Rectangle
                     var xDelta = mouse.x - startPoint.x
                     var yDelta = mouse.y - startPoint.y
 
-                    if (mouse.buttons === Qt.LeftButton) // move items
+                    // Camera controls:
+                    //   Right-drag or Option(Alt)+drag           -> orbit camera
+                    //   Middle-drag or Option(Alt)+Shift+drag    -> pan camera
+                    //   Left-drag (no Option)                    -> move fixtures
+                    var hasAlt = (mouse.modifiers & Qt.AltModifier)
+                    var hasShift = (mouse.modifiers & Qt.ShiftModifier)
+                    var isOrbit = (mouse.buttons === Qt.RightButton) ||
+                                  (mouse.buttons === Qt.LeftButton && hasAlt && !hasShift)
+                    var isPan = (mouse.buttons === Qt.MiddleButton) ||
+                                (mouse.buttons === Qt.LeftButton && hasAlt && hasShift)
+
+                    if (isOrbit)
+                    {
+                        viewCamera.panAboutViewCenter(-xDelta, Qt.vector3d(0, 1, 0))
+                        viewCamera.tiltAboutViewCenter(yDelta)
+
+                        View3D.cameraPosition = viewCamera.position
+                        View3D.cameraUpVector = viewCamera.upVector
+                        View3D.cameraViewCenter = viewCamera.viewCenter
+                    }
+                    else if (isPan)
+                    {
+                        viewCamera.translate(Qt.vector3d(-xDelta / 100, 0, 0))
+                        viewCamera.translate(Qt.vector3d(0, yDelta / 100, 0))
+
+                        View3D.cameraPosition = viewCamera.position
+                        View3D.cameraUpVector = viewCamera.upVector
+                        View3D.cameraViewCenter = viewCamera.viewCenter
+                    }
+                    else if (mouse.buttons === Qt.LeftButton) // move items
                     {
                         xDelta = xDelta * viewCamera.position.z
                         yDelta = yDelta * viewCamera.position.z
@@ -469,28 +499,6 @@ Rectangle
                             contextManager.fixturesPosition = newPos
                             View3D.genericItemsPosition = newPos
                         }
-                    }
-                    else if (mouse.buttons === Qt.RightButton)  // camera rotation
-                    {
-                        if (!mouse.modifiers || (mouse.modifiers & Qt.ShiftModifier && direction == Qt.Horizontal))
-                            viewCamera.panAboutViewCenter(-xDelta, Qt.vector3d(0, 1, 0))
-                        if (!mouse.modifiers || (mouse.modifiers & Qt.ShiftModifier && direction == Qt.Vertical))
-                            viewCamera.tiltAboutViewCenter(yDelta)
-
-                        View3D.cameraPosition = viewCamera.position
-                        View3D.cameraUpVector = viewCamera.upVector
-                        View3D.cameraViewCenter = viewCamera.viewCenter
-                    }
-                    else if (mouse.buttons === Qt.MiddleButton) // camera translation
-                    {
-                        if (!mouse.modifiers || (mouse.modifiers & Qt.ShiftModifier && direction == Qt.Horizontal))
-                            viewCamera.translate(Qt.vector3d(-xDelta / 100, 0, 0))
-                        if (!mouse.modifiers || (mouse.modifiers & Qt.ShiftModifier && direction == Qt.Vertical))
-                            viewCamera.translate(Qt.vector3d(0, yDelta / 100, 0))
-
-                        View3D.cameraPosition = viewCamera.position
-                        View3D.cameraUpVector = viewCamera.upVector
-                        View3D.cameraViewCenter = viewCamera.viewCenter
                     }
                     startPoint = Qt.point(mouse.x, mouse.y)
                 }
