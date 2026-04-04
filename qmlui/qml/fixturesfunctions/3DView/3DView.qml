@@ -25,6 +25,8 @@ import Qt3D.Render
 import Qt3D.Input
 import Qt3D.Extras
 
+import org.qlcplus.classes 1.0
+
 Rectangle
 {
     anchors.fill: parent
@@ -845,9 +847,55 @@ Rectangle
         }
     }
 
+    // Position status bar — above camera buttons
+    Rectangle
+    {
+        z: 5
+        anchors.bottom: cameraButtons.top
+        anchors.left: parent.left
+        anchors.margins: 8
+        anchors.bottomMargin: 4
+        width: posRow.width + 16
+        height: visible ? 22 : 0
+        radius: 4
+        color: "#CC222222"
+        visible: contextManager && contextManager.selectedFixturesCount > 0
+
+        Row
+        {
+            id: posRow
+            anchors.centerIn: parent
+            spacing: 16
+
+            function fmt(mm)
+            {
+                if (View2D && View2D.gridUnits === MonitorProperties.Feet)
+                    return (mm / 304.8).toFixed(2) + " ft"
+                return (mm / 1000.0).toFixed(2) + " m"
+            }
+
+            Text
+            {
+                color: "#E74C3C"; font.pixelSize: 11; font.family: "Roboto"
+                text: "X: " + posRow.fmt(contextManager.fixturesPosition.x)
+            }
+            Text
+            {
+                color: "#2ECC71"; font.pixelSize: 11; font.family: "Roboto"
+                text: "Y: " + posRow.fmt(contextManager.fixturesPosition.y)
+            }
+            Text
+            {
+                color: "#3498DB"; font.pixelSize: 11; font.family: "Roboto"
+                text: "Z: " + posRow.fmt(contextManager.fixturesPosition.z)
+            }
+        }
+    }
+
     // Camera preset buttons — bottom-left corner overlay
     Row
     {
+        id: cameraButtons
         z: 5
         anchors.bottom: parent.bottom
         anchors.left: parent.left

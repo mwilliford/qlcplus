@@ -321,6 +321,18 @@ Rectangle
                 width: twoDView.contentWidth
                 height: twoDView.contentHeight
                 color: "transparent"
+
+                // Live drag offset in mm (for position status bar)
+                property real dragXmm: {
+                    if (!dragMouseArea.drag.active) return 0
+                    var units = View2D.gridUnits === MonitorProperties.Meters ? 1000.0 : 304.8
+                    return ((contentsDragArea.x + twoDContents.x) * units) / View2D.cellPixels
+                }
+                property real dragYmm: {
+                    if (!dragMouseArea.drag.active) return 0
+                    var units = View2D.gridUnits === MonitorProperties.Meters ? 1000.0 : 304.8
+                    return ((contentsDragArea.y + twoDContents.y) * units) / View2D.cellPixels
+                }
                 /*
                 // enable for debug
                 color: "red"
@@ -427,31 +439,85 @@ Rectangle
         anchors.margins: 8
         spacing: 4
 
-        // Axis label for current view
+        // Fixture position + axis label for current view
         Rectangle
         {
-            width: axisLabel.width + 12
-            height: axisLabel.height + 6
+            width: posAxisCol.width + 12
+            height: posAxisCol.height + 6
             radius: 4
             color: "#CC333333"
             visible: View2D.pointOfView > 0
 
-            Text
+            Column
             {
-                id: axisLabel
+                id: posAxisCol
                 anchors.centerIn: parent
-                text: {
-                    switch (View2D.pointOfView) {
-                        case 1: return "\u2194 Left/Right  \u2195 Front/Back"
-                        case 2: return "\u2194 Left/Right  \u2195 Up/Down"
-                        case 3: return "\u2190 Front  \u2192 Back  \u2195 Up/Down"
-                        case 4: return "\u2190 Back  \u2192 Front  \u2195 Up/Down"
-                        default: return ""
+                spacing: 2
+
+                // Position readout — only the 2 visible axes
+                Row
+                {
+                    spacing: 12
+                    visible: contextManager && contextManager.selectedFixturesCount > 0
+
+                    function fmt(mm)
+                    {
+                        if (View2D.gridUnits === MonitorProperties.Feet)
+                            return (mm / 304.8).toFixed(2) + " ft"
+                        return (mm / 1000.0).toFixed(2) + " m"
+                    }
+
+                    Text
+                    {
+                        font.pixelSize: 10; font.family: "Roboto"
+                        color: "#E74C3C"
+                        text: {
+                            var p = contextManager.fixturesPosition
+                            var dx = contentsDragArea.dragXmm
+                            switch (View2D.pointOfView) {
+                                case 1: return "\u2194 X: " + parent.fmt(p.x + dx)
+                                case 2: return "\u2194 X: " + parent.fmt(p.x + dx)
+                                case 3: return "\u2194 Z: " + parent.fmt(p.z - dx)
+                                case 4: return "\u2194 Z: " + parent.fmt(p.z + dx)
+                                default: return ""
+                            }
+                        }
+                    }
+                    Text
+                    {
+                        font.pixelSize: 10; font.family: "Roboto"
+                        color: "#3498DB"
+                        text: {
+                            var p = contextManager.fixturesPosition
+                            var dy = contentsDragArea.dragYmm
+                            switch (View2D.pointOfView) {
+                                case 1: return "\u2195 Z: " + parent.fmt(p.z + dy)
+                                case 2: return "\u2195 Y: " + parent.fmt(p.y - dy)
+                                case 3: return "\u2195 Y: " + parent.fmt(p.y - dy)
+                                case 4: return "\u2195 Y: " + parent.fmt(p.y - dy)
+                                default: return ""
+                            }
+                        }
                     }
                 }
-                color: "#AAA"
-                font.pixelSize: 9
-                font.family: "Roboto"
+
+                // Axis direction hint
+                Text
+                {
+                    id: axisLabel
+                    text: {
+                        switch (View2D.pointOfView) {
+                            case 1: return "\u2194 Left/Right  \u2195 Front/Back"
+                            case 2: return "\u2194 Left/Right  \u2195 Up/Down"
+                            case 3: return "\u2190 Front  \u2192 Back  \u2195 Up/Down"
+                            case 4: return "\u2190 Back  \u2192 Front  \u2195 Up/Down"
+                            default: return ""
+                        }
+                    }
+                    color: "#AAA"
+                    font.pixelSize: 9
+                    font.family: "Roboto"
+                }
             }
         }
 
