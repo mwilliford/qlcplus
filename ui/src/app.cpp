@@ -43,6 +43,7 @@
 #include "agentchatpanel.h"
 #include "vcserializer.h"
 #include "vccommandhandler.h"
+#include "monitorproperties.h"
 #include "notesdialog.h"
 #include "agentconnection.h"
 #include "aboutbox.h"
@@ -1659,8 +1660,10 @@ QFile::FileError App::saveXML(const QString& fileName, bool autosave)
     doc.writeTextElement(KXMLQLCCreatorAuthor, QLCFile::currentUserName());
     doc.writeEndElement(); // close KXMLQLCCreator
 
-    /* Strip agent context when saving as .qxw (upstream-compatible export) */
-    AgentContext::s_stripOnSave = fileName.endsWith(KExtWorkspace);
+    /* Strip agent context and save legacy coordinates when saving as .qxw */
+    bool isLegacyFormat = fileName.endsWith(KExtWorkspace);
+    AgentContext::s_stripOnSave = isLegacyFormat;
+    MonitorProperties::s_saveLegacyFormat = isLegacyFormat;
 
     /* Write engine components to the XML document */
     m_doc->saveXML(&doc);
@@ -1672,6 +1675,7 @@ QFile::FileError App::saveXML(const QString& fileName, bool autosave)
     SimpleDesk::instance()->saveXML(&doc);
 
     AgentContext::s_stripOnSave = false;
+    MonitorProperties::s_saveLegacyFormat = false;
 
     doc.writeEndElement(); // close KXMLQLCWorkspace
 

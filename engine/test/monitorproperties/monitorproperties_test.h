@@ -31,6 +31,13 @@ private slots:
     void fixtureItems();
     void genericItems();
     void reset();
+    void legacyToZUpConversion();
+    void zUpToLegacyConversion();
+    void doubleConversionFidelity();
+    void gridSizeSwap();
+    void loadLegacyXML();
+    void saveAsLegacyRoundTrip();
+    void saveAsZUpRoundTrip();
 };
 
 #endif

@@ -79,27 +79,36 @@ quint16 FixtureUtils::itemLinkedIndex(quint32 itemID)
 QPointF FixtureUtils::item2DPosition(const MonitorProperties *monProps, int pointOfView,
                                      QVector3D pos)
 {
+    // Z-up world: X = stage L/R (center=0), Y = upstage (center=0), Z = up (floor=0)
+    // Screen: positive coords, Y grows downward
     QPointF point(0, 0);
-    float gridUnits = monProps->gridUnits() == MonitorProperties::Meters ? 1000.0 : 304.8;
+    float gu = monProps->gridUnits() == MonitorProperties::Meters ? 1000.0 : 304.8;
+    float gridW = monProps->gridSize().x() * gu;  // width (X)
+    float gridD = monProps->gridSize().y() * gu;  // depth (Y)
+    float gridH = monProps->gridSize().z() * gu;  // height (Z)
 
     switch(pointOfView)
     {
         case MonitorProperties::TopView:
-            point.setX(pos.x());
-            point.setY(pos.z());
+            // XY plane from above: X → screen X, Y (upstage+) → screen up (negate)
+            point.setX(pos.x() + gridW / 2);
+            point.setY(gridD / 2 - pos.y());
         break;
         case MonitorProperties::Undefined:
         case MonitorProperties::FrontView:
-            point.setX(pos.x());
-            point.setY((monProps->gridSize().y() * gridUnits) - pos.y());
+            // XZ plane: X → screen X, Z (up+) → screen up (negate)
+            point.setX(pos.x() + gridW / 2);
+            point.setY(gridH - pos.z());
         break;
         case MonitorProperties::RightSideView:
-            point.setX((monProps->gridSize().x() * gridUnits) - pos.z());
-            point.setY((monProps->gridSize().y() * gridUnits) - pos.y());
+            // YZ plane from stage-right: Y (upstage) → screen X (reversed), Z (up) → screen Y (inverted)
+            point.setX(gridD / 2 - pos.y());
+            point.setY(gridH - pos.z());
         break;
         case MonitorProperties::LeftSideView:
-            point.setX(pos.z());
-            point.setY((monProps->gridSize().y() * gridUnits) - pos.y());
+            // YZ plane from stage-left: Y (upstage) → screen X, Z (up) → screen Y (inverted)
+            point.setX(pos.y() + gridD / 2);
+            point.setY(gridH - pos.z());
         break;
     }
 
@@ -109,17 +118,18 @@ QPointF FixtureUtils::item2DPosition(const MonitorProperties *monProps, int poin
 
 float FixtureUtils::item2DRotation(int pointOfView, QVector3D rot)
 {
+    // Z-up: XRot=pitch, YRot=yaw, ZRot=heading
     switch(pointOfView)
     {
         case MonitorProperties::TopView:
-            return rot.y();
+            return rot.z();       // heading (ZRot) from above
         break;
         case MonitorProperties::RightSideView:
         case MonitorProperties::LeftSideView:
-            return rot.x();
+            return rot.x();       // pitch (XRot) from side
         break;
         default:
-            return rot.z();
+            return rot.y();       // yaw (YRot) from front
         break;
     }
 
@@ -164,13 +174,15 @@ QSizeF FixtureUtils::item2DDimension(const QLCFixtureMode *fxMode, int pointOfVi
 
 void FixtureUtils::alignItem(QVector3D refPos, QVector3D &origPos, int pointOfView, int alignment)
 {
+    // Z-up: align in the plane visible for each POV
     switch(pointOfView)
     {
         case MonitorProperties::TopView:
         {
+            // XY plane
             switch(alignment)
             {
-                case Qt::AlignTop: origPos.setZ(refPos.z()); break;
+                case Qt::AlignTop: origPos.setY(refPos.y()); break;
                 case Qt::AlignLeft: origPos.setX(refPos.x()); break;
             }
         }
@@ -178,9 +190,10 @@ void FixtureUtils::alignItem(QVector3D refPos, QVector3D &origPos, int pointOfVi
         case MonitorProperties::Undefined:
         case MonitorProperties::FrontView:
         {
+            // XZ plane
             switch(alignment)
             {
-                case Qt::AlignTop: origPos.setY(refPos.y()); break;
+                case Qt::AlignTop: origPos.setZ(refPos.z()); break;
                 case Qt::AlignLeft: origPos.setX(refPos.x()); break;
             }
         }
@@ -188,10 +201,11 @@ void FixtureUtils::alignItem(QVector3D refPos, QVector3D &origPos, int pointOfVi
         case MonitorProperties::RightSideView:
         case MonitorProperties::LeftSideView:
         {
+            // YZ plane
             switch(alignment)
             {
-                case Qt::AlignTop: origPos.setY(refPos.y()); break;
-                case Qt::AlignLeft: origPos.setZ(refPos.z()); break;
+                case Qt::AlignTop: origPos.setZ(refPos.z()); break;
+                case Qt::AlignLeft: origPos.setY(refPos.y()); break;
             }
         }
         break;
@@ -200,20 +214,31 @@ void FixtureUtils::alignItem(QVector3D refPos, QVector3D &origPos, int pointOfVi
 
 QVector3D FixtureUtils::item3DPosition(const MonitorProperties *monProps, QPointF point, float thirdVal)
 {
-    QVector3D pos(point.x(), point.y(), thirdVal);
+    // Inverse of item2DPosition: screen coords → Z-up world coords
+    // thirdVal is the value for the axis not visible in the 2D view
+    float gu = monProps->gridUnits() == MonitorProperties::Meters ? 1000.0 : 304.8;
+    float gridW = monProps->gridSize().x() * gu;
+    float gridD = monProps->gridSize().y() * gu;
+    float gridH = monProps->gridSize().z() * gu;
+    QVector3D pos;
 
     switch(monProps->pointOfView())
     {
         case MonitorProperties::TopView:
-            pos = QVector3D(point.x(), thirdVal, point.y());
+            // screen X → world X, screen Y → world Y (inverted), thirdVal → world Z
+            pos = QVector3D(point.x() - gridW / 2, gridD / 2 - point.y(), thirdVal);
         break;
         case MonitorProperties::RightSideView:
-            pos = QVector3D(thirdVal, point.y(), monProps->gridSize().z() - point.x());
+            // screen X → world Y (inverted), screen Y → world Z (inverted), thirdVal → world X
+            pos = QVector3D(thirdVal, gridD / 2 - point.x(), gridH - point.y());
         break;
         case MonitorProperties::LeftSideView:
-            pos = QVector3D(thirdVal, point.y(), point.x());
+            // screen X → world Y, screen Y → world Z (inverted), thirdVal → world X
+            pos = QVector3D(thirdVal, point.x() - gridD / 2, gridH - point.y());
         break;
         default:
+            // FrontView: screen X → world X, screen Y → world Z (inverted), thirdVal → world Y
+            pos = QVector3D(point.x() - gridW / 2, thirdVal, gridH - point.y());
         break;
     }
 
@@ -232,17 +257,18 @@ QPointF FixtureUtils::available2DPosition(Doc *doc, int pointOfView, QRectF fxRe
     float gridUnits = monProps->gridUnits() == MonitorProperties::Meters ? 1000.0 : 304.8;
     QSize gridSize;
 
+    // Z-up grid: X=width, Y=depth, Z=height
     switch (pointOfView)
     {
         case MonitorProperties::TopView:
-            gridSize = QSize(monProps->gridSize().x(), monProps->gridSize().z());
+            gridSize = QSize(monProps->gridSize().x(), monProps->gridSize().y());  // XY plane
         break;
         case MonitorProperties::RightSideView:
         case MonitorProperties::LeftSideView:
-            gridSize = QSize(monProps->gridSize().z(), monProps->gridSize().y());
+            gridSize = QSize(monProps->gridSize().y(), monProps->gridSize().z());  // YZ plane
         break;
         default:
-            gridSize = QSize(monProps->gridSize().x(), monProps->gridSize().y());
+            gridSize = QSize(monProps->gridSize().x(), monProps->gridSize().z());  // XZ plane
         break;
     }
 

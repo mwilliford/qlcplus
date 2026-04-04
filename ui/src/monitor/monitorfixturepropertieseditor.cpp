@@ -83,16 +83,25 @@ MonitorFixturePropertiesEditor::~MonitorFixturePropertiesEditor()
 
 void MonitorFixturePropertiesEditor::slotSetPosition()
 {
-    QPointF itemPos(m_xPosSpin->value() * 1000, m_yPosSpin->value() * 1000);
-    m_fxItem->setPos(m_gfxView->realPositionToPixels(itemPos.x(), itemPos.y()));
-    m_fxItem->setRealPosition(itemPos);
-    m_props->setFixturePosition(m_fxItem->fixtureID(), 0, 0,QVector3D(itemPos.x(), itemPos.y(), 0));
+    // Spinbox values are in meters from the screen edge (positive screen coords)
+    QPointF screenPos(m_xPosSpin->value() * 1000, m_yPosSpin->value() * 1000);
+    m_fxItem->setPos(m_gfxView->realPositionToPixels(screenPos.x(), screenPos.y()));
+    m_fxItem->setRealPosition(screenPos);
+
+    // Convert screen mm to Z-up center-stage coords
+    float gu = (m_props->gridUnits() == MonitorProperties::Meters) ? 1000.0f : 304.8f;
+    float gridWmm = m_props->gridSize().x() * gu;
+    float gridDmm = m_props->gridSize().y() * gu;
+    float worldX = screenPos.x() - gridWmm / 2;
+    float worldY = -(screenPos.y() - gridDmm / 2);
+    m_props->setFixturePosition(m_fxItem->fixtureID(), 0, 0, QVector3D(worldX, worldY, 0));
 }
 
 void MonitorFixturePropertiesEditor::slotRotationChanged(int value)
 {
     m_fxItem->setRotation(value);
-    m_props->setFixtureRotation(m_fxItem->fixtureID(), 0, 0, QVector3D(0, value, 0));
+    // Z-up: heading is ZRot
+    m_props->setFixtureRotation(m_fxItem->fixtureID(), 0, 0, QVector3D(0, 0, value));
 }
 
 void MonitorFixturePropertiesEditor::slotGelColorClicked()
