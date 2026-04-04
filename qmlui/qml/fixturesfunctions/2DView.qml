@@ -43,27 +43,12 @@ Rectangle
 
     function setZoom(amount)
     {
+        // Proportional zoom: scale the step by current zoom level
+        // so zooming feels consistent at any level
         var currentScale = View2D.gridScale
-        if (amount < 0)
-        {
-            if (currentScale > 0.2)
-            {
-                if (currentScale <= 1)
-                    View2D.gridScale -= 0.1
-                else
-                    View2D.gridScale += amount
-            }
-        }
-        else
-        {
-            if (currentScale < 5)
-            {
-                if (currentScale < 1)
-                    View2D.gridScale += 0.1
-                else
-                    View2D.gridScale += amount
-            }
-        }
+        var delta = amount * currentScale
+        var newScale = Math.max(0.2, Math.min(5.0, currentScale + delta))
+        View2D.gridScale = newScale
 
         twoDView.calculateCellSize()
     }
@@ -322,11 +307,10 @@ Rectangle
 
                 onWheel: (wheel)=>
                 {
-                    //console.log("Wheel delta: " + wheel.angleDelta.y)
-                    if (wheel.angleDelta.y > 0)
-                        setZoom(0.5)
-                    else
-                        setZoom(-0.5)
+                    // Proportional zoom: mouse wheel notch = 120, trackpad sends smaller values
+                    var amount = wheel.angleDelta.y / 600.0
+                    if (amount !== 0)
+                        setZoom(amount)
                 }
             }
 
