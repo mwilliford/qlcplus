@@ -458,19 +458,19 @@ void MainView3D::initialize3DProperties()
 
 QString MainView3D::makeShader(QString str) {
 
-   QString prefix = R"(#version 150
+   QString prefix = R"(#version 150 core
 #define GL3
 
 #ifdef GL3
-#define DECLARE_GBUFFER_OUTPUT out vec4 [3] gOutput;
+#define DECLARE_GBUFFER_OUTPUT out vec4 gOutput0; out vec4 gOutput1; out vec4 gOutput2;
 #define DECLARE_FRAG_COLOR out vec4 fragColor;
 #define VS_IN_ATTRIB in
 #define VS_OUT_ATTRIB out
 #define FS_IN_ATTRIB in
 #define MGL_FRAG_COLOR fragColor
-#define MGL_FRAG_DATA0 gOutput[0]
-#define MGL_FRAG_DATA1 gOutput[1]
-#define MGL_FRAG_DATA2 gOutput[2]
+#define MGL_FRAG_DATA0 gOutput0
+#define MGL_FRAG_DATA1 gOutput1
+#define MGL_FRAG_DATA2 gOutput2
 #define SAMPLE_TEX3D texture
 #define SAMPLE_TEX2D texture
 #else
@@ -661,8 +661,17 @@ void MainView3D::createFixtureItem(quint32 fxID, quint16 headIndex, quint16 link
         case QLCFixtureDef::LEDBarPixels:
             meshPath.clear();
         break;
+        case QLCFixtureDef::Laser:
+        case QLCFixtureDef::Effect:
+        case QLCFixtureDef::Fan:
+        case QLCFixtureDef::Flower:
+        case QLCFixtureDef::Other:
         default:
-            qDebug() << "I don't know what to do with you :'(";
+            qDebug() << "[MainView3D] No 3D mesh for fixture type" << fixture->type() << "- skipping";
+            meshPath.clear();
+            // No SceneLoader will fire onStatusChanged, so decrement count here
+            // to avoid blocking frame graph rebuild
+            m_createItemCount--;
         break;
     }
 

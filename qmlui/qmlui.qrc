@@ -190,6 +190,8 @@
     <file alias="StageRock.qml">qml/fixturesfunctions/3DView/StageRock.qml</file>
     <file alias="StageTheatre.qml">qml/fixturesfunctions/3DView/StageTheatre.qml</file>
 
+    <file alias="white1x1.png">qml/fixturesfunctions/3DView/white1x1.png</file>
+
     <file alias="downsample.frag">qml/fixturesfunctions/3DView/shaders/downsample.frag</file>
     <file alias="upsample.frag">qml/fixturesfunctions/3DView/shaders/upsample.frag</file>
     <file alias="grab_bright.frag">qml/fixturesfunctions/3DView/shaders/grab_bright.frag</file>

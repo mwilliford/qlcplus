@@ -29,11 +29,17 @@ TechniqueFilter
     property Texture2D shadowTex: null
     property bool useShadows: true
 
+    // macOS OpenGL driver requires all sampler uniforms to have valid textures bound
+    Texture2D {
+        id: fallbackTex
+        TextureImage { source: "qrc:/white1x1.png" }
+    }
+
     parameters: [
-        Parameter { name: "albedoTex"; value: gBuffer ? gBuffer.color : null },
-        Parameter { name: "normalTex"; value: gBuffer ? gBuffer.normal : null },
-        Parameter { name: "depthTex"; value: gBuffer ? gBuffer.depth : null },
-        Parameter { name: "shadowTex"; value: shadowTex },
+        Parameter { name: "albedoTex"; value: gBuffer ? gBuffer.color : fallbackTex },
+        Parameter { name: "normalTex"; value: gBuffer ? gBuffer.normal : fallbackTex },
+        Parameter { name: "depthTex"; value: gBuffer ? gBuffer.depth : fallbackTex },
+        Parameter { name: "shadowTex"; value: shadowTex ? shadowTex : fallbackTex },
         Parameter { name: "useShadows"; value: (useShadows ? 1 : 0) }
     ]
 

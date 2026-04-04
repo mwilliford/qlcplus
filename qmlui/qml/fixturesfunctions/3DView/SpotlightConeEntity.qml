@@ -34,6 +34,12 @@ Entity
     property ConeMesh spotlightConeMesh: null
     property alias fxEntity: mtl.fxItem
 
+    // macOS OpenGL driver requires all sampler uniforms to have valid textures bound
+    Texture2D {
+        id: fallbackTexture
+        TextureImage { source: "qrc:/white1x1.png" }
+    }
+
     Material
     {
         id: mtl
@@ -82,7 +88,7 @@ Entity
                         value: mtl.fxItem ? mtl.fxItem.lightViewProjectionScaleAndOffsetMatrix : Qt.matrix4x4() },
 
             Parameter { name: "smokeAmount"; value: View3D.smokeAmount },
-            Parameter { name: "goboTex"; value: mtl.fxItem ? mtl.fxItem.goboTexture : null },
+            Parameter { name: "goboTex"; value: mtl.fxItem ? mtl.fxItem.goboTexture : fallbackTexture },
             Parameter { name: "goboRotation";
                         value: {
                              var theta = mtl.fxItem ? mtl.fxItem.goboRotation : 0
