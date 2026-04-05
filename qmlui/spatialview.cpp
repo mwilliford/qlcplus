@@ -288,6 +288,7 @@ void SpatialView::rebuildEllipsoids()
     // Note: don't early-return on !hasSolverViz() — manual placements
     // have default uncertainty ellipsoids even without solver data.
 
+    int vizCount = 0;
     for (const QString &id : sm->fixtureIds())
     {
         SpatialModel::FixtureViz viz = sm->fixtureViz(id);
@@ -295,6 +296,7 @@ void SpatialView::rebuildEllipsoids()
         // Skip if no ellipsoid data (all axes zero)
         if (viz.ellipsoidAxes[0] <= 0.0 && viz.ellipsoidAxes[1] <= 0.0 && viz.ellipsoidAxes[2] <= 0.0)
             continue;
+        vizCount++;
 
         qlcrender::RenderEllipsoid ell;
         ell.fixtureId = id.toUInt();
@@ -335,5 +337,6 @@ void SpatialView::rebuildEllipsoids()
         ellipsoids.push_back(ell);
     }
 
+    qDebug() << "[SpatialView] rebuildEllipsoids:" << vizCount << "ellipsoids from" << sm->fixtureIds().size() << "fixtures, bgfxReady:" << m_bgfxReady;
     m_renderer->setCalibrationOverlays(ellipsoids);
 }
