@@ -3,8 +3,8 @@ set -e
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 
-# Parse version argument: v4 (default) or v5
-VERSION="${1:-v4}"
+# Parse version argument: v5 (default) or v4
+VERSION="${1:-v5}"
 case "$VERSION" in
     v4) QMLUI_FLAG="" ;;
     v5) QMLUI_FLAG="-Dqmlui=ON" ;;
