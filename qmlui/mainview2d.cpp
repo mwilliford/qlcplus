@@ -23,6 +23,7 @@
 #include <QQmlComponent>
 
 #include "doc.h"
+#include "spatialmodel.h"
 #include "tardis.h"
 #include "mainview2d.h"
 #include "fixtureutils.h"
@@ -211,7 +212,9 @@ void MainView2D::createFixtureItem(quint32 fxID, quint16 headIndex, quint16 link
         itemPos = FixtureUtils::item2DPosition(m_monProps, m_monProps->pointOfView(), pos);
         newFixtureItem->setProperty("rotation",
                                     FixtureUtils::item2DRotation(m_monProps->pointOfView(),
-                                                                 m_monProps->fixtureRotation(fxID, headIndex, linkedIndex)));
+                                                                 (headIndex == 0 && linkedIndex == 0)
+                                                                 ? m_doc->spatialModel()->fixtureRotationDeg(QString::number(fxID))
+                                                                 : m_monProps->fixtureRotation(fxID, headIndex, linkedIndex)));
     }
     else
     {
@@ -345,8 +348,13 @@ void MainView2D::slotRefreshView()
             {
                 quint16 headIndex = m_monProps->fixtureHeadIndex(subID);
                 quint16 linkedIndex = m_monProps->fixtureLinkedIndex(subID);
-                createFixtureItem(fixture->id(), headIndex, linkedIndex,
-                                  m_monProps->fixturePosition(fixture->id(), headIndex, linkedIndex), true);
+                // Read position from SpatialModel (base fixture) or MonitorProperties (multi-head)
+                QVector3D fxPos;
+                if (headIndex == 0 && linkedIndex == 0)
+                    fxPos = m_doc->spatialModel()->fixturePositionMm(QString::number(fixture->id()));
+                else
+                    fxPos = m_monProps->fixturePosition(fixture->id(), headIndex, linkedIndex);
+                createFixtureItem(fixture->id(), headIndex, linkedIndex, fxPos, true);
             }
         }
         else
