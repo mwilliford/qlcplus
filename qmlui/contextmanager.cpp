@@ -909,7 +909,8 @@ void ContextManager::setFixturesOffset(qreal x, qreal y)
         switch (m_monProps->pointOfView())
         {
             case MonitorProperties::TopView:
-                newPos = QVector3D(currPos.x() + x, currPos.y(), currPos.z() + y);
+                // Z-up: top view looks down Z, so X and Y are visible
+                newPos = QVector3D(currPos.x() + x, currPos.y() + y, currPos.z());
             break;
             case MonitorProperties::RightSideView:
                 newPos = QVector3D(currPos.x(),  currPos.y() + (m_monProps->gridSize().y() - y), currPos.z() - x);
