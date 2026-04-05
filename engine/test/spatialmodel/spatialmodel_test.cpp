@@ -313,12 +313,12 @@ void SpatialModel_Test::applySolverVisualization()
 
     sm.applySolverVisualization(msg);
 
-    // Transform updated
+    // Transform NOT updated by solver viz — user position is authoritative
     rigmath::RigidTransform t = sm.fixtureTransform("1");
-    QCOMPARE(t.pos[0], 1.0);
-    QCOMPARE(t.pos[1], 2.0);
-    QCOMPARE(t.pos[2], 3.0);
-    QCOMPARE(sm.fixtureSource("1"), SpatialModel::Solver);
+    QCOMPARE(t.pos[0], 0.0);  // still at identity (origin)
+    QCOMPARE(t.pos[1], 0.0);
+    QCOMPARE(t.pos[2], 0.0);
+    QCOMPARE(sm.fixtureSource("1"), SpatialModel::Manual);
 
     // Viz data
     QVERIFY(sm.hasSolverViz());
