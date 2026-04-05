@@ -125,6 +125,7 @@ void SpatialView::initBgfx()
 
         m_renderer->setCameraOrbit(m_cameraYaw, m_cameraPitch, m_cameraDistance);
         rebuildFixtures();
+        rebuildEllipsoids();
         m_frameTimer.start(16);  // ~60Hz
         qDebug() << "[SpatialView] bgfx initialized" << w << "x" << h;
     }
@@ -233,6 +234,7 @@ void SpatialView::onSpatialTransformChanged(const QString &id)
 void SpatialView::onSolverVizChanged()
 {
     rebuildFixtures();
+    rebuildEllipsoids();
 }
 
 void SpatialView::rebuildFixtures()
@@ -272,4 +274,68 @@ void SpatialView::rebuildFixtures()
     }
 
     m_renderer->setFixtures(fixtures);
+}
+
+void SpatialView::rebuildEllipsoids()
+{
+    if (!m_bgfxReady)
+        return;
+
+    SpatialModel *sm = m_doc->spatialModel();
+    std::vector<qlcrender::RenderEllipsoid> ellipsoids;
+
+    if (!sm->hasSolverViz())
+    {
+        m_renderer->setCalibrationOverlays(ellipsoids);
+        return;
+    }
+
+    for (const QString &id : sm->fixtureIds())
+    {
+        SpatialModel::FixtureViz viz = sm->fixtureViz(id);
+
+        // Skip if no ellipsoid data (all axes zero)
+        if (viz.ellipsoidAxes[0] <= 0.0 && viz.ellipsoidAxes[1] <= 0.0 && viz.ellipsoidAxes[2] <= 0.0)
+            continue;
+
+        qlcrender::RenderEllipsoid ell;
+        ell.fixtureId = id.toUInt();
+
+        // Center at fixture position
+        rigmath::RigidTransform t = sm->fixtureTransform(id);
+        ell.center[0] = float(t.pos[0]);
+        ell.center[1] = float(t.pos[1]);
+        ell.center[2] = float(t.pos[2]);
+
+        // Semi-axes: convert cm → meters
+        ell.semiAxes[0] = float(viz.ellipsoidAxes[0] / 100.0);
+        ell.semiAxes[1] = float(viz.ellipsoidAxes[1] / 100.0);
+        ell.semiAxes[2] = float(viz.ellipsoidAxes[2] / 100.0);
+
+        // Eigenvector rotation (row-major 3x3)
+        for (int i = 0; i < 9; i++)
+            ell.rotation[i] = float(viz.ellipsoidRot[i]);
+
+        // Color by quality
+        if (viz.quality == "good")
+        {
+            ell.color[0] = 0.2f; ell.color[1] = 0.8f; ell.color[2] = 0.2f; ell.color[3] = 0.3f;
+        }
+        else if (viz.quality == "moderate")
+        {
+            ell.color[0] = 0.9f; ell.color[1] = 0.8f; ell.color[2] = 0.1f; ell.color[3] = 0.3f;
+        }
+        else if (viz.quality == "poor")
+        {
+            ell.color[0] = 0.9f; ell.color[1] = 0.2f; ell.color[2] = 0.2f; ell.color[3] = 0.3f;
+        }
+        else  // unconstrained
+        {
+            ell.color[0] = 0.5f; ell.color[1] = 0.5f; ell.color[2] = 0.5f; ell.color[3] = 0.2f;
+        }
+
+        ellipsoids.push_back(ell);
+    }
+
+    m_renderer->setCalibrationOverlays(ellipsoids);
 }

@@ -56,6 +56,7 @@ private:
 
     void initBgfx();
     void rebuildFixtures();
+    void rebuildEllipsoids();
 
 private slots:
     void onFrameTimer();
