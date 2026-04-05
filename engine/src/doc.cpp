@@ -34,6 +34,7 @@
 #include "qlcfixturedef.h"
 
 #include "monitorproperties.h"
+#include "calibrationmodel.h"
 #include "audioplugincache.h"
 #include "rgbscriptscache.h"
 #include "channelsgroup.h"
@@ -67,6 +68,7 @@ Doc::Doc(QObject* parent, int universes)
     , m_masterTimer(new MasterTimer(this))
     , m_ioMap(new InputOutputMap(this, universes))
     , m_monitorProps(NULL)
+    , m_calibrationModel(NULL)
     , m_mode(Design)
     , m_kiosk(false)
     , m_loadStatus(Cleared)
@@ -1242,6 +1244,18 @@ MonitorProperties *Doc::monitorProperties()
         m_monitorProps = new MonitorProperties();
 
     return m_monitorProps;
+}
+
+/*****************************************************************************
+ * Calibration Model
+ *****************************************************************************/
+
+CalibrationModel *Doc::calibrationModel()
+{
+    if (m_calibrationModel == NULL)
+        m_calibrationModel = new CalibrationModel(this);
+
+    return m_calibrationModel;
 }
 
 /*****************************************************************************
