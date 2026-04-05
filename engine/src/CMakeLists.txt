@@ -2,6 +2,15 @@ set(module_name "qlcplusengine")
 
 include(../../variables.cmake)
 
+# rigmath — spatial math library for calibration and IK
+include(FetchContent)
+FetchContent_Declare(
+    rigmath
+    GIT_REPOSITORY https://github.com/mwilliford/rigmath-core.git
+    GIT_TAG        v0.4.1
+)
+FetchContent_MakeAvailable(rigmath)
+
 add_library(${module_name} SHARED
     ../../plugins/interfaces/qlcioplugin.cpp ../../plugins/interfaces/qlcioplugin.h
     ../../plugins/interfaces/utils.h
@@ -92,6 +101,7 @@ target_link_libraries(${module_name} PUBLIC
 )
 
 target_link_libraries(${module_name} PRIVATE qlcplusaudio)
+target_link_libraries(${module_name} PUBLIC rigmath)
 
 # Optional: secure credential storage via OS keychain
 find_package(Qt6Keychain QUIET)
