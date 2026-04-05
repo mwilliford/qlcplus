@@ -25,6 +25,7 @@
 #include <QMap>
 #include <QList>
 #include <QString>
+#include <QVector3D>
 #include <QXmlStreamReader>
 #include <QXmlStreamWriter>
 
@@ -66,6 +67,22 @@ public:
     QStringList fixtureIds() const;
     bool hasFixture(const QString &id) const;
     Source fixtureSource(const QString &id) const;
+
+    // --- Convenience accessors for 2D view (mm + Euler degrees) ---
+    // These convert from/to the internal rigmath format automatically.
+
+    /** Get position in mm (Z-up, center-stage origin). */
+    QVector3D fixturePositionMm(const QString &id) const;
+
+    /** Get rotation in Euler degrees (ZYX convention). */
+    QVector3D fixtureRotationDeg(const QString &id) const;
+
+    /** Set position from mm. Preserves existing rotation. */
+    void setFixturePositionMm(const QString &id, const QVector3D &posMm,
+                              Source source = Manual);
+
+    /** Set rotation from Euler degrees. Preserves existing position. */
+    void setFixtureRotationDeg(const QString &id, const QVector3D &rotDeg);
 
     // --- Named planes (future: replace gridSize as room model) ---
 

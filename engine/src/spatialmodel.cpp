@@ -114,6 +114,68 @@ SpatialModel::Source SpatialModel::fixtureSource(const QString &id) const
 }
 
 // ---------------------------------------------------------------------------
+// mm/degree convenience accessors (for 2D view compat)
+// ---------------------------------------------------------------------------
+
+QVector3D SpatialModel::fixturePositionMm(const QString &id) const
+{
+    rigmath::RigidTransform t = fixtureTransform(id);
+    return QVector3D(float(t.pos[0] * 1000.0),
+                     float(t.pos[1] * 1000.0),
+                     float(t.pos[2] * 1000.0));
+}
+
+QVector3D SpatialModel::fixtureRotationDeg(const QString &id) const
+{
+    rigmath::RigidTransform t = fixtureTransform(id);
+    double ax, ay, az;
+    t.get_axis_angle(ax, ay, az);
+
+    // Approximate Euler ZYX from axis-angle:
+    // For small rotations or single-axis, axis-angle ≈ Euler
+    // For full accuracy, decompose rotation matrix to ZYX Euler
+    const double radToDeg = 180.0 / M_PI;
+    return QVector3D(float(ax * radToDeg),
+                     float(ay * radToDeg),
+                     float(az * radToDeg));
+}
+
+void SpatialModel::setFixturePositionMm(const QString &id, const QVector3D &posMm,
+                                        Source source)
+{
+    // Preserve existing rotation, update position only
+    rigmath::RigidTransform existing = fixtureTransform(id);
+    existing.pos[0] = posMm.x() / 1000.0;
+    existing.pos[1] = posMm.y() / 1000.0;
+    existing.pos[2] = posMm.z() / 1000.0;
+    setFixtureTransform(id, existing, source);
+}
+
+void SpatialModel::setFixtureRotationDeg(const QString &id, const QVector3D &rotDeg)
+{
+    // Preserve existing position, update rotation only
+    rigmath::RigidTransform existing = fixtureTransform(id);
+
+    const double degToRad = M_PI / 180.0;
+    double rx = rotDeg.x() * degToRad;
+    double ry = rotDeg.y() * degToRad;
+    double rz = rotDeg.z() * degToRad;
+
+    // Compose Euler ZYX rotation matrices
+    rigmath::RigidTransform tx = rigmath::RigidTransform::from_axis_angle(rx, 0, 0);
+    rigmath::RigidTransform ty = rigmath::RigidTransform::from_axis_angle(0, ry, 0);
+    rigmath::RigidTransform tz = rigmath::RigidTransform::from_axis_angle(0, 0, rz);
+    rigmath::RigidTransform combined = tz.compose(ty.compose(tx));
+
+    // Keep position, replace rotation
+    combined.pos[0] = existing.pos[0];
+    combined.pos[1] = existing.pos[1];
+    combined.pos[2] = existing.pos[2];
+
+    setFixtureTransform(id, combined, fixtureSource(id));
+}
+
+// ---------------------------------------------------------------------------
 // Named planes
 // ---------------------------------------------------------------------------
 
