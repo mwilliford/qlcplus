@@ -42,32 +42,22 @@
 #include <cmath>
 #include "tardis.h"
 
-// Build a RigidTransform from MonitorProperties position (mm) + rotation (degrees)
-static rigmath::RigidTransform monPropsToRigidTransform(
-    const QVector3D &posMm, const QVector3D &rotDeg)
+// Sync SpatialModel position/rotation back to MonitorProperties for legacy 2D view.
+// SpatialModel is the source of truth; MonitorProperties is kept in sync for display.
+static void syncSpatialToMonProps(Doc *doc, quint32 fxID)
 {
-    const double degToRad = M_PI / 180.0;
+    SpatialModel *sm = doc->spatialModel();
+    MonitorProperties *mp = doc->monitorProperties();
+    QString id = QString::number(fxID);
 
-    // Position: mm → meters
-    double x = posMm.x() / 1000.0;
-    double y = posMm.y() / 1000.0;
-    double z = posMm.z() / 1000.0;
+    if (!sm->hasFixture(id))
+        return;
 
-    // Rotation: compose Euler ZYX (degrees → axis-angle via rotation matrices)
-    double rx = rotDeg.x() * degToRad;
-    double ry = rotDeg.y() * degToRad;
-    double rz = rotDeg.z() * degToRad;
+    QVector3D posMm = sm->fixturePositionMm(id);
+    QVector3D rotDeg = sm->fixtureRotationDeg(id);
 
-    rigmath::RigidTransform tx = rigmath::RigidTransform::from_axis_angle(rx, 0, 0);
-    rigmath::RigidTransform ty = rigmath::RigidTransform::from_axis_angle(0, ry, 0);
-    rigmath::RigidTransform tz = rigmath::RigidTransform::from_axis_angle(0, 0, rz);
-    rigmath::RigidTransform combined = tz.compose(ty.compose(tx));
-
-    combined.pos[0] = x;
-    combined.pos[1] = y;
-    combined.pos[2] = z;
-
-    return combined;
+    mp->setFixturePosition(fxID, 0, 0, posMm);
+    mp->setFixtureRotation(fxID, 0, 0, rotDeg);
 }
 #include "app.h"
 #include "doc.h"
@@ -903,19 +893,20 @@ void ContextManager::setFixturePosition(quint32 itemID, qreal x, qreal y, qreal 
     quint32 fxID = FixtureUtils::itemFixtureID(itemID);
     quint16 headIndex = FixtureUtils::itemHeadIndex(itemID);
     quint16 linkedIndex = FixtureUtils::itemLinkedIndex(itemID);
-    QVector3D currPos = m_monProps->fixturePosition(fxID, headIndex, linkedIndex);
+
+    // Read current from SpatialModel for Tardis undo
+    QString fxIdStr = QString::number(fxID);
+    QVector3D currPos = m_doc->spatialModel()->fixturePositionMm(fxIdStr);
     QVector3D newPos(x, y, z);
 
     Tardis::instance()->enqueueAction(Tardis::FixtureSetPosition, itemID, QVariant(currPos), QVariant(newPos));
-    m_monProps->setFixturePosition(fxID, headIndex, linkedIndex, newPos);
 
-    // Sync to SpatialModel with full transform (position + rotation)
+    // Write to SpatialModel FIRST (source of truth)
     if (headIndex == 0 && linkedIndex == 0)
-    {
-        QVector3D rot = m_monProps->fixtureRotation(fxID, 0, 0);
-        rigmath::RigidTransform t = monPropsToRigidTransform(newPos, rot);
-        m_doc->spatialModel()->setFixtureTransform(QString::number(fxID), t, SpatialModel::Manual);
-    }
+        m_doc->spatialModel()->setFixturePositionMm(fxIdStr, newPos);
+
+    // Sync back to MonitorProperties for legacy display
+    syncSpatialToMonProps(m_doc, fxID);
 
     if (m_2DView->isEnabled())
         m_2DView->updateFixturePosition(itemID, newPos);
@@ -930,18 +921,18 @@ void ContextManager::setFixturesOffset(qreal x, qreal y)
         quint32 fxID = FixtureUtils::itemFixtureID(itemID);
         quint16 headIndex = FixtureUtils::itemHeadIndex(itemID);
         quint16 linkedIndex = FixtureUtils::itemLinkedIndex(itemID);
-        QVector3D currPos = m_monProps->fixturePosition(fxID, headIndex, linkedIndex);
+        // Read current position from SpatialModel (in mm)
+        QString fxIdStr = QString::number(fxID);
+        QVector3D currPos = m_doc->spatialModel()->fixturePositionMm(fxIdStr);
         QVector3D newPos;
 
         switch (m_monProps->pointOfView())
         {
             case MonitorProperties::TopView:
-                // Z-up: looks down Z → screen X=world X, screen down=world +Y (upstage)
                 newPos = QVector3D(currPos.x() + x, currPos.y() - y, currPos.z());
             break;
             case MonitorProperties::FrontView:
             default:
-                // Z-up: looks from front (-Y) → screen X=world X, screen Y=world Z (up)
                 newPos = QVector3D(currPos.x() + x, currPos.y(), currPos.z() - y);
             break;
             case MonitorProperties::RightSideView:
@@ -953,15 +944,13 @@ void ContextManager::setFixturesOffset(qreal x, qreal y)
         }
 
         Tardis::instance()->enqueueAction(Tardis::FixtureSetPosition, itemID, QVariant(currPos), QVariant(newPos));
-        m_monProps->setFixturePosition(fxID, headIndex, linkedIndex, newPos);
 
-        // Sync to SpatialModel with full transform
+        // Write to SpatialModel FIRST
         if (headIndex == 0 && linkedIndex == 0)
-        {
-            QVector3D rot = m_monProps->fixtureRotation(fxID, 0, 0);
-            rigmath::RigidTransform t = monPropsToRigidTransform(newPos, rot);
-            m_doc->spatialModel()->setFixtureTransform(QString::number(fxID), t, SpatialModel::Manual);
-        }
+            m_doc->spatialModel()->setFixturePositionMm(fxIdStr, newPos);
+
+        // Sync back to MonitorProperties
+        syncSpatialToMonProps(m_doc, fxID);
 
         if (m_2DView->isEnabled())
             m_2DView->updateFixturePosition(itemID, newPos);
@@ -975,9 +964,7 @@ QVector3D ContextManager::fixturesPosition() const
     if (m_selectedFixtures.count() == 1)
     {
         quint32 fxID = FixtureUtils::itemFixtureID(m_selectedFixtures.first());
-        quint16 headIndex = FixtureUtils::itemHeadIndex(m_selectedFixtures.first());
-        quint16 linkedIndex = FixtureUtils::itemLinkedIndex(m_selectedFixtures.first());
-        return m_monProps->fixturePosition(fxID, headIndex, linkedIndex);
+        return m_doc->spatialModel()->fixturePositionMm(QString::number(fxID));
     }
 
     return QVector3D(0, 0, 0);
@@ -1422,13 +1409,7 @@ QVector3D ContextManager::fixturesRotation() const
     if (m_selectedFixtures.count() == 1)
     {
         quint32 fixtureID = FixtureUtils::itemFixtureID(m_selectedFixtures.first());
-        if (m_monProps->containsFixture(fixtureID) == true)
-        {
-            quint16 headIndex = FixtureUtils::itemHeadIndex(m_selectedFixtures.first());
-            quint16 linkedIndex = FixtureUtils::itemLinkedIndex(m_selectedFixtures.first());
-
-            return m_monProps->fixtureRotation(fixtureID, headIndex, linkedIndex);
-        }
+        return m_doc->spatialModel()->fixtureRotationDeg(QString::number(fixtureID));
     }
 
     return QVector3D(0, 0, 0);
@@ -1442,20 +1423,17 @@ void ContextManager::setFixturesRotation(QVector3D degrees)
         quint32 fxID = FixtureUtils::itemFixtureID(itemID);
         quint16 headIndex = FixtureUtils::itemHeadIndex(itemID);
         quint16 linkedIndex = FixtureUtils::itemLinkedIndex(itemID);
-        QVector3D rotation = m_monProps->fixtureRotation(fxID, headIndex, linkedIndex);
+        QString fxIdStr = QString::number(fxID);
+        QVector3D rotation = m_doc->spatialModel()->fixtureRotationDeg(fxIdStr);
 
         Tardis::instance()->enqueueAction(Tardis::FixtureSetRotation, itemID, QVariant(rotation), QVariant(degrees));
 
-        // absolute rotation change
-        m_monProps->setFixtureRotation(fxID, headIndex, linkedIndex, degrees);
-
-        // Sync to SpatialModel with updated rotation
+        // Write to SpatialModel FIRST
         if (headIndex == 0 && linkedIndex == 0)
-        {
-            QVector3D pos = m_monProps->fixturePosition(fxID, 0, 0);
-            rigmath::RigidTransform t = monPropsToRigidTransform(pos, degrees);
-            m_doc->spatialModel()->setFixtureTransform(QString::number(fxID), t, SpatialModel::Manual);
-        }
+            m_doc->spatialModel()->setFixtureRotationDeg(fxIdStr, degrees);
+
+        // Sync back to MonitorProperties
+        syncSpatialToMonProps(m_doc, fxID);
 
         if (m_2DView->isEnabled())
             m_2DView->updateFixtureRotation(itemID, degrees);
