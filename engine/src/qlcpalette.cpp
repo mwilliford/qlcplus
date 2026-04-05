@@ -23,6 +23,7 @@
 #include <QDebug>
 
 #include "monitorproperties.h"
+#include "spatialmodel.h"
 #include "qlcpalette.h"
 #include "qlcchannel.h"
 #include "scenevalue.h"
@@ -276,7 +277,7 @@ QList<SceneValue> QLCPalette::valuesFromFixtures(Doc *doc, QList<quint32> fixtur
     int intFanValue = fanningValue().toInt();
     FanningType fType = fanningType();
     FanningLayout fLayout = fanningLayout();
-    MonitorProperties *mProps = doc->monitorProperties();
+    SpatialModel *sm = doc->spatialModel();
     qreal centerCoord = 0.0;
     qreal maxCenterDistance = 0.0;
 
@@ -288,7 +289,7 @@ QList<SceneValue> QLCPalette::valuesFromFixtures(Doc *doc, QList<quint32> fixtur
 
         foreach (quint32 id, fixtures)
         {
-            QVector3D pos = mProps->fixturePosition(id, 0, 0);
+            QVector3D pos = sm->fixturePositionMm(QString::number(id));
             qreal coord = 0.0;
 
             switch (fLayout)
@@ -318,9 +319,9 @@ QList<SceneValue> QLCPalette::valuesFromFixtures(Doc *doc, QList<quint32> fixtur
 
     // sort the fixtures list based on selected layout
     std::sort(fixtures.begin(), fixtures.end(),
-        [fLayout, mProps, centerCoord](quint32 a, quint32 b) {
-            QVector3D posA = mProps->fixturePosition(a, 0, 0);
-            QVector3D posB = mProps->fixturePosition(b, 0, 0);
+        [fLayout, sm, centerCoord](quint32 a, quint32 b) {
+            QVector3D posA = sm->fixturePositionMm(QString::number(a));
+            QVector3D posB = sm->fixturePositionMm(QString::number(b));
 
             switch(fLayout)
             {
@@ -363,7 +364,7 @@ QList<SceneValue> QLCPalette::valuesFromFixtures(Doc *doc, QList<quint32> fixtur
 
         if (fLayout == XCentered || fLayout == YCentered || fLayout == ZCentered)
         {
-            QVector3D pos = mProps->fixturePosition(id, 0, 0);
+            QVector3D pos = sm->fixturePositionMm(QString::number(id));
             qreal coord = 0.0;
 
             switch (fLayout)
