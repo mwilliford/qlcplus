@@ -35,6 +35,7 @@
 
 #include "monitorproperties.h"
 #include "calibrationmodel.h"
+#include "spatialmodel.h"
 #include "audioplugincache.h"
 #include "rgbscriptscache.h"
 #include "channelsgroup.h"
@@ -69,6 +70,7 @@ Doc::Doc(QObject* parent, int universes)
     , m_ioMap(new InputOutputMap(this, universes))
     , m_monitorProps(NULL)
     , m_calibrationModel(NULL)
+    , m_spatialModel(NULL)
     , m_mode(Design)
     , m_kiosk(false)
     , m_loadStatus(Cleared)
@@ -1259,6 +1261,18 @@ CalibrationModel *Doc::calibrationModel()
 }
 
 /*****************************************************************************
+ * Spatial Model
+ *****************************************************************************/
+
+SpatialModel *Doc::spatialModel()
+{
+    if (m_spatialModel == NULL)
+        m_spatialModel = new SpatialModel(this);
+
+    return m_spatialModel;
+}
+
+/*****************************************************************************
  * Load & Save
  *****************************************************************************/
 
@@ -1320,6 +1334,10 @@ bool Doc::loadXML(QXmlStreamReader &doc, bool loadIO)
         {
             monitorProperties()->loadXML(doc, this);
         }
+        else if (doc.name() == QLatin1String("SpatialModel"))
+        {
+            spatialModel()->loadXML(doc);
+        }
         else if (doc.name() == KXMLAgentContext)
         {
             m_agentContext.loadXML(doc);
@@ -1332,6 +1350,13 @@ bool Doc::loadXML(QXmlStreamReader &doc, bool loadIO)
     }
 
     postLoad();
+
+    // Migrate fixture positions from MonitorProperties if no <SpatialModel> was found
+    if (m_spatialModel == NULL || spatialModel()->fixtureIds().isEmpty())
+    {
+        if (m_monitorProps != NULL && !m_monitorProps->fixtureItemsID().isEmpty())
+            spatialModel()->migrateFromMonitorProperties(m_monitorProps);
+    }
 
     m_loadStatus = Loaded;
     emit loaded();
@@ -1456,6 +1481,9 @@ bool Doc::saveXML(QXmlStreamWriter *doc) const
 
     if (m_monitorProps != NULL)
         m_monitorProps->saveXML(doc, this);
+
+    if (m_spatialModel != NULL)
+        m_spatialModel->saveXML(*doc);
 
     /* End the <Engine> tag */
     doc->writeEndElement();

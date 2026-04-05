@@ -78,6 +78,9 @@ public:
     Q_INVOKABLE void detachContext(QString name);
     Q_INVOKABLE void reattachContext(QString name);
 
+    /** Show the bgfx-based spatial 3D view (floating window). */
+    Q_INVOKABLE void showSpatialView();
+
     /** Switch to the context with the given $name.
      *  Supports both QLC+ 4 and QLC+ 5 context names */
     void switchToContext(QString name);

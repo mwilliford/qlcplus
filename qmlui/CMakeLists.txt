@@ -44,6 +44,8 @@ set(SRC_FILES
     main.cpp
     mainview2d.cpp mainview2d.h
     mainview3d.cpp mainview3d.h
+    spatialview.cpp spatialview.h
+    $<$<PLATFORM_ID:Darwin>:spatialview_macos.mm>
     mainviewdmx.cpp mainviewdmx.h
     modelselector.cpp modelselector.h
     palettemanager.cpp palettemanager.h
@@ -210,6 +212,7 @@ target_link_libraries(${module_name} PRIVATE
     Qt${QT_MAJOR_VERSION}::WebSockets
     qlcplusengine
     qlcpluswebaccess
+    qlcplusrender
 )
 
 if(ANDROID)

@@ -18,6 +18,7 @@ add_library(${module_name} SHARED
     agentconnection.cpp agentconnection.h
     agentcontext.cpp agentcontext.h
     calibrationmodel.cpp calibrationmodel.h
+    spatialmodel.cpp spatialmodel.h
     agentcredentialstore.cpp agentcredentialstore.h
     agentsession.cpp agentsession.h
     avolitesd4parser.cpp avolitesd4parser.h
