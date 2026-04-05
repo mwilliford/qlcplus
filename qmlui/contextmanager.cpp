@@ -909,17 +909,21 @@ void ContextManager::setFixturesOffset(qreal x, qreal y)
         switch (m_monProps->pointOfView())
         {
             case MonitorProperties::TopView:
-                // Z-up: top view looks down Z, so X and Y are visible
+                // Z-up: looks down Z → screen X=world X, screen Y=world Y
                 newPos = QVector3D(currPos.x() + x, currPos.y() + y, currPos.z());
             break;
+            case MonitorProperties::FrontView:
+            default:
+                // Z-up: looks from front (-Y) → screen X=world X, screen Y=world Z (up)
+                newPos = QVector3D(currPos.x() + x, currPos.y(), currPos.z() - y);
+            break;
             case MonitorProperties::RightSideView:
-                newPos = QVector3D(currPos.x(),  currPos.y() + (m_monProps->gridSize().y() - y), currPos.z() - x);
+                // Z-up: looks from right (-X) → screen X=world Y, screen Y=world Z (up)
+                newPos = QVector3D(currPos.x(), currPos.y() + x, currPos.z() - y);
             break;
             case MonitorProperties::LeftSideView:
-                newPos = QVector3D(currPos.x(), currPos.y() + (m_monProps->gridSize().y() - y), currPos.z() + x);
-            break;
-            default:
-                newPos = QVector3D(currPos.x() + x, currPos.y() - y, currPos.z());
+                // Z-up: looks from left (+X) → screen X=world -Y, screen Y=world Z (up)
+                newPos = QVector3D(currPos.x(), currPos.y() - x, currPos.z() - y);
             break;
         }
 
