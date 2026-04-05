@@ -76,7 +76,9 @@ private:
     bool m_orbiting = false;
     bool m_panning = false;
 
-    float m_cameraYaw = 45.0f;
+    // Default: front-of-house view (audience looking at stage)
+    // +Y (upstage) goes away, +X (stage left) goes right
+    float m_cameraYaw = -90.0f;
     float m_cameraPitch = 30.0f;
     float m_cameraDistance = 10.0f;
 };
