@@ -1,13 +1,13 @@
 #!/bin/bash
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 
-# Parse version argument: v5 (default) or v4
-VERSION="${1:-v5}"
-shift 2>/dev/null || true
-case "$VERSION" in
-    v4|v5) ;;
-    *)  echo "Usage: $0 [v4|v5] [-- qlcplus args...]"; exit 1 ;;
-esac
+# Parse arguments: [v4|v5] [filename.qxw ...]
+# If first arg is a file, default to v5 and pass it through
+VERSION="v5"
+if [ "${1:-}" = "v4" ] || [ "${1:-}" = "v5" ]; then
+    VERSION="$1"
+    shift
+fi
 
 BUILD_DIR="$SCRIPT_DIR/build-$VERSION"
 
