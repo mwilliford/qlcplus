@@ -66,9 +66,11 @@ bool BgfxRenderer::init(void* nativeWindowHandle, uint32_t width, uint32_t heigh
     // Initialize vertex layouts
     PosColorVertex::init();
     PosVertex::init();
+    PosNormalVertex::init();
 
-    // Create cube mesh
+    // Create meshes
     createCubeMesh(m_cubeVbh, m_cubeIbh);
+    createSphereMesh(m_sphereVbh, m_sphereIbh, 16);
 
     // Load embedded shaders and create program
     bgfx::ShaderHandle vsh = loadEmbeddedShader(vs_basic_metal_bin, sizeof(vs_basic_metal_bin));
@@ -109,6 +111,7 @@ void BgfxRenderer::shutdown()
 
     m_meshLoader.shutdown();
     destroyCubeMesh(m_cubeVbh, m_cubeIbh);
+    destroySphereMesh(m_sphereVbh, m_sphereIbh);
 
     if (bgfx::isValid(m_colorProgram))
         bgfx::destroy(m_colorProgram);
@@ -162,6 +165,7 @@ void BgfxRenderer::frame()
 
     renderGrid();
     renderFixtures();
+    renderEllipsoids();
 
     bgfx::frame();
 }
@@ -297,6 +301,61 @@ void BgfxRenderer::renderFixtures()
             bgfx::submit(0, prog);
         else
             bgfx::discard();
+    }
+}
+
+void BgfxRenderer::setCalibrationOverlays(const std::vector<RenderEllipsoid>& ellipsoids)
+{
+    m_ellipsoids = ellipsoids;
+}
+
+void BgfxRenderer::renderEllipsoids()
+{
+    if (m_ellipsoids.empty() || !bgfx::isValid(m_sphereVbh) || !bgfx::isValid(m_litProgram))
+        return;
+
+    for (const auto& ell : m_ellipsoids)
+    {
+        // Build transform: T(center) * R(eigenvectors) * S(semiAxes)
+        // Semi-axes are in meters (already converted from cm in SpatialView)
+
+        // Scale matrix
+        float scale[16];
+        bx::mtxIdentity(scale);
+        scale[0]  = ell.semiAxes[0];
+        scale[5]  = ell.semiAxes[1];
+        scale[10] = ell.semiAxes[2];
+
+        // Rotation matrix from eigenvectors (row-major 3x3 → column-major 4x4)
+        float rot[16];
+        bx::mtxIdentity(rot);
+        rot[0]  = ell.rotation[0]; rot[1]  = ell.rotation[3]; rot[2]  = ell.rotation[6];
+        rot[4]  = ell.rotation[1]; rot[5]  = ell.rotation[4]; rot[6]  = ell.rotation[7];
+        rot[8]  = ell.rotation[2]; rot[9]  = ell.rotation[5]; rot[10] = ell.rotation[8];
+
+        // Translation
+        float trans[16];
+        bx::mtxTranslate(trans, ell.center[0], ell.center[1], ell.center[2]);
+
+        // Compose: T * R * S
+        float rs[16], model[16];
+        bx::mtxMul(rs, scale, rot);
+        bx::mtxMul(model, rs, trans);
+
+        bgfx::setTransform(model);
+        bgfx::setVertexBuffer(0, m_sphereVbh);
+        bgfx::setIndexBuffer(m_sphereIbh);
+        bgfx::setUniform(m_u_color, ell.color);
+
+        // Alpha blend: src_alpha, inv_src_alpha. Depth test on, depth write off.
+        bgfx::setState(
+            BGFX_STATE_WRITE_RGB | BGFX_STATE_WRITE_A
+            | BGFX_STATE_DEPTH_TEST_LESS
+            | BGFX_STATE_BLEND_ALPHA
+            | BGFX_STATE_CULL_CW  // back-face culling for sphere
+        );
+
+        bgfx::submit(0, m_litProgram);
     }
 }
 

@@ -68,4 +68,91 @@ void destroyCubeMesh(bgfx::VertexBufferHandle& vbh, bgfx::IndexBufferHandle& ibh
     ibh = BGFX_INVALID_HANDLE;
 }
 
+// ---------------------------------------------------------------------------
+// Unit sphere (UV sphere with normals)
+// ---------------------------------------------------------------------------
+
+bgfx::VertexLayout PosNormalVertex::layout;
+
+void PosNormalVertex::init()
+{
+    layout
+        .begin()
+        .add(bgfx::Attrib::Position, 3, bgfx::AttribType::Float)
+        .add(bgfx::Attrib::Normal, 3, bgfx::AttribType::Float)
+        .end();
+}
+
+void createSphereMesh(bgfx::VertexBufferHandle& vbh, bgfx::IndexBufferHandle& ibh,
+                      int subdivisions)
+{
+    const int stacks = subdivisions;
+    const int slices = subdivisions * 2;
+    const float pi = 3.14159265358979323846f;
+
+    // Generate vertices
+    std::vector<PosNormalVertex> vertices;
+    vertices.reserve((stacks + 1) * (slices + 1));
+
+    for (int i = 0; i <= stacks; i++)
+    {
+        float phi = pi * float(i) / float(stacks);
+        float sinPhi = sinf(phi);
+        float cosPhi = cosf(phi);
+
+        for (int j = 0; j <= slices; j++)
+        {
+            float theta = 2.0f * pi * float(j) / float(slices);
+            float sinTheta = sinf(theta);
+            float cosTheta = cosf(theta);
+
+            float x = sinPhi * cosTheta;
+            float y = sinPhi * sinTheta;
+            float z = cosPhi;
+
+            vertices.push_back({x, y, z, x, y, z});  // position = normal for unit sphere
+        }
+    }
+
+    // Generate indices
+    std::vector<uint16_t> indices;
+    indices.reserve(stacks * slices * 6);
+
+    for (int i = 0; i < stacks; i++)
+    {
+        for (int j = 0; j < slices; j++)
+        {
+            uint16_t a = uint16_t(i * (slices + 1) + j);
+            uint16_t b = uint16_t(a + slices + 1);
+
+            indices.push_back(a);
+            indices.push_back(b);
+            indices.push_back(uint16_t(a + 1));
+
+            indices.push_back(uint16_t(a + 1));
+            indices.push_back(b);
+            indices.push_back(uint16_t(b + 1));
+        }
+    }
+
+    vbh = bgfx::createVertexBuffer(
+        bgfx::copy(vertices.data(), uint32_t(vertices.size() * sizeof(PosNormalVertex))),
+        PosNormalVertex::layout
+    );
+
+    ibh = bgfx::createIndexBuffer(
+        bgfx::copy(indices.data(), uint32_t(indices.size() * sizeof(uint16_t)))
+    );
+}
+
+void destroySphereMesh(bgfx::VertexBufferHandle& vbh, bgfx::IndexBufferHandle& ibh)
+{
+    if (bgfx::isValid(vbh))
+        bgfx::destroy(vbh);
+    if (bgfx::isValid(ibh))
+        bgfx::destroy(ibh);
+    vbh = BGFX_INVALID_HANDLE;
+    ibh = BGFX_INVALID_HANDLE;
+}
+
 } // namespace qlcrender

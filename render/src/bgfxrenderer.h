@@ -33,6 +33,7 @@ public:
 
     // --- Scene data ---
     void setFixtures(const std::vector<RenderFixture>& fixtures) override;
+    void setCalibrationOverlays(const std::vector<RenderEllipsoid>& ellipsoids) override;
 
     OrbitCamera& camera() { return m_camera; }
 
@@ -49,13 +50,22 @@ private:
     OrbitCamera m_camera;
     std::vector<RenderFixture> m_fixtures;
 
+    void renderEllipsoids();
+
     // Cube mesh (fallback for fixtures without a 3D model)
     bgfx::VertexBufferHandle m_cubeVbh = BGFX_INVALID_HANDLE;
     bgfx::IndexBufferHandle m_cubeIbh = BGFX_INVALID_HANDLE;
 
+    // Sphere mesh (for ellipsoid overlays)
+    bgfx::VertexBufferHandle m_sphereVbh = BGFX_INVALID_HANDLE;
+    bgfx::IndexBufferHandle m_sphereIbh = BGFX_INVALID_HANDLE;
+
     // Fixture mesh loader + cache
     MeshLoader m_meshLoader;
     std::string m_meshBasePath;
+
+    // Calibration overlays
+    std::vector<RenderEllipsoid> m_ellipsoids;
 
     // Shader programs
     bgfx::ProgramHandle m_colorProgram = BGFX_INVALID_HANDLE;  // vertex-color (grid/lines)
