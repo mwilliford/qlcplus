@@ -59,6 +59,21 @@ static void syncSpatialToMonProps(Doc *doc, quint32 fxID)
     mp->setFixturePosition(fxID, 0, 0, posMm);
     mp->setFixtureRotation(fxID, 0, 0, rotDeg);
 }
+
+// Read fixture position: SpatialModel for base fixtures, MonitorProperties for sub-items
+static QVector3D readFixturePositionMm(Doc *doc, quint32 fxID, quint16 head, quint16 linked)
+{
+    if (head == 0 && linked == 0)
+        return doc->spatialModel()->fixturePositionMm(QString::number(fxID));
+    return doc->monitorProperties()->fixturePosition(fxID, head, linked);
+}
+
+static QVector3D readFixtureRotationDeg(Doc *doc, quint32 fxID, quint16 head, quint16 linked)
+{
+    if (head == 0 && linked == 0)
+        return doc->spatialModel()->fixtureRotationDeg(QString::number(fxID));
+    return doc->monitorProperties()->fixtureRotation(fxID, head, linked);
+}
 #include "app.h"
 #include "doc.h"
 
@@ -311,7 +326,7 @@ void ContextManager::setEnvironmentSize(QVector3D environmentSize)
                 quint16 headIndex = m_monProps->fixtureHeadIndex(subID);
                 quint16 linkedIndex = m_monProps->fixtureLinkedIndex(subID);
                 quint32 itemID = FixtureUtils::fixtureItemID(fixture->id(), headIndex, linkedIndex);
-                m_3DView->updateFixturePosition(itemID, m_monProps->fixturePosition(fixture->id(), headIndex, linkedIndex));
+                m_3DView->updateFixturePosition(itemID, readFixturePositionMm(m_doc, fixture->id(), headIndex, linkedIndex));
             }
         }
     }
@@ -981,7 +996,7 @@ void ContextManager::setFixturesPosition(QVector3D position)
         quint32 fxID = FixtureUtils::itemFixtureID(itemID);
         quint16 headIndex = FixtureUtils::itemHeadIndex(itemID);
         quint16 linkedIndex = FixtureUtils::itemLinkedIndex(itemID);
-        QVector3D currPos = m_monProps->fixturePosition(fxID, headIndex, linkedIndex);
+        QVector3D currPos = readFixturePositionMm(m_doc, fxID, headIndex, linkedIndex);
 
         Tardis::instance()->enqueueAction(Tardis::FixtureSetPosition, itemID, QVariant(currPos), QVariant(position));
 
@@ -998,7 +1013,7 @@ void ContextManager::setFixturesPosition(QVector3D position)
             quint32 fxID = FixtureUtils::itemFixtureID(itemID);
             quint16 headIndex = FixtureUtils::itemHeadIndex(itemID);
             quint16 linkedIndex = FixtureUtils::itemLinkedIndex(itemID);
-            QVector3D currPos = m_monProps->fixturePosition(fxID, headIndex, linkedIndex);
+            QVector3D currPos = readFixturePositionMm(m_doc, fxID, headIndex, linkedIndex);
             QVector3D newPos = currPos + position;
             Tardis::instance()->enqueueAction(Tardis::FixtureSetPosition, itemID, QVariant(currPos), QVariant(newPos));
 
@@ -1057,14 +1072,14 @@ void ContextManager::setFixturesAlignment(int alignment)
     quint32 firstFxID = FixtureUtils::itemFixtureID(m_selectedFixtures.first());
     quint16 firstHeadIndex = FixtureUtils::itemHeadIndex(m_selectedFixtures.first());
     quint16 firstLinkedIndex = FixtureUtils::itemLinkedIndex(m_selectedFixtures.first());
-    QVector3D firstPos = m_monProps->fixturePosition(firstFxID, firstHeadIndex, firstLinkedIndex);
+    QVector3D firstPos = readFixturePositionMm(m_doc, firstFxID, firstHeadIndex, firstLinkedIndex);
 
     for (quint32 &itemID : m_selectedFixtures)
     {
         quint32 fxID = FixtureUtils::itemFixtureID(itemID);
         quint16 headIndex = FixtureUtils::itemHeadIndex(itemID);
         quint16 linkedIndex = FixtureUtils::itemLinkedIndex(itemID);
-        QVector3D fxPos = m_monProps->fixturePosition(fxID, headIndex, linkedIndex);
+        QVector3D fxPos = readFixturePositionMm(m_doc, fxID, headIndex, linkedIndex);
 
         FixtureUtils::alignItem(firstPos, fxPos, m_monProps->pointOfView(), alignment);
         m_monProps->setFixturePosition(fxID, headIndex, linkedIndex, fxPos);
@@ -1100,7 +1115,7 @@ void ContextManager::setFixturesDistribution(int direction)
         quint16 linkedIndex = FixtureUtils::itemLinkedIndex(itemID);
         Fixture *fixture = m_doc->fixture(fxID);
         QPointF fxPos = FixtureUtils::item2DPosition(m_monProps, m_monProps->pointOfView(),
-                                                     m_monProps->fixturePosition(fxID, headIndex, linkedIndex));
+                                                     readFixturePositionMm(m_doc, fxID, headIndex, linkedIndex));
         QSizeF fxRect = FixtureUtils::item2DDimension(fixture->fixtureMode(), m_monProps->pointOfView());
         qreal pos = direction == Qt::Horizontal ? fxPos.x() : fxPos.y();
         qreal size = direction == Qt::Horizontal ? fxRect.width() : fxRect.height();
@@ -1148,7 +1163,7 @@ void ContextManager::setFixturesDistribution(int direction)
         Fixture *fixture = m_doc->fixture(fxID);
         QSizeF fxRect = FixtureUtils::item2DDimension(fixture->fixtureMode(), m_monProps->pointOfView());
         qreal size = direction == Qt::Horizontal ? fxRect.width() : fxRect.height();
-        QVector3D fxPos = m_monProps->fixturePosition(fxID, headIndex, linkedIndex);
+        QVector3D fxPos = readFixturePositionMm(m_doc, fxID, headIndex, linkedIndex);
 
         // the first and last fixture don't need any adjustment
         if (idx > 0 && idx < sortedIDs.count() - 1)
@@ -1235,7 +1250,7 @@ void ContextManager::setLinkedFixture(quint32 itemID)
                 newIndex = lIdx + 1;
         }
         // 2- find a position for the new item
-        QVector3D pos = m_monProps->fixturePosition(fixtureID, headIndex, linkedIndex);
+        QVector3D pos = readFixturePositionMm(m_doc, fixtureID, headIndex, linkedIndex);
         QLCPhysical phy = fixture->fixtureMode()->physical();
         if (m_monProps->pointOfView() == MonitorProperties::TopView)
             pos.setZ(pos.z() + phy.depth() + 50);
@@ -1448,7 +1463,7 @@ void ContextManager::setFixturesRotation(QVector3D degrees)
             quint32 fxID = FixtureUtils::itemFixtureID(itemID);
             quint16 headIndex = FixtureUtils::itemHeadIndex(itemID);
             quint16 linkedIndex = FixtureUtils::itemLinkedIndex(itemID);
-            QVector3D rotation = m_monProps->fixtureRotation(fxID, headIndex, linkedIndex);
+            QVector3D rotation = readFixtureRotationDeg(m_doc, fxID, headIndex, linkedIndex);
             QVector3D newRot = rotation + degrees;
 
             // normalize back to a 0-359 range
@@ -1479,7 +1494,7 @@ void ContextManager::setFixtureRotation(quint32 itemID, QVector3D degrees)
     quint32 fxID = FixtureUtils::itemFixtureID(itemID);
     quint16 headIndex = FixtureUtils::itemHeadIndex(itemID);
     quint16 linkedIndex = FixtureUtils::itemLinkedIndex(itemID);
-    QVector3D rotation = m_monProps->fixtureRotation(fxID, headIndex, linkedIndex);
+    QVector3D rotation = readFixtureRotationDeg(m_doc, fxID, headIndex, linkedIndex);
 
     Tardis::instance()->enqueueAction(Tardis::FixtureSetRotation, itemID, QVariant(rotation), QVariant(degrees));
 
