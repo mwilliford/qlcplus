@@ -40,6 +40,7 @@
 #include "fixture.h"
 
 class AudioCapture;
+class CalibrationModel;
 class RGBScriptsCache;
 class AudioPluginCache;
 class MonitorProperties;
@@ -182,6 +183,7 @@ private:
     InputOutputMap *m_ioMap;
     mutable QSharedPointer<AudioCapture> m_inputCapture;
     MonitorProperties *m_monitorProps;
+    CalibrationModel *m_calibrationModel;
 
     /*********************************************************************
      * Main operating mode
@@ -632,6 +634,14 @@ protected:
 public:
     /** Returns a reference to the monitor properties instance */
     MonitorProperties *monitorProperties();
+
+    /*********************************************************************
+     * Calibration Model
+     *********************************************************************/
+public:
+    /** Returns the calibration model (lazy-initialized).
+     *  Holds the current SolveState from the agent server. */
+    CalibrationModel *calibrationModel();
 
     /*********************************************************************
      * Load & Save

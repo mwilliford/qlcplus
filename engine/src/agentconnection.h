@@ -87,6 +87,10 @@ public:
     /** Set a callback to handle Virtual Console commands (UI layer bridge) */
     void setVCCommandHandler(VCCommandHandler handler);
 
+    /** Send a calibration observation from the UI (e.g., crossing, position drag).
+     *  Fire-and-forget — server responds with calibration_state_update. */
+    void sendObservation(const QJsonObject &observation);
+
 public slots:
     void connectToServer();
     void disconnectFromServer();
@@ -193,6 +197,7 @@ private:
     void handleModifyPalette(const QJsonObject &msg);
     void handleDeletePalette(const QJsonObject &msg);
     void handleSetFixturePosition(const QJsonObject &msg);
+    void handleCalibrationStateUpdate(const QJsonObject &msg);
 
     // Virtual Console command handlers (delegated to UI layer via callback)
     void handleVCCommand(const QJsonObject &msg, const QString &command);

@@ -27,6 +27,7 @@
 
 #include "agentconnection.h"
 #include "agentsession.h"
+#include "calibrationmodel.h"
 #include "monitorproperties.h"
 #include "qlcfixturedefcache.h"
 #include "qlcfixturemode.h"
@@ -571,6 +572,10 @@ void AgentConnection::onWsTextMessage(const QString &message)
     {
         emit commandExecuting("set_fixture_position");
         handleSetFixturePosition(msg);
+    }
+    else if (type == "calibration_state_update")
+    {
+        handleCalibrationStateUpdate(msg);
     }
     else if (type == "compacting")
     {
@@ -2900,6 +2905,26 @@ void AgentConnection::sendDelta(const QJsonArray &changes)
     msg["type"] = "workspace_delta";
     msg["changes"] = changes;
 
+    sendJson(msg);
+}
+
+void AgentConnection::handleCalibrationStateUpdate(const QJsonObject &msg)
+{
+    CalibrationModel *model = m_doc->calibrationModel();
+    QJsonObject solveState = msg["solveState"].toObject();
+    model->updateFromJson(solveState);
+    qDebug() << "[AgentConnection] Calibration state updated:"
+             << (model->hasSolveState() ? "converged" : "null");
+}
+
+void AgentConnection::sendObservation(const QJsonObject &observation)
+{
+    if (m_state != Connected)
+        return;
+
+    QJsonObject msg;
+    msg["type"] = "add_observation";
+    msg["observation"] = observation;
     sendJson(msg);
 }
 
