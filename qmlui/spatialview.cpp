@@ -229,6 +229,7 @@ void SpatialView::onSpatialTransformChanged(const QString &id)
 {
     Q_UNUSED(id);
     rebuildFixtures();
+    rebuildEllipsoids();
 }
 
 void SpatialView::onSolverVizChanged()
@@ -284,11 +285,8 @@ void SpatialView::rebuildEllipsoids()
     SpatialModel *sm = m_doc->spatialModel();
     std::vector<qlcrender::RenderEllipsoid> ellipsoids;
 
-    if (!sm->hasSolverViz())
-    {
-        m_renderer->setCalibrationOverlays(ellipsoids);
-        return;
-    }
+    // Note: don't early-return on !hasSolverViz() — manual placements
+    // have default uncertainty ellipsoids even without solver data.
 
     for (const QString &id : sm->fixtureIds())
     {

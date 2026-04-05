@@ -58,6 +58,22 @@ void SpatialModel::setFixtureTransform(const QString &id,
     FixtureEntry &entry = m_fixtures[id];
     entry.transform = t;
     entry.source = source;
+
+    // For manual placements, assign default uncertainty (~50cm sphere, "moderate")
+    // so ellipsoids are visible before the solver runs.
+    // Solver results overwrite this with real covariance data.
+    if (source == Manual && !m_hasSolverViz)
+    {
+        entry.viz.ellipsoidAxes[0] = 50.0;  // cm
+        entry.viz.ellipsoidAxes[1] = 50.0;
+        entry.viz.ellipsoidAxes[2] = 50.0;
+        // Identity rotation (axis-aligned sphere)
+        double identity[9] = {1,0,0, 0,1,0, 0,0,1};
+        for (int i = 0; i < 9; i++)
+            entry.viz.ellipsoidRot[i] = identity[i];
+        entry.viz.quality = "moderate";
+    }
+
     emit fixtureTransformChanged(id);
 }
 
