@@ -164,11 +164,11 @@ void BgfxRenderer::frame()
                          (int)m_fixtures.size(), m_camera.yaw(), m_camera.pitch(), m_camera.distance());
     // Axis legend with + markers at axis ends
     bgfx::dbgTextPrintf(1,  3, 0x04, "+X");
-    bgfx::dbgTextPrintf(3,  3, 0x07, "=stage right  ");
-    bgfx::dbgTextPrintf(17, 3, 0x02, "+Y");
-    bgfx::dbgTextPrintf(19, 3, 0x07, "=upstage  ");
-    bgfx::dbgTextPrintf(29, 3, 0x01, "+Z");
-    bgfx::dbgTextPrintf(31, 3, 0x07, "=up");
+    bgfx::dbgTextPrintf(3,  3, 0x07, "=stage left  ");
+    bgfx::dbgTextPrintf(16, 3, 0x02, "+Y");
+    bgfx::dbgTextPrintf(18, 3, 0x07, "=upstage  ");
+    bgfx::dbgTextPrintf(28, 3, 0x01, "+Z");
+    bgfx::dbgTextPrintf(30, 3, 0x07, "=up");
 
     renderGrid();
     renderFixtures();
