@@ -221,16 +221,11 @@ void SpatialModel::applySolverVisualization(const QJsonObject &msg)
 
     // Update ellipsoid viz data
     QJsonObject ellipsoids = msg["ellipsoids"].toObject();
-    qDebug() << "[SpatialModel] applySolverViz: ellipsoids for" << ellipsoids.keys()
-             << ", fixtures in model:" << m_fixtures.keys();
     for (auto it = ellipsoids.begin(); it != ellipsoids.end(); ++it)
     {
         auto fIt = m_fixtures.find(it.key());
         if (fIt == m_fixtures.end())
-        {
-            qDebug() << "[SpatialModel] Fixture" << it.key() << "not in model, skipping ellipsoid";
             continue;
-        }
 
         QJsonObject e = it.value().toObject();
         FixtureViz &viz = fIt->viz;
@@ -241,9 +236,6 @@ void SpatialModel::applySolverVisualization(const QJsonObject &msg)
             viz.ellipsoidAxes[0] = axes[0].toDouble();
             viz.ellipsoidAxes[1] = axes[1].toDouble();
             viz.ellipsoidAxes[2] = axes[2].toDouble();
-            qDebug() << "[SpatialModel] Fixture" << it.key() << "axes:"
-                     << viz.ellipsoidAxes[0] << viz.ellipsoidAxes[1] << viz.ellipsoidAxes[2]
-                     << "quality:" << e["quality"].toString();
         }
 
         QJsonArray rot = e["rot"].toArray();
