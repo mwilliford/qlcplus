@@ -58,7 +58,8 @@ private:
     std::string m_meshBasePath;
 
     // Shader programs
-    bgfx::ProgramHandle m_colorProgram = BGFX_INVALID_HANDLE;
+    bgfx::ProgramHandle m_colorProgram = BGFX_INVALID_HANDLE;  // vertex-color (grid/lines)
+    bgfx::ProgramHandle m_litProgram = BGFX_INVALID_HANDLE;    // lit (fixture meshes)
 
     // Uniforms
     bgfx::UniformHandle m_u_color = BGFX_INVALID_HANDLE;
