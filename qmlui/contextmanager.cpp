@@ -39,7 +39,36 @@
 #include "qlcchannel.h"
 
 #include <rigmath/rigid_transform.hpp>
+#include <cmath>
 #include "tardis.h"
+
+// Build a RigidTransform from MonitorProperties position (mm) + rotation (degrees)
+static rigmath::RigidTransform monPropsToRigidTransform(
+    const QVector3D &posMm, const QVector3D &rotDeg)
+{
+    const double degToRad = M_PI / 180.0;
+
+    // Position: mm → meters
+    double x = posMm.x() / 1000.0;
+    double y = posMm.y() / 1000.0;
+    double z = posMm.z() / 1000.0;
+
+    // Rotation: compose Euler ZYX (degrees → axis-angle via rotation matrices)
+    double rx = rotDeg.x() * degToRad;
+    double ry = rotDeg.y() * degToRad;
+    double rz = rotDeg.z() * degToRad;
+
+    rigmath::RigidTransform tx = rigmath::RigidTransform::from_axis_angle(rx, 0, 0);
+    rigmath::RigidTransform ty = rigmath::RigidTransform::from_axis_angle(0, ry, 0);
+    rigmath::RigidTransform tz = rigmath::RigidTransform::from_axis_angle(0, 0, rz);
+    rigmath::RigidTransform combined = tz.compose(ty.compose(tx));
+
+    combined.pos[0] = x;
+    combined.pos[1] = y;
+    combined.pos[2] = z;
+
+    return combined;
+}
 #include "app.h"
 #include "doc.h"
 
@@ -880,13 +909,11 @@ void ContextManager::setFixturePosition(quint32 itemID, qreal x, qreal y, qreal 
     Tardis::instance()->enqueueAction(Tardis::FixtureSetPosition, itemID, QVariant(currPos), QVariant(newPos));
     m_monProps->setFixturePosition(fxID, headIndex, linkedIndex, newPos);
 
-    // Sync to SpatialModel (mm Z-up → meters, axis-angle)
+    // Sync to SpatialModel with full transform (position + rotation)
     if (headIndex == 0 && linkedIndex == 0)
     {
-        double mx = newPos.x() / 1000.0;
-        double my = newPos.y() / 1000.0;
-        double mz = newPos.z() / 1000.0;
-        rigmath::RigidTransform t = rigmath::RigidTransform::translation(mx, my, mz);
+        QVector3D rot = m_monProps->fixtureRotation(fxID, 0, 0);
+        rigmath::RigidTransform t = monPropsToRigidTransform(newPos, rot);
         m_doc->spatialModel()->setFixtureTransform(QString::number(fxID), t, SpatialModel::Manual);
     }
 
@@ -928,13 +955,11 @@ void ContextManager::setFixturesOffset(qreal x, qreal y)
         Tardis::instance()->enqueueAction(Tardis::FixtureSetPosition, itemID, QVariant(currPos), QVariant(newPos));
         m_monProps->setFixturePosition(fxID, headIndex, linkedIndex, newPos);
 
-        // Sync to SpatialModel
+        // Sync to SpatialModel with full transform
         if (headIndex == 0 && linkedIndex == 0)
         {
-            double mx = newPos.x() / 1000.0;
-            double my = newPos.y() / 1000.0;
-            double mz = newPos.z() / 1000.0;
-            rigmath::RigidTransform t = rigmath::RigidTransform::translation(mx, my, mz);
+            QVector3D rot = m_monProps->fixtureRotation(fxID, 0, 0);
+            rigmath::RigidTransform t = monPropsToRigidTransform(newPos, rot);
             m_doc->spatialModel()->setFixtureTransform(QString::number(fxID), t, SpatialModel::Manual);
         }
 
@@ -1423,6 +1448,15 @@ void ContextManager::setFixturesRotation(QVector3D degrees)
 
         // absolute rotation change
         m_monProps->setFixtureRotation(fxID, headIndex, linkedIndex, degrees);
+
+        // Sync to SpatialModel with updated rotation
+        if (headIndex == 0 && linkedIndex == 0)
+        {
+            QVector3D pos = m_monProps->fixturePosition(fxID, 0, 0);
+            rigmath::RigidTransform t = monPropsToRigidTransform(pos, degrees);
+            m_doc->spatialModel()->setFixtureTransform(QString::number(fxID), t, SpatialModel::Manual);
+        }
+
         if (m_2DView->isEnabled())
             m_2DView->updateFixtureRotation(itemID, degrees);
         if (m_3DView->isEnabled())
