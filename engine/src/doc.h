@@ -41,6 +41,7 @@
 
 class AudioCapture;
 class CalibrationModel;
+class SpatialModel;
 class RGBScriptsCache;
 class AudioPluginCache;
 class MonitorProperties;
@@ -184,6 +185,7 @@ private:
     mutable QSharedPointer<AudioCapture> m_inputCapture;
     MonitorProperties *m_monitorProps;
     CalibrationModel *m_calibrationModel;
+    SpatialModel *m_spatialModel;
 
     /*********************************************************************
      * Main operating mode
@@ -640,8 +642,18 @@ public:
      *********************************************************************/
 public:
     /** Returns the calibration model (lazy-initialized).
-     *  Holds the current SolveState from the agent server. */
+     *  Holds the current SolveState from the agent server.
+     *  @deprecated Use spatialModel() instead. */
     CalibrationModel *calibrationModel();
+
+    /*********************************************************************
+     * Spatial Model
+     *********************************************************************/
+public:
+    /** Returns the spatial model (lazy-initialized).
+     *  Canonical source for fixture transforms, named planes,
+     *  and ephemeral solver visualization. */
+    SpatialModel *spatialModel();
 
     /*********************************************************************
      * Load & Save

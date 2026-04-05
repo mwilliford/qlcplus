@@ -217,10 +217,8 @@ Rectangle
                     {
                         if (checked)
                         {
-                            if (qlcplus.is3DSupported)
-                                loadContext(checked, "qrc:/3DView.qml", "3D")
-                            else
-                                loadContext(checked, "qrc:/3DViewUnsupported.qml", "3D")
+                            // Launch the bgfx-based spatial view as a floating window
+                            contextManager.showSpatialView()
                         }
                     }
                     onRightClicked:

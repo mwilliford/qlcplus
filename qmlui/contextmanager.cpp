@@ -34,6 +34,7 @@
 #include "mainviewdmx.h"
 #include "mainview2d.h"
 #include "mainview3d.h"
+#include "spatialview.h"
 #include "qlcchannel.h"
 #include "tardis.h"
 #include "app.h"
@@ -161,6 +162,11 @@ void ContextManager::enableContext(QString name, bool enable, QQuickItem *item)
 PreviewContext *ContextManager::contextByName(QString ctxName)
 {
     return m_contextsMap.value(ctxName, nullptr);
+}
+
+void ContextManager::showSpatialView()
+{
+    SpatialView::createAndShow(m_doc);
 }
 
 void ContextManager::detachContext(QString name)
