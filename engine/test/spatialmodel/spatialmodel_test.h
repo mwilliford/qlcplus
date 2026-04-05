@@ -48,6 +48,12 @@ private slots:
     void transformChangedSignal();
     void solverVizChangedSignal();
 
+    // Coordinate conversion round-trip
+    void mmDegreesRoundTrip();
+    void mmDegreesRoundTripWithRotation();
+    void mmPositionPreservesRotation();
+    void degRotationPreservesPosition();
+
     // Clear
     void clearAll();
 };

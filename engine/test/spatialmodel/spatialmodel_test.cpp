@@ -391,6 +391,101 @@ void SpatialModel_Test::solverVizChangedSignal()
 }
 
 // ---------------------------------------------------------------------------
+// Coordinate conversion round-trip (mm/degrees ↔ meters/radians)
+// ---------------------------------------------------------------------------
+
+void SpatialModel_Test::mmDegreesRoundTrip()
+{
+    SpatialModel sm;
+
+    // Set position via mm accessor
+    QVector3D posMm(2500.0f, -1500.0f, 3000.0f);
+    sm.setFixturePositionMm("1", posMm);
+
+    // Read back via mm accessor — should match
+    QVector3D got = sm.fixturePositionMm("1");
+    QVERIFY(std::abs(got.x() - posMm.x()) < 0.1f);
+    QVERIFY(std::abs(got.y() - posMm.y()) < 0.1f);
+    QVERIFY(std::abs(got.z() - posMm.z()) < 0.1f);
+
+    // Verify internal storage is meters
+    rigmath::RigidTransform t = sm.fixtureTransform("1");
+    QVERIFY(std::abs(t.pos[0] - 2.5) < 1e-6);
+    QVERIFY(std::abs(t.pos[1] - (-1.5)) < 1e-6);
+    QVERIFY(std::abs(t.pos[2] - 3.0) < 1e-6);
+}
+
+void SpatialModel_Test::mmDegreesRoundTripWithRotation()
+{
+    SpatialModel sm;
+
+    // Set position and rotation via mm/deg accessors
+    sm.setFixturePositionMm("1", QVector3D(1000, 2000, 3000));
+    sm.setFixtureRotationDeg("1", QVector3D(0, 0, 90));
+
+    // Read back rotation
+    QVector3D rotDeg = sm.fixtureRotationDeg("1");
+    QVERIFY(std::abs(rotDeg.x()) < 1.0f);
+    QVERIFY(std::abs(rotDeg.y()) < 1.0f);
+    QVERIFY(std::abs(rotDeg.z() - 90.0f) < 1.0f);
+
+    // Read back position — should be preserved after rotation set
+    QVector3D posMm = sm.fixturePositionMm("1");
+    QVERIFY(std::abs(posMm.x() - 1000.0f) < 0.1f);
+    QVERIFY(std::abs(posMm.y() - 2000.0f) < 0.1f);
+    QVERIFY(std::abs(posMm.z() - 3000.0f) < 0.1f);
+
+    // Multi-axis rotation round-trip
+    sm.setFixtureRotationDeg("2", QVector3D(45, 30, 60));
+    sm.setFixturePositionMm("2", QVector3D(500, -500, 1500));
+
+    QVector3D rot2 = sm.fixtureRotationDeg("2");
+    // Euler decomposition may not be exact for multi-axis, but should be close
+    QVERIFY(std::abs(rot2.x() - 45.0f) < 2.0f);
+    QVERIFY(std::abs(rot2.y() - 30.0f) < 2.0f);
+    QVERIFY(std::abs(rot2.z() - 60.0f) < 2.0f);
+}
+
+void SpatialModel_Test::mmPositionPreservesRotation()
+{
+    SpatialModel sm;
+
+    // Set rotation first
+    sm.setFixturePositionMm("1", QVector3D(0, 0, 0));
+    sm.setFixtureRotationDeg("1", QVector3D(0, 0, 45));
+
+    // Now change position — rotation should be preserved
+    sm.setFixturePositionMm("1", QVector3D(5000, 3000, 2000));
+
+    QVector3D rot = sm.fixtureRotationDeg("1");
+    QVERIFY(std::abs(rot.z() - 45.0f) < 1.0f);
+
+    QVector3D pos = sm.fixturePositionMm("1");
+    QVERIFY(std::abs(pos.x() - 5000.0f) < 0.1f);
+    QVERIFY(std::abs(pos.y() - 3000.0f) < 0.1f);
+    QVERIFY(std::abs(pos.z() - 2000.0f) < 0.1f);
+}
+
+void SpatialModel_Test::degRotationPreservesPosition()
+{
+    SpatialModel sm;
+
+    // Set position first
+    sm.setFixturePositionMm("1", QVector3D(1234, -5678, 9012));
+
+    // Now change rotation — position should be preserved
+    sm.setFixtureRotationDeg("1", QVector3D(90, 0, 0));
+
+    QVector3D pos = sm.fixturePositionMm("1");
+    QVERIFY(std::abs(pos.x() - 1234.0f) < 0.1f);
+    QVERIFY(std::abs(pos.y() - (-5678.0f)) < 0.1f);
+    QVERIFY(std::abs(pos.z() - 9012.0f) < 0.1f);
+
+    QVector3D rot = sm.fixtureRotationDeg("1");
+    QVERIFY(std::abs(rot.x() - 90.0f) < 1.0f);
+}
+
+// ---------------------------------------------------------------------------
 // Clear
 // ---------------------------------------------------------------------------
 

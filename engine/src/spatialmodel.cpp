@@ -128,16 +128,33 @@ QVector3D SpatialModel::fixturePositionMm(const QString &id) const
 QVector3D SpatialModel::fixtureRotationDeg(const QString &id) const
 {
     rigmath::RigidTransform t = fixtureTransform(id);
-    double ax, ay, az;
-    t.get_axis_angle(ax, ay, az);
 
-    // Approximate Euler ZYX from axis-angle:
-    // For small rotations or single-axis, axis-angle ≈ Euler
-    // For full accuracy, decompose rotation matrix to ZYX Euler
+    // Decompose 3x3 rotation matrix (row-major) to ZYX Euler angles
+    // rot = Rz * Ry * Rx
+    // rot[0..8] = row-major: [r00 r01 r02, r10 r11 r12, r20 r21 r22]
+    const double *r = t.rot;
+    double rx, ry, rz;
+
+    double sy = -r[6]; // -r20
+    if (std::abs(sy) < 0.99999)
+    {
+        ry = asin(sy);
+        double cy = cos(ry);
+        rx = atan2(r[7] / cy, r[8] / cy);  // r21/cy, r22/cy
+        rz = atan2(r[3] / cy, r[0] / cy);  // r10/cy, r00/cy
+    }
+    else
+    {
+        // Gimbal lock
+        ry = sy > 0 ? M_PI / 2.0 : -M_PI / 2.0;
+        rx = atan2(r[1], r[2]);  // r01, r02
+        rz = 0;
+    }
+
     const double radToDeg = 180.0 / M_PI;
-    return QVector3D(float(ax * radToDeg),
-                     float(ay * radToDeg),
-                     float(az * radToDeg));
+    return QVector3D(float(rx * radToDeg),
+                     float(ry * radToDeg),
+                     float(rz * radToDeg));
 }
 
 void SpatialModel::setFixturePositionMm(const QString &id, const QVector3D &posMm,
