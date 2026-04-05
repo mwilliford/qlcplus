@@ -96,6 +96,7 @@ void BgfxRenderer::shutdown()
     if (!m_initialized)
         return;
 
+    m_meshLoader.shutdown();
     destroyCubeMesh(m_cubeVbh, m_cubeIbh);
 
     if (bgfx::isValid(m_colorProgram))
@@ -231,29 +232,43 @@ void BgfxRenderer::renderGrid()
 
 void BgfxRenderer::renderFixtures()
 {
-    if (!bgfx::isValid(m_cubeVbh) || !bgfx::isValid(m_cubeIbh))
-        return;
-
     for (const auto& fixture : m_fixtures)
     {
-        // Scale the cube to 0.2m and apply fixture transform
-        float scale[16];
-        bx::mtxScale(scale, 0.2f);
+        // Try to load the proper 3D mesh for this fixture type
+        const LoadedMesh *mesh = nullptr;
+        const char *meshFile = MeshLoader::meshFileForFixtureType(fixture.fixtureType);
+        if (meshFile && !m_meshBasePath.empty())
+        {
+            std::string fullPath = m_meshBasePath + meshFile;
+            mesh = m_meshLoader.getMesh(fullPath);
+        }
 
-        float model[16];
-        // fixture.transform is column-major 4x4 from rigmath
-        bx::mtxMul(model, scale, fixture.transform);
+        if (mesh && mesh->isValid())
+        {
+            // Render with the 3D model mesh (already at correct scale from .dae)
+            bgfx::setTransform(fixture.transform);
+            bgfx::setVertexBuffer(0, mesh->vbh);
+            bgfx::setIndexBuffer(mesh->ibh);
+        }
+        else if (bgfx::isValid(m_cubeVbh) && bgfx::isValid(m_cubeIbh))
+        {
+            // Fallback: 0.2m cube
+            float scale[16];
+            bx::mtxScale(scale, 0.2f);
+            float model[16];
+            bx::mtxMul(model, scale, fixture.transform);
 
-        bgfx::setTransform(model);
-        bgfx::setVertexBuffer(0, m_cubeVbh);
-        bgfx::setIndexBuffer(m_cubeIbh);
-
-        // Set fixture color
-        bgfx::setUniform(m_u_color, fixture.color);
+            bgfx::setTransform(model);
+            bgfx::setVertexBuffer(0, m_cubeVbh);
+            bgfx::setIndexBuffer(m_cubeIbh);
+        }
+        else
+        {
+            continue;
+        }
 
         bgfx::setState(BGFX_STATE_WRITE_RGB | BGFX_STATE_WRITE_A
-                        | BGFX_STATE_WRITE_Z | BGFX_STATE_DEPTH_TEST_LESS
-                        | BGFX_STATE_MSAA);
+                        | BGFX_STATE_WRITE_Z | BGFX_STATE_DEPTH_TEST_LESS);
 
         if (bgfx::isValid(m_colorProgram))
             bgfx::submit(0, m_colorProgram);

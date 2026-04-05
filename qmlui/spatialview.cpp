@@ -21,6 +21,10 @@
 #include "spatialrenderer.h"
 #include "spatialmodel.h"
 #include "doc.h"
+#include "fixture.h"
+#include "qlcfixturedef.h"
+#include "qlcfile.h"
+#include "qlcconfig.h"
 
 #ifdef Q_OS_MACOS
 extern void *setupMetalLayerForView(void *nativeHandle);
@@ -111,6 +115,14 @@ void SpatialView::initBgfx()
     if (m_renderer->init(nwh, w, h))
     {
         m_bgfxReady = true;
+
+        // Set mesh path to the bgfx-converted fixture meshes
+        QString meshPath = QLCFile::systemDirectory(MESHESDIR).path()
+                           + QDir::separator() + "fixtures"
+                           + QDir::separator() + "bgfx" + QDir::separator();
+        m_renderer->setMeshBasePath(meshPath.toStdString());
+        qDebug() << "[SpatialView] Mesh path:" << meshPath;
+
         m_renderer->setCameraOrbit(m_cameraYaw, m_cameraPitch, m_cameraDistance);
         rebuildFixtures();
         m_frameTimer.start(16);  // ~60Hz
@@ -235,6 +247,10 @@ void SpatialView::rebuildFixtures()
     {
         qlcrender::RenderFixture rf;
         rf.id = id.toUInt();
+
+        // Get fixture type for mesh selection
+        Fixture *fxi = m_doc->fixture(rf.id);
+        rf.fixtureType = fxi ? fxi->type() : -1;
 
         // Get 4x4 column-major matrix
         double d[16];

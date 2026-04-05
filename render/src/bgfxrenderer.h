@@ -3,6 +3,7 @@
 #include "spatialrenderer.h"
 #include "orbitcamera.h"
 #include "meshgen.h"
+#include "meshloader.h"
 #include <bgfx/bgfx.h>
 
 namespace qlcrender {
@@ -35,6 +36,8 @@ public:
 
     OrbitCamera& camera() { return m_camera; }
 
+    void setMeshBasePath(const std::string &path) override { m_meshBasePath = path; }
+
 private:
     void renderGrid();
     void renderFixtures();
@@ -46,9 +49,13 @@ private:
     OrbitCamera m_camera;
     std::vector<RenderFixture> m_fixtures;
 
-    // Cube mesh for fixture visualization
+    // Cube mesh (fallback for fixtures without a 3D model)
     bgfx::VertexBufferHandle m_cubeVbh = BGFX_INVALID_HANDLE;
     bgfx::IndexBufferHandle m_cubeIbh = BGFX_INVALID_HANDLE;
+
+    // Fixture mesh loader + cache
+    MeshLoader m_meshLoader;
+    std::string m_meshBasePath;
 
     // Shader programs
     bgfx::ProgramHandle m_colorProgram = BGFX_INVALID_HANDLE;
