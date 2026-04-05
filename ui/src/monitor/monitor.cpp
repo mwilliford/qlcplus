@@ -800,8 +800,11 @@ void Monitor::slotFixtureMoved(quint32 fid, QPointF pos)
     float worldX = pos.x() - gridWmm / 2;
     float worldY = -(pos.y() - gridDmm / 2);
 
+    // Preserve existing Z (height) — 2D view only changes X/Y
+    float existingZ = m_props->fixturePosition(fid, 0, 0).z();
+
     showFixtureItemEditor();
-    m_props->setFixturePosition(fid, 0, 0, QVector3D(worldX, worldY, 0));
+    m_props->setFixturePosition(fid, 0, 0, QVector3D(worldX, worldY, existingZ));
     m_doc->setModified();
 }
 

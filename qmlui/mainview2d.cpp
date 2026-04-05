@@ -688,19 +688,20 @@ QSize MainView2D::gridSize() const
 
 void MainView2D::setGridSize(QVector3D sz)
 {
+    // Z-up grid: x=width (stage L/R), y=depth (DS/US), z=height (up)
     switch(m_monProps->pointOfView())
     {
         case MonitorProperties::TopView:
-            m_gridSize = QSize(sz.x(), sz.z());
+            m_gridSize = QSize(sz.x(), sz.y());  // width × depth
         break;
         case MonitorProperties::LeftSideView:
         case MonitorProperties::RightSideView:
-            m_gridSize = QSize(sz.z(), sz.y());
+            m_gridSize = QSize(sz.y(), sz.z());  // depth × height
         break;
         //case MonitorProperties::Undefined:
         //case MonitorProperties::FrontView:
         default:
-            m_gridSize = QSize(sz.x(), sz.y());
+            m_gridSize = QSize(sz.x(), sz.z());  // width × height
         break;
     }
     emit gridSizeChanged();
