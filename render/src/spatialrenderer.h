@@ -31,6 +31,7 @@ public:
 
     // --- Scene data (set once, updated on change) ---
     virtual void setFixtures(const std::vector<RenderFixture>& fixtures) = 0;
+    virtual void setMeshBasePath(const std::string& path) { (void)path; }
 
     // --- Calibration overlays (Phase C, no-op default) ---
     virtual void setCalibrationOverlays(const std::vector<RenderEllipsoid>& ellipsoids) { (void)ellipsoids; }

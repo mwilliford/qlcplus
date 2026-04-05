@@ -8,6 +8,7 @@ namespace qlcrender {
 struct RenderFixture
 {
     uint32_t id;
+    int fixtureType;      // QLCFixtureDef::FixtureType enum value
     float transform[16];  // 4x4 column-major (from RigidTransform::to_4x4_column_major)
     float color[4];       // RGBA
 };

@@ -20,6 +20,7 @@ add_library(${module_name} STATIC
     src/bgfxrenderer.h src/bgfxrenderer.cpp
     src/orbitcamera.h src/orbitcamera.cpp
     src/meshgen.h src/meshgen.cpp
+    src/meshloader.h src/meshloader.cpp
     src/rendertypes.h
 )
 
