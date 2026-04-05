@@ -134,25 +134,11 @@ QList<SpatialModel::Plane> SpatialModel::planes() const
 
 void SpatialModel::applySolverVisualization(const QJsonObject &msg)
 {
-    // Update transforms from solver
-    QJsonObject transforms = msg["transforms"].toObject();
-    for (auto it = transforms.begin(); it != transforms.end(); ++it)
-    {
-        QJsonObject t = it.value().toObject();
-        QJsonArray pos = t["pos"].toArray();
-        QJsonArray aa = t["axis_angle"].toArray();
-        if (pos.size() == 3 && aa.size() == 3)
-        {
-            rigmath::RigidTransform rt = rigmath::RigidTransform::from_pose(
-                pos[0].toDouble(), pos[1].toDouble(), pos[2].toDouble(),
-                aa[0].toDouble(), aa[1].toDouble(), aa[2].toDouble()
-            );
-            FixtureEntry &entry = m_fixtures[it.key()];
-            entry.transform = rt;
-            entry.source = Solver;
-            emit fixtureTransformChanged(it.key());
-        }
-    }
+    // NOTE: We do NOT update transforms from solver results here.
+    // The user's position (from drag or manual placement) is authoritative.
+    // The solver tells us uncertainty (ellipsoids), not where the fixture IS.
+    // Transforms are only updated via setFixtureTransform() from explicit
+    // commands like set_fixture_transform (after calibration_solve).
 
     // Update ellipsoid viz data
     QJsonObject ellipsoids = msg["ellipsoids"].toObject();
