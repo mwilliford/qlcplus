@@ -26,6 +26,8 @@
 #include <QJsonObject>
 #include <QJsonArray>
 #include <QAbstractSocket>
+#include <QVector3D>
+#include <QSet>
 #include <functional>
 
 #include "agentcontext.h"
@@ -135,6 +137,11 @@ private slots:
     void onGrandMasterValueChanged(uchar value);
     void onBlackoutChanged(bool state);
 
+    // MonitorProperties signal handlers (stage layout deltas)
+    void onFixturePositionChanged(quint32 fid, QVector3D pos);
+    void onFixtureRotationChanged(quint32 fid, QVector3D rot);
+    void onStageLayoutDebounceTimeout();
+
 private:
     void setState(State state);
     void sendJson(const QJsonObject &obj);
@@ -219,6 +226,12 @@ private:
     VCCommandHandler m_vcCommandHandler;
 
     AgentAuthManager m_authManager;
+
+    // Stage layout delta debounce: collect changed fixture IDs,
+    // send one batched delta when the timer fires (1s after last change)
+    QTimer m_stageLayoutDebounce;
+    QSet<quint32> m_dirtyFixturePositions;
+    bool m_suppressLayoutDelta;  // true during agent command handling (avoid echo)
 };
 
 #endif // AGENTCONNECTION_H

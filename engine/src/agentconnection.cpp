@@ -78,10 +78,17 @@ AgentConnection::AgentConnection(Doc *doc, QObject *parent)
     , m_wantConnection(false)
     , m_lastErrorWasAuth(false)
     , m_authManager(this)
+    , m_suppressLayoutDelta(false)
 {
     m_reconnectTimer.setSingleShot(true);
     connect(&m_reconnectTimer, &QTimer::timeout,
             this, &AgentConnection::onReconnectTimer);
+
+    // Stage layout delta debounce — 1 second after last position change
+    m_stageLayoutDebounce.setSingleShot(true);
+    m_stageLayoutDebounce.setInterval(1000);
+    connect(&m_stageLayoutDebounce, &QTimer::timeout,
+            this, &AgentConnection::onStageLayoutDebounceTimeout);
 
     // Always listen for file load/clear — disconnect on workspace change
     connect(m_doc, &Doc::loading,
@@ -1845,6 +1852,9 @@ void AgentConnection::handleSetFixturePosition(const QJsonObject &msg)
         return;
     }
 
+    // Suppress debounce delta — this handler sends its own delta below
+    m_suppressLayoutDelta = true;
+
     MonitorProperties *props = m_doc->monitorProperties();
     props->setFixturePosition(fixtureId, 0, 0, QVector3D(xPos, yPos, zPos));
 
@@ -1858,6 +1868,7 @@ void AgentConnection::handleSetFixturePosition(const QJsonObject &msg)
         props->setFixtureRotation(fixtureId, 0, 0, QVector3D(rotX, rotY, rotZ));
     }
 
+    m_suppressLayoutDelta = false;
     m_doc->setModified();
 
     // Send delta so server updates its stage layout
@@ -2847,6 +2858,13 @@ void AgentConnection::connectDocSignals()
             this, &AgentConnection::onGrandMasterValueChanged);
     connect(ioMap, &InputOutputMap::blackoutChanged,
             this, &AgentConnection::onBlackoutChanged);
+
+    // Stage layout deltas — debounced to avoid flooding during drags
+    MonitorProperties *props = m_doc->monitorProperties();
+    connect(props, &MonitorProperties::fixturePositionChanged,
+            this, &AgentConnection::onFixturePositionChanged);
+    connect(props, &MonitorProperties::fixtureRotationChanged,
+            this, &AgentConnection::onFixtureRotationChanged);
 }
 
 void AgentConnection::disconnectDocSignals()
@@ -2867,6 +2885,10 @@ void AgentConnection::disconnectDocSignals()
     InputOutputMap *ioMap = m_doc->inputOutputMap();
     if (ioMap)
         disconnect(ioMap, nullptr, this, nullptr);
+
+    MonitorProperties *props = m_doc->monitorProperties();
+    if (props)
+        disconnect(props, nullptr, this, nullptr);
 }
 
 void AgentConnection::sendDelta(const QJsonArray &changes)
@@ -2879,6 +2901,53 @@ void AgentConnection::sendDelta(const QJsonArray &changes)
     msg["changes"] = changes;
 
     sendJson(msg);
+}
+
+void AgentConnection::onFixturePositionChanged(quint32 fid, QVector3D pos)
+{
+    Q_UNUSED(pos);
+    if (m_suppressLayoutDelta)
+        return;
+    m_dirtyFixturePositions.insert(fid);
+    m_stageLayoutDebounce.start(); // restart the 1s timer
+}
+
+void AgentConnection::onFixtureRotationChanged(quint32 fid, QVector3D rot)
+{
+    Q_UNUSED(rot);
+    if (m_suppressLayoutDelta)
+        return;
+    m_dirtyFixturePositions.insert(fid); // same dirty set — send pos+rot together
+    m_stageLayoutDebounce.start();
+}
+
+void AgentConnection::onStageLayoutDebounceTimeout()
+{
+    if (m_state != Connected || m_dirtyFixturePositions.isEmpty())
+        return;
+
+    MonitorProperties *props = m_doc->monitorProperties();
+    QJsonArray changes;
+
+    for (quint32 fid : m_dirtyFixturePositions)
+    {
+        QVector3D pos = props->fixturePosition(fid, 0, 0);
+        QVector3D rot = props->fixtureRotation(fid, 0, 0);
+
+        QJsonObject change;
+        change["action"] = "fixture_position_changed";
+        change["fixtureId"] = (int)fid;
+        change["xPos"] = pos.x();
+        change["yPos"] = pos.y();
+        change["zPos"] = pos.z();
+        change["rotX"] = rot.x();
+        change["rotY"] = rot.y();
+        change["rotZ"] = rot.z();
+        changes.append(change);
+    }
+
+    m_dirtyFixturePositions.clear();
+    sendDelta(changes);
 }
 
 void AgentConnection::onDocLoading()

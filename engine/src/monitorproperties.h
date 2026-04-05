@@ -325,6 +325,14 @@ public:
      * @param wksp_root The workspace root element
      */
     bool saveXML(QXmlStreamWriter *doc, const Doc * mainDocument) const;
+
+signals:
+    /** Emitted when a fixture's position is changed via setFixturePosition().
+     *  Used by AgentConnection to send stage layout deltas to the server. */
+    void fixturePositionChanged(quint32 fid, QVector3D pos);
+
+    /** Emitted when a fixture's rotation is changed via setFixtureRotation(). */
+    void fixtureRotationChanged(quint32 fid, QVector3D rot);
 };
 
 /** @} */

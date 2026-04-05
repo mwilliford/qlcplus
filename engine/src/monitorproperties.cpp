@@ -266,6 +266,7 @@ void MonitorProperties::setFixturePosition(quint32 fid, quint16 head, quint16 li
     if (head == 0 && linked == 0)
     {
         m_fixtureItems[fid].m_baseItem.m_position = pos;
+        emit fixturePositionChanged(fid, pos);
     }
     else
     {
@@ -292,6 +293,7 @@ void MonitorProperties::setFixtureRotation(quint32 fid, quint16 head, quint16 li
     if (head == 0 && linked == 0)
     {
         m_fixtureItems[fid].m_baseItem.m_rotation = degrees;
+        emit fixtureRotationChanged(fid, degrees);
     }
     else
     {
