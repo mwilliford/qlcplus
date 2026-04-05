@@ -909,8 +909,8 @@ void ContextManager::setFixturesOffset(qreal x, qreal y)
         switch (m_monProps->pointOfView())
         {
             case MonitorProperties::TopView:
-                // Z-up: looks down Z → screen X=world X, screen Y=world Y
-                newPos = QVector3D(currPos.x() + x, currPos.y() + y, currPos.z());
+                // Z-up: looks down Z → screen X=world X, screen down=world +Y (upstage)
+                newPos = QVector3D(currPos.x() + x, currPos.y() - y, currPos.z());
             break;
             case MonitorProperties::FrontView:
             default:
@@ -918,12 +918,10 @@ void ContextManager::setFixturesOffset(qreal x, qreal y)
                 newPos = QVector3D(currPos.x() + x, currPos.y(), currPos.z() - y);
             break;
             case MonitorProperties::RightSideView:
-                // Z-up: looks from right (-X) → screen X=world Y, screen Y=world Z (up)
-                newPos = QVector3D(currPos.x(), currPos.y() + x, currPos.z() - y);
+                newPos = QVector3D(currPos.x(), currPos.y() - x, currPos.z() - y);
             break;
             case MonitorProperties::LeftSideView:
-                // Z-up: looks from left (+X) → screen X=world -Y, screen Y=world Z (up)
-                newPos = QVector3D(currPos.x(), currPos.y() - x, currPos.z() - y);
+                newPos = QVector3D(currPos.x(), currPos.y() + x, currPos.z() - y);
             break;
         }
 

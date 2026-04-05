@@ -47,10 +47,12 @@ AgentAuthManager::AgentAuthManager(QObject *parent)
     connect(&m_loginTimeout, &QTimer::timeout,
             this, &AgentAuthManager::onLoginTimeout);
 
-    // Load stored refresh token on startup
+    // Load stored refresh token on startup — skip if using static token
+    // (avoids macOS keychain popup on every debug build)
     connect(&m_credentialStore, &AgentCredentialStore::refreshTokenLoaded,
             this, &AgentAuthManager::onRefreshTokenLoaded);
-    m_credentialStore.loadRefreshToken();
+    if (m_staticToken.isEmpty())
+        m_credentialStore.loadRefreshToken();
 }
 
 AgentAuthManager::~AgentAuthManager()

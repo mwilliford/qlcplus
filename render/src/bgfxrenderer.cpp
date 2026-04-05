@@ -159,9 +159,16 @@ void BgfxRenderer::frame()
 
     // Debug text
     bgfx::dbgTextClear();
-    bgfx::dbgTextPrintf(1, 1, 0x0f, "QLC+ Spatial View (bgfx)");
+    bgfx::dbgTextPrintf(1, 1, 0x0f, "QLC+ Spatial View");
     bgfx::dbgTextPrintf(1, 2, 0x07, "Fixtures: %d  Yaw: %.0f  Pitch: %.0f  Dist: %.1f",
                          (int)m_fixtures.size(), m_camera.yaw(), m_camera.pitch(), m_camera.distance());
+    // Axis legend with + markers at axis ends
+    bgfx::dbgTextPrintf(1,  3, 0x04, "+X");
+    bgfx::dbgTextPrintf(3,  3, 0x07, "=stage right  ");
+    bgfx::dbgTextPrintf(17, 3, 0x02, "+Y");
+    bgfx::dbgTextPrintf(19, 3, 0x07, "=upstage  ");
+    bgfx::dbgTextPrintf(29, 3, 0x01, "+Z");
+    bgfx::dbgTextPrintf(31, 3, 0x07, "=up");
 
     renderGrid();
     renderFixtures();
@@ -204,10 +211,11 @@ void BgfxRenderer::renderGrid()
     const float extent = 10.0f;
     const float step = 1.0f;
     const int gridLines = int(extent / step) * 2 + 1;
-    // 3 axis lines (6 verts) + grid lines (gridLines * 2 directions * 2 verts)
+    // 3 axis lines (6 verts) + 3 axis markers (12 verts) + grid lines
     const uint32_t axisVerts = 6;
+    const uint32_t markerVerts = 12;
     const uint32_t gridVerts = uint32_t(gridLines * 2 * 2);
-    const uint32_t totalVerts = axisVerts + gridVerts;
+    const uint32_t totalVerts = axisVerts + markerVerts + gridVerts;
 
     if (!bgfx::getAvailTransientVertexBuffer(totalVerts, PosColorVertex::layout))
         return;
@@ -217,13 +225,36 @@ void BgfxRenderer::renderGrid()
     auto* v = (PosColorVertex*)tvb.data;
     uint32_t idx = 0;
 
-    // Axis lines
-    v[idx++] = { -extent, 0, 0, 0xff0000ff };  // X axis red (ABGR)
-    v[idx++] = {  extent, 0, 0, 0xff0000ff };
-    v[idx++] = { 0, -extent, 0, 0xff00ff00 };  // Y axis green
-    v[idx++] = { 0,  extent, 0, 0xff00ff00 };
-    v[idx++] = { 0, 0, 0, 0xffff0000 };        // Z axis blue (up)
-    v[idx++] = { 0, 0, 5, 0xffff0000 };
+    // Axis lines — thicker by doubling with slight offset
+    const uint32_t xColor = 0xff0000ff;  // red (ABGR)
+    const uint32_t yColor = 0xff00ff00;  // green
+    const uint32_t zColor = 0xffff0000;  // blue
+
+    v[idx++] = { -extent, 0, 0, xColor };  // X axis
+    v[idx++] = {  extent, 0, 0, xColor };
+    v[idx++] = { 0, -extent, 0, yColor };  // Y axis
+    v[idx++] = { 0,  extent, 0, yColor };
+    v[idx++] = { 0, 0, 0, zColor };        // Z axis (up)
+    v[idx++] = { 0, 0, 5, zColor };
+
+    // Axis endpoint markers (small cross at +X, +Y, +Z ends)
+    const float m = 0.3f;  // marker size
+    const float e = extent - 0.01f;
+    // +X marker
+    v[idx++] = { e, -m, 0, xColor };
+    v[idx++] = { e,  m, 0, xColor };
+    v[idx++] = { e, 0, -m, xColor };
+    v[idx++] = { e, 0,  m, xColor };
+    // +Y marker
+    v[idx++] = { -m, e, 0, yColor };
+    v[idx++] = {  m, e, 0, yColor };
+    v[idx++] = { 0, e, -m, yColor };
+    v[idx++] = { 0, e,  m, yColor };
+    // +Z marker (top)
+    v[idx++] = { -m, 0, 4.7f, zColor };
+    v[idx++] = {  m, 0, 4.7f, zColor };
+    v[idx++] = { 0, -m, 4.7f, zColor };
+    v[idx++] = { 0,  m, 4.7f, zColor };
 
     // Grid lines
     const uint32_t lineColor = 0xff404040;
