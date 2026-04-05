@@ -86,12 +86,6 @@ AgentConnection::AgentConnection(Doc *doc, QObject *parent)
     connect(&m_reconnectTimer, &QTimer::timeout,
             this, &AgentConnection::onReconnectTimer);
 
-    // Stage layout delta debounce — 1 second after last position change (legacy mm/degrees)
-    m_stageLayoutDebounce.setSingleShot(true);
-    m_stageLayoutDebounce.setInterval(1000);
-    connect(&m_stageLayoutDebounce, &QTimer::timeout,
-            this, &AgentConnection::onStageLayoutDebounceTimeout);
-
     // Spatial transform delta debounce — 1 second (meters/radians)
     m_spatialDebounce.setSingleShot(true);
     m_spatialDebounce.setInterval(1000);
@@ -2760,27 +2754,15 @@ QJsonObject AgentConnection::serializeStageLayout()
     }
 
     QJsonArray fixtures;
+    // Fixture positions are in spatialModel now — stageLayout only has display settings
+    // Keep gelColor per fixture for display
     for (quint32 fid : props->fixtureItemsID())
     {
         FixturePreviewItem item = props->fixtureProperties(fid);
         QJsonObject fj;
         fj["fixtureId"] = (int)fid;
-
-        QJsonObject pos;
-        pos["x"] = item.m_baseItem.m_position.x();
-        pos["y"] = item.m_baseItem.m_position.y();
-        pos["z"] = item.m_baseItem.m_position.z();
-        fj["position"] = pos;
-
-        QJsonObject rot;
-        rot["x"] = item.m_baseItem.m_rotation.x();
-        rot["y"] = item.m_baseItem.m_rotation.y();
-        rot["z"] = item.m_baseItem.m_rotation.z();
-        fj["rotation"] = rot;
-
         if (item.m_baseItem.m_color.isValid())
             fj["gelColor"] = item.m_baseItem.m_color.name();
-
         fixtures.append(fj);
     }
     layout["fixtures"] = fixtures;
@@ -2967,13 +2949,6 @@ void AgentConnection::connectDocSignals()
     connect(ioMap, &InputOutputMap::blackoutChanged,
             this, &AgentConnection::onBlackoutChanged);
 
-    // Stage layout deltas — debounced to avoid flooding during drags (legacy)
-    MonitorProperties *props = m_doc->monitorProperties();
-    connect(props, &MonitorProperties::fixturePositionChanged,
-            this, &AgentConnection::onFixturePositionChanged);
-    connect(props, &MonitorProperties::fixtureRotationChanged,
-            this, &AgentConnection::onFixtureRotationChanged);
-
     // Spatial transform deltas — debounced (meters/radians)
     SpatialModel *sm = m_doc->spatialModel();
     connect(sm, &SpatialModel::fixtureTransformChanged,
@@ -3048,53 +3023,6 @@ void AgentConnection::sendObservation(const QJsonObject &observation)
     msg["type"] = "add_observation";
     msg["observation"] = observation;
     sendJson(msg);
-}
-
-void AgentConnection::onFixturePositionChanged(quint32 fid, QVector3D pos)
-{
-    Q_UNUSED(pos);
-    if (m_suppressLayoutDelta)
-        return;
-    m_dirtyFixturePositions.insert(fid);
-    m_stageLayoutDebounce.start(); // restart the 1s timer
-}
-
-void AgentConnection::onFixtureRotationChanged(quint32 fid, QVector3D rot)
-{
-    Q_UNUSED(rot);
-    if (m_suppressLayoutDelta)
-        return;
-    m_dirtyFixturePositions.insert(fid); // same dirty set — send pos+rot together
-    m_stageLayoutDebounce.start();
-}
-
-void AgentConnection::onStageLayoutDebounceTimeout()
-{
-    if (m_state != Connected || m_dirtyFixturePositions.isEmpty())
-        return;
-
-    MonitorProperties *props = m_doc->monitorProperties();
-    QJsonArray changes;
-
-    for (quint32 fid : m_dirtyFixturePositions)
-    {
-        QVector3D pos = props->fixturePosition(fid, 0, 0);
-        QVector3D rot = props->fixtureRotation(fid, 0, 0);
-
-        QJsonObject change;
-        change["action"] = "fixture_position_changed";
-        change["fixtureId"] = (int)fid;
-        change["xPos"] = pos.x();
-        change["yPos"] = pos.y();
-        change["zPos"] = pos.z();
-        change["rotX"] = rot.x();
-        change["rotY"] = rot.y();
-        change["rotZ"] = rot.z();
-        changes.append(change);
-    }
-
-    m_dirtyFixturePositions.clear();
-    sendDelta(changes);
 }
 
 void AgentConnection::onSpatialTransformChanged(const QString &fixtureId)

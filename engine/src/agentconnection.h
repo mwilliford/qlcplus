@@ -141,11 +141,6 @@ private slots:
     void onGrandMasterValueChanged(uchar value);
     void onBlackoutChanged(bool state);
 
-    // MonitorProperties signal handlers (stage layout deltas — legacy)
-    void onFixturePositionChanged(quint32 fid, QVector3D pos);
-    void onFixtureRotationChanged(quint32 fid, QVector3D rot);
-    void onStageLayoutDebounceTimeout();
-
     // SpatialModel signal handlers (spatial transform deltas — meters/radians)
     void onSpatialTransformChanged(const QString &fixtureId);
     void onSpatialDebounceTimeout();
@@ -238,14 +233,10 @@ private:
 
     AgentAuthManager m_authManager;
 
-    // Stage layout delta debounce (legacy mm/degrees)
-    QTimer m_stageLayoutDebounce;
-    QSet<quint32> m_dirtyFixturePositions;
-    bool m_suppressLayoutDelta;  // true during agent command handling (avoid echo)
-
     // Spatial transform delta debounce (meters/radians)
     QTimer m_spatialDebounce;
     QSet<QString> m_dirtySpatialTransforms;
+    bool m_suppressLayoutDelta;  // true during agent command handling (avoid echo)
 };
 
 #endif // AGENTCONNECTION_H
