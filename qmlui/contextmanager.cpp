@@ -35,7 +35,10 @@
 #include "mainview2d.h"
 #include "mainview3d.h"
 #include "spatialview.h"
+#include "spatialmodel.h"
 #include "qlcchannel.h"
+
+#include <rigmath/rigid_transform.hpp>
 #include "tardis.h"
 #include "app.h"
 #include "doc.h"
@@ -876,6 +879,16 @@ void ContextManager::setFixturePosition(quint32 itemID, qreal x, qreal y, qreal 
 
     Tardis::instance()->enqueueAction(Tardis::FixtureSetPosition, itemID, QVariant(currPos), QVariant(newPos));
     m_monProps->setFixturePosition(fxID, headIndex, linkedIndex, newPos);
+
+    // Sync to SpatialModel (mm Z-up → meters, axis-angle)
+    if (headIndex == 0 && linkedIndex == 0)
+    {
+        double mx = newPos.x() / 1000.0;
+        double my = newPos.y() / 1000.0;
+        double mz = newPos.z() / 1000.0;
+        rigmath::RigidTransform t = rigmath::RigidTransform::translation(mx, my, mz);
+        m_doc->spatialModel()->setFixtureTransform(QString::number(fxID), t, SpatialModel::Manual);
+    }
 
     if (m_2DView->isEnabled())
         m_2DView->updateFixturePosition(itemID, newPos);
