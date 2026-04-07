@@ -198,6 +198,8 @@ private:
     void handleDeletePalette(const QJsonObject &msg);
     void handleSetFixturePosition(const QJsonObject &msg);
     void handleSetFixtureTransform(const QJsonObject &msg);
+    void handlePromoteTransform(const QJsonObject &msg);
+    void handleClearTransformLayer(const QJsonObject &msg);
     void handleCalibrationStateUpdate(const QJsonObject &msg);
 
     // Virtual Console command handlers (delegated to UI layer via callback)

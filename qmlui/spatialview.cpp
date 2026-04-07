@@ -238,6 +238,24 @@ void SpatialView::onSolverVizChanged()
     rebuildEllipsoids();
 }
 
+static void addFixtureEntry(std::vector<qlcrender::RenderFixture> &out,
+                            uint32_t id, int fixtureType,
+                            const rigmath::RigidTransform &t,
+                            float r, float g, float b, float a)
+{
+    qlcrender::RenderFixture rf;
+    rf.id = id;
+    rf.fixtureType = fixtureType;
+
+    double d[16];
+    t.to_4x4_column_major(d);
+    for (int i = 0; i < 16; i++)
+        rf.transform[i] = float(d[i]);
+
+    rf.color[0] = r; rf.color[1] = g; rf.color[2] = b; rf.color[3] = a;
+    out.push_back(rf);
+}
+
 void SpatialView::rebuildFixtures()
 {
     if (!m_bgfxReady)
@@ -248,30 +266,52 @@ void SpatialView::rebuildFixtures()
 
     for (const QString &id : sm->fixtureIds())
     {
-        qlcrender::RenderFixture rf;
-        rf.id = id.toUInt();
+        Fixture *fxi = m_doc->fixture(id.toUInt());
+        int fxType = fxi ? fxi->type() : -1;
+        uint32_t fxId = id.toUInt();
 
-        // Get fixture type for mesh selection
-        Fixture *fxi = m_doc->fixture(rf.id);
-        rf.fixtureType = fxi ? fxi->type() : -1;
-
-        // Get 4x4 column-major matrix
-        double d[16];
-        sm->fixtureMatrix4x4(id, d);
-        for (int i = 0; i < 16; i++)
-            rf.transform[i] = float(d[i]);
-
-        // Color based on source: solver=cyan, manual=orange
-        if (sm->fixtureSource(id) == SpatialModel::Solver)
+        // Committed (solid)
+        auto committed = sm->committedTransform(id);
+        if (committed.has_value())
         {
-            rf.color[0] = 0.2f; rf.color[1] = 0.8f; rf.color[2] = 0.9f; rf.color[3] = 1.0f;
+            addFixtureEntry(fixtures, fxId, fxType, committed.value(),
+                            1.0f, 0.6f, 0.2f, 1.0f);  // orange solid
         }
         else
         {
-            rf.color[0] = 1.0f; rf.color[1] = 0.6f; rf.color[2] = 0.2f; rf.color[3] = 1.0f;
+            // New fixture (no committed) — show agentDerived as primary if present
+            auto agent = sm->agentDerivedTransform(id);
+            if (agent.has_value())
+            {
+                addFixtureEntry(fixtures, fxId, fxType, agent.value(),
+                                0.2f, 0.9f, 0.3f, 0.8f);  // green, slightly translucent
+            }
+            else
+            {
+                // Truly new — show at origin, cyan
+                addFixtureEntry(fixtures, fxId, fxType,
+                                rigmath::RigidTransform::identity(),
+                                0.2f, 0.8f, 0.9f, 1.0f);  // cyan
+            }
+            // For new fixtures, don't show separate ghosts — the primary is already the proposal
+            continue;
         }
 
-        fixtures.push_back(rf);
+        // agentDerived ghost (green, translucent) — only if committed exists
+        auto agentDerived = sm->agentDerivedTransform(id);
+        if (agentDerived.has_value())
+        {
+            addFixtureEntry(fixtures, fxId, fxType, agentDerived.value(),
+                            0.2f, 0.9f, 0.3f, 0.4f);  // green ghost
+        }
+
+        // solverDerived ghost (cyan, translucent) — only if committed exists
+        auto solverDerived = sm->solverDerivedTransform(id);
+        if (solverDerived.has_value())
+        {
+            addFixtureEntry(fixtures, fxId, fxType, solverDerived.value(),
+                            0.2f, 0.8f, 0.9f, 0.4f);  // cyan ghost
+        }
     }
 
     m_renderer->setFixtures(fixtures);

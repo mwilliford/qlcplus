@@ -578,6 +578,14 @@ void AgentConnection::onWsTextMessage(const QString &message)
     {
         handleSetFixtureTransform(msg);
     }
+    else if (type == "promote_transform")
+    {
+        handlePromoteTransform(msg);
+    }
+    else if (type == "clear_transform_layer")
+    {
+        handleClearTransformLayer(msg);
+    }
     else if (type == "calibration_state_update")
     {
         handleCalibrationStateUpdate(msg);
@@ -1862,11 +1870,14 @@ void AgentConnection::handleSetFixturePosition(const QJsonObject &msg)
         return;
     }
 
+    QString idStr = QString::number(fixtureId);
+
     // Suppress debounce delta — this handler sends its own delta below
     m_suppressLayoutDelta = true;
 
-    MonitorProperties *props = m_doc->monitorProperties();
-    props->setFixturePosition(fixtureId, 0, 0, QVector3D(xPos, yPos, zPos));
+    // Write to SpatialModel (source of truth) — position in mm
+    SpatialModel *sm = m_doc->spatialModel();
+    sm->setFixturePositionMm(idStr, QVector3D(xPos, yPos, zPos));
 
     // Optional rotation (Euler angles in degrees: pitch, yaw, roll)
     bool hasRotation = msg.contains("rotX") || msg.contains("rotY") || msg.contains("rotZ");
@@ -1875,28 +1886,54 @@ void AgentConnection::handleSetFixturePosition(const QJsonObject &msg)
         double rotX = msg["rotX"].toDouble(0.0);
         double rotY = msg["rotY"].toDouble(0.0);
         double rotZ = msg["rotZ"].toDouble(0.0);
-        props->setFixtureRotation(fixtureId, 0, 0, QVector3D(rotX, rotY, rotZ));
+        sm->setFixtureRotationDeg(idStr, QVector3D(rotX, rotY, rotZ));
     }
+
+    // Sync to MonitorProperties for legacy 2D view compat
+    MonitorProperties *props = m_doc->monitorProperties();
+    props->setFixturePosition(fixtureId, 0, 0, QVector3D(xPos, yPos, zPos));
+    if (hasRotation)
+        props->setFixtureRotation(fixtureId, 0, 0,
+            QVector3D(msg["rotX"].toDouble(0.0), msg["rotY"].toDouble(0.0), msg["rotZ"].toDouble(0.0)));
 
     m_suppressLayoutDelta = false;
     m_doc->setModified();
 
-    // Send delta so server updates its stage layout
+    // Send spatial_transform_changed delta (meters/radians)
+    rigmath::RigidTransform t = sm->fixtureTransform(idStr);
+    QJsonArray posArr = { t.pos[0], t.pos[1], t.pos[2] };
+    double ax, ay, az;
+    t.get_axis_angle(ax, ay, az);
+    QJsonArray aaArr = { ax, ay, az };
+
     QJsonObject change;
-    change["action"] = "fixture_position_changed";
+    change["action"] = "spatial_transform_changed";
     change["fixtureId"] = (int)fixtureId;
-    change["xPos"] = xPos;
-    change["yPos"] = yPos;
-    change["zPos"] = zPos;
-    if (hasRotation)
-    {
-        change["rotX"] = msg["rotX"].toDouble(0.0);
-        change["rotY"] = msg["rotY"].toDouble(0.0);
-        change["rotZ"] = msg["rotZ"].toDouble(0.0);
-    }
+    change["pos"] = posArr;
+    change["axis_angle"] = aaArr;
+    change["layer"] = "committed";
     sendDelta(QJsonArray{change});
 
     sendCommandResult(requestId, true);
+}
+
+static SpatialModel::Layer parseLayer(const QString &layerStr)
+{
+    if (layerStr == QLatin1String("agentDerived"))
+        return SpatialModel::AgentDerived;
+    if (layerStr == QLatin1String("solverDerived"))
+        return SpatialModel::SolverDerived;
+    return SpatialModel::Committed;
+}
+
+static QString layerToString(SpatialModel::Layer layer)
+{
+    switch (layer)
+    {
+    case SpatialModel::AgentDerived:  return QStringLiteral("agentDerived");
+    case SpatialModel::SolverDerived: return QStringLiteral("solverDerived");
+    default:                          return QStringLiteral("committed");
+    }
 }
 
 void AgentConnection::handleSetFixtureTransform(const QJsonObject &msg)
@@ -1914,41 +1951,89 @@ void AgentConnection::handleSetFixtureTransform(const QJsonObject &msg)
         return;
     }
 
+    SpatialModel::Layer layer = parseLayer(msg["layer"].toString());
+
     rigmath::RigidTransform t = rigmath::RigidTransform::from_pose(
         pos[0].toDouble(), pos[1].toDouble(), pos[2].toDouble(),
         aa[0].toDouble(), aa[1].toDouble(), aa[2].toDouble()
     );
 
-    // Suppress both delta paths to avoid echoing back
+    QString idStr = QString::number(fixtureId);
     m_suppressLayoutDelta = true;
 
-    m_doc->spatialModel()->setFixtureTransform(
-        QString::number(fixtureId), t, SpatialModel::Solver);
+    m_doc->spatialModel()->setFixtureTransform(idStr, t, layer);
 
-    // Also update MonitorProperties for legacy 2D/3D view compat
-    // Convert meters → mm, axis-angle → Euler degrees
-    MonitorProperties *props = m_doc->monitorProperties();
-    props->setFixturePosition(fixtureId, 0, 0,
-        QVector3D(t.pos[0] * 1000.0, t.pos[1] * 1000.0, t.pos[2] * 1000.0));
+    // Update MonitorProperties only for committed (legacy 2D view compat)
+    if (layer == SpatialModel::Committed)
+    {
+        MonitorProperties *props = m_doc->monitorProperties();
+        props->setFixturePosition(fixtureId, 0, 0,
+            QVector3D(t.pos[0] * 1000.0, t.pos[1] * 1000.0, t.pos[2] * 1000.0));
 
-    // Approximate Euler degrees from axis-angle for legacy compat
-    double ax, ay, az;
-    t.get_axis_angle(ax, ay, az);
-    double radToDeg = 180.0 / M_PI;
-    props->setFixtureRotation(fixtureId, 0, 0,
-        QVector3D(ax * radToDeg, ay * radToDeg, az * radToDeg));
+        double ax, ay, az;
+        t.get_axis_angle(ax, ay, az);
+        double radToDeg = 180.0 / M_PI;
+        props->setFixtureRotation(fixtureId, 0, 0,
+            QVector3D(ax * radToDeg, ay * radToDeg, az * radToDeg));
+    }
 
     m_suppressLayoutDelta = false;
     m_doc->setModified();
 
-    // Send spatial delta in meters/radians (no conversion)
-    QJsonObject change;
-    change["action"] = "spatial_transform_changed";
-    change["fixtureId"] = fixtureId;
-    change["pos"] = pos;
-    change["axis_angle"] = aa;
-    change["source"] = "solver";
-    sendDelta(QJsonArray{change});
+    sendCommandResult(requestId, true);
+}
+
+void AgentConnection::handlePromoteTransform(const QJsonObject &msg)
+{
+    QString requestId = msg["requestId"].toString();
+    int fixtureId = msg["fixtureId"].toInt();
+    SpatialModel::Layer sourceLayer = parseLayer(msg["layer"].toString());
+
+    if (sourceLayer == SpatialModel::Committed)
+    {
+        QJsonObject extra;
+        extra["error"] = "Cannot promote committed to committed";
+        sendCommandResult(requestId, false, extra);
+        return;
+    }
+
+    QString idStr = QString::number(fixtureId);
+    SpatialModel *sm = m_doc->spatialModel();
+
+    m_suppressLayoutDelta = true;
+    sm->promoteTransform(idStr, sourceLayer);
+
+    // Update MonitorProperties with the newly committed transform
+    auto committed = sm->committedTransform(idStr);
+    if (committed.has_value())
+    {
+        MonitorProperties *props = m_doc->monitorProperties();
+        props->setFixturePosition(fixtureId, 0, 0,
+            QVector3D(committed->pos[0] * 1000.0, committed->pos[1] * 1000.0,
+                      committed->pos[2] * 1000.0));
+
+        double ax, ay, az;
+        committed->get_axis_angle(ax, ay, az);
+        double radToDeg = 180.0 / M_PI;
+        props->setFixtureRotation(fixtureId, 0, 0,
+            QVector3D(ax * radToDeg, ay * radToDeg, az * radToDeg));
+    }
+
+    m_suppressLayoutDelta = false;
+    m_doc->setModified();
+
+    sendCommandResult(requestId, true);
+}
+
+void AgentConnection::handleClearTransformLayer(const QJsonObject &msg)
+{
+    QString requestId = msg["requestId"].toString();
+    int fixtureId = msg["fixtureId"].toInt();
+    SpatialModel::Layer layer = parseLayer(msg["layer"].toString());
+
+    m_suppressLayoutDelta = true;
+    m_doc->spatialModel()->clearTransformLayer(QString::number(fixtureId), layer);
+    m_suppressLayoutDelta = false;
 
     sendCommandResult(requestId, true);
 }
@@ -2770,24 +2855,32 @@ QJsonObject AgentConnection::serializeStageLayout()
     return layout;
 }
 
+static QJsonObject transformToJson(const rigmath::RigidTransform &t)
+{
+    double ax, ay, az;
+    t.get_axis_angle(ax, ay, az);
+    QJsonObject obj;
+    obj["pos"] = QJsonArray{t.pos[0], t.pos[1], t.pos[2]};
+    obj["axis_angle"] = QJsonArray{ax, ay, az};
+    return obj;
+}
+
 QJsonObject AgentConnection::serializeSpatialModel()
 {
     SpatialModel *sm = m_doc->spatialModel();
     QJsonObject obj;
 
-    // Per-fixture transforms in rigmath native: meters, Z-up, axis-angle radians
+    // Per-fixture: three optional layers in rigmath native (meters, Z-up, axis-angle)
     QJsonObject fixtures;
     for (const QString &id : sm->fixtureIds())
     {
-        rigmath::RigidTransform t = sm->fixtureTransform(id);
         QJsonObject fj;
-        fj["pos"] = QJsonArray{t.pos[0], t.pos[1], t.pos[2]};
-
-        double ax, ay, az;
-        t.get_axis_angle(ax, ay, az);
-        fj["axis_angle"] = QJsonArray{ax, ay, az};
-
-        fj["source"] = (sm->fixtureSource(id) == SpatialModel::Solver) ? "solver" : "manual";
+        auto c = sm->committedTransform(id);
+        auto a = sm->agentDerivedTransform(id);
+        auto s = sm->solverDerivedTransform(id);
+        fj["committed"] = c.has_value() ? transformToJson(c.value()) : QJsonValue(QJsonValue::Null);
+        fj["agentDerived"] = a.has_value() ? transformToJson(a.value()) : QJsonValue(QJsonValue::Null);
+        fj["solverDerived"] = s.has_value() ? transformToJson(s.value()) : QJsonValue(QJsonValue::Null);
         fixtures[id] = fj;
     }
     obj["fixtures"] = fixtures;
@@ -3055,8 +3148,7 @@ void AgentConnection::onSpatialDebounceTimeout()
         change["fixtureId"] = id.toInt();
         change["pos"] = QJsonArray{t.pos[0], t.pos[1], t.pos[2]};
         change["axis_angle"] = QJsonArray{ax, ay, az};
-        change["source"] = (sm->fixtureSource(id) == SpatialModel::Solver)
-                           ? "solver" : "manual";
+        change["layer"] = "committed";
         changes.append(change);
     }
 

@@ -321,8 +321,13 @@ void BgfxRenderer::renderFixtures()
         // Set fixture color uniform
         bgfx::setUniform(m_u_color, fixture.color);
 
-        bgfx::setState(BGFX_STATE_WRITE_RGB | BGFX_STATE_WRITE_A
-                        | BGFX_STATE_WRITE_Z | BGFX_STATE_DEPTH_TEST_LESS);
+        // Alpha < 1.0 = ghost (translucent proposal) — enable alpha blending
+        uint64_t state = BGFX_STATE_WRITE_RGB | BGFX_STATE_WRITE_A
+                         | BGFX_STATE_WRITE_Z | BGFX_STATE_DEPTH_TEST_LESS;
+        if (fixture.color[3] < 0.99f)
+            state |= BGFX_STATE_BLEND_ALPHA;
+
+        bgfx::setState(state);
 
         // Use lit shader for meshes with normals, basic for vertex-colored geometry
         bgfx::ProgramHandle prog = (useLitShader && bgfx::isValid(m_litProgram))

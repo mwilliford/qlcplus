@@ -28,6 +28,7 @@
 #include <QVector3D>
 #include <QXmlStreamReader>
 #include <QXmlStreamWriter>
+#include <optional>
 
 #include <rigmath/rigid_transform.hpp>
 
@@ -39,10 +40,13 @@ class MonitorProperties;
  * SpatialModel is the canonical source of fixture transforms (position + rotation).
  * Transforms use rigmath conventions: meters, Z-up center-stage origin, axis-angle radians.
  *
- * Data is client-owned and persisted in workspace XML. The server enriches with
- * ephemeral solver visualization (ellipsoids, quality) via calibration_state_update.
+ * Each fixture has three transform layers:
+ *  - committed: user-approved transform (persisted in XML)
+ *  - agentDerived: agent proposal (shown as green ghost in 3D)
+ *  - solverDerived: solver result (shown as cyan ghost in 3D, updated by auto_solve)
  *
- * Replaces CalibrationModel (server-only) + MonitorProperties position/rotation data.
+ * A fixture with committed=nullopt is "new" (never positioned by the user).
+ * agentDerived/solverDerived are ephemeral and not persisted.
  */
 class SpatialModel : public QObject
 {
@@ -51,37 +55,59 @@ class SpatialModel : public QObject
 public:
     explicit SpatialModel(QObject *parent = nullptr);
 
-    /** Source of the transform data */
-    enum Source { Manual, Solver };
+    /** Transform layer — replaces the old Source enum. */
+    enum Layer { Committed, AgentDerived, SolverDerived };
 
-    // --- Persisted fixture transforms (rigmath native: meters, Z-up, axis-angle) ---
+    // --- Three-layer fixture transforms ---
 
+    /** Write a transform to a specific layer.
+     *  Writing to Committed clears agentDerived and solverDerived (user decision overrides). */
     void setFixtureTransform(const QString &id, const rigmath::RigidTransform &t,
-                             Source source = Manual);
+                             Layer layer = Committed);
+
+    /** Explicit layer accessors — return nullopt if no transform on that layer. */
+    std::optional<rigmath::RigidTransform> committedTransform(const QString &id) const;
+    std::optional<rigmath::RigidTransform> agentDerivedTransform(const QString &id) const;
+    std::optional<rigmath::RigidTransform> solverDerivedTransform(const QString &id) const;
+
+    /** Best available for rendering: committed > agentDerived > solverDerived > identity.
+     *  Used by 2D view and as fallback. Prefer explicit layer accessors. */
+    rigmath::RigidTransform renderTransform(const QString &id) const;
+
+    /** Backward-compat alias for renderTransform(). */
     rigmath::RigidTransform fixtureTransform(const QString &id) const;
 
-    /** Write 4x4 column-major matrix for rendering (OpenGL/bgfx ready). */
+    /** Write 4x4 column-major matrix for rendering (OpenGL/bgfx ready).
+     *  Uses renderTransform(). */
     void fixtureMatrix4x4(const QString &id, double out[16]) const;
+
+    /** True if fixture has no committed transform (new/unpositioned). */
+    bool isNew(const QString &id) const;
+
+    /** Promote a proposal layer to committed.
+     *  Copies the source layer's value to committed, then clears both proposal layers. */
+    void promoteTransform(const QString &id, Layer sourceLayer);
+
+    /** Clear a specific proposal layer (AgentDerived or SolverDerived). */
+    void clearTransformLayer(const QString &id, Layer layer);
 
     void removeFixture(const QString &id);
     QStringList fixtureIds() const;
     bool hasFixture(const QString &id) const;
-    Source fixtureSource(const QString &id) const;
 
     // --- Convenience accessors for 2D view (mm + Euler degrees) ---
-    // These convert from/to the internal rigmath format automatically.
+    // Reads use renderTransform(). Writes go to committed layer.
 
-    /** Get position in mm (Z-up, center-stage origin). */
+    /** Get position in mm (Z-up, center-stage origin) from renderTransform(). */
     QVector3D fixturePositionMm(const QString &id) const;
 
-    /** Get rotation in Euler degrees (ZYX convention). */
+    /** Get rotation in Euler degrees (ZYX convention) from renderTransform(). */
     QVector3D fixtureRotationDeg(const QString &id) const;
 
-    /** Set position from mm. Preserves existing rotation. */
-    void setFixturePositionMm(const QString &id, const QVector3D &posMm,
-                              Source source = Manual);
+    /** Set position from mm. Writes to committed, preserves existing rotation. */
+    void setFixturePositionMm(const QString &id, const QVector3D &posMm);
 
-    /** Set rotation from Euler degrees. Preserves existing position. */
+    /** Set rotation from Euler degrees. Writes to committed, preserves existing position. */
     void setFixtureRotationDeg(const QString &id, const QVector3D &rotDeg);
 
     // --- Named planes (future: replace gridSize as room model) ---
@@ -106,7 +132,7 @@ public:
     };
 
     /** Apply a calibration_state_update message from the server.
-     *  Updates transforms (source=Solver) and ephemeral viz data. */
+     *  Writes solver transforms to solverDerived layer and updates ephemeral viz data. */
     void applySolverVisualization(const QJsonObject &msg);
 
     FixtureViz fixtureViz(const QString &id) const;
@@ -128,7 +154,7 @@ public:
     void clear();
 
 signals:
-    /** Emitted when a single fixture transform changes (local edit or solver update). */
+    /** Emitted when a single fixture transform changes (any layer). */
     void fixtureTransformChanged(const QString &id);
 
     /** Emitted when the set of planes changes. */
@@ -140,8 +166,9 @@ signals:
 private:
     struct FixtureEntry
     {
-        rigmath::RigidTransform transform;
-        Source source = Manual;
+        std::optional<rigmath::RigidTransform> committed;
+        std::optional<rigmath::RigidTransform> agentDerived;
+        std::optional<rigmath::RigidTransform> solverDerived;
         FixtureViz viz;
     };
 

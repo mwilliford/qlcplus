@@ -28,6 +28,7 @@
 #include "qlcfixturemode.h"
 #include "monitorproperties.h"
 #include "doc.h"
+#include "spatialmodel.h"
 
 MainViewDMX::MainViewDMX(QQuickView *view, Doc *doc, QObject *parent)
     : PreviewContext(view, doc, "DMX", parent)
@@ -108,7 +109,10 @@ void MainViewDMX::createFixtureItem(quint32 fxID)
     quint32 itemFlags = monProps->fixtureFlags(fxID, 0, 0);
 
     if (monProps->containsFixture(fxID) == false)
+    {
+        m_doc->spatialModel()->setFixturePositionMm(QString::number(fxID), QVector3D(0, 0, 0));
         monProps->setFixturePosition(fxID, 0, 0, QVector3D(0, 0, 0));
+    }
 
     newFixtureItem->setParentItem(contextItem());
     newFixtureItem->setProperty("fixtureObj", QVariant::fromValue(fixture));

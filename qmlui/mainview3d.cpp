@@ -35,6 +35,7 @@
 #include <Qt3DRender/QGeometryRenderer>
 
 #include "doc.h"
+#include "spatialmodel.h"
 #include "tardis.h"
 #include "qlcfile.h"
 #include "qlcconfig.h"
@@ -149,8 +150,12 @@ void MainView3D::slotRefreshView()
             {
                 quint16 headIndex = m_monProps->fixtureHeadIndex(subID);
                 quint16 linkedIndex = m_monProps->fixtureLinkedIndex(subID);
-                createFixtureItem(fixture->id(), headIndex, linkedIndex,
-                                  m_monProps->fixturePosition(fixture->id(), headIndex, linkedIndex), true);
+                QVector3D pos;
+                if (headIndex == 0 && linkedIndex == 0)
+                    pos = m_doc->spatialModel()->fixturePositionMm(QString::number(fixture->id()));
+                else
+                    pos = m_monProps->fixturePosition(fixture->id(), headIndex, linkedIndex);
+                createFixtureItem(fixture->id(), headIndex, linkedIndex, pos, true);
             }
         }
         else
@@ -1159,7 +1164,10 @@ void MainView3D::initializeFixture(quint32 itemID, QEntity *fxEntity, const QSce
     QVector3D fxPos;
     if (m_monProps->containsItem(fxID, headIndex, linkedIndex))
     {
-        fxPos = m_monProps->fixturePosition(fxID, headIndex, linkedIndex);
+        if (headIndex == 0 && linkedIndex == 0)
+            fxPos = m_doc->spatialModel()->fixturePositionMm(QString::number(fxID));
+        else
+            fxPos = m_monProps->fixturePosition(fxID, headIndex, linkedIndex);
     }
     else
     {
@@ -1168,6 +1176,8 @@ void MainView3D::initializeFixture(quint32 itemID, QEntity *fxEntity, const QSce
                                                             QRectF(0, 0, size.width(), size.height()));
         // add the new fixture to the Doc monitor properties
         fxPos = QVector3D(itemPos.x(), 1000.0, itemPos.y());
+        if (headIndex == 0 && linkedIndex == 0)
+            m_doc->spatialModel()->setFixturePositionMm(QString::number(fxID), fxPos);
         m_monProps->setFixturePosition(fxID, headIndex, linkedIndex, fxPos);
         m_monProps->setFixtureFlags(fxID, headIndex, linkedIndex, 0);
         Tardis::instance()->enqueueAction(Tardis::FixtureSetPosition, itemID, QVariant(QVector3D(0, 0, 0)), QVariant(fxPos));
@@ -1177,7 +1187,13 @@ void MainView3D::initializeFixture(quint32 itemID, QEntity *fxEntity, const QSce
     if (loader)
         updateFixtureScale(itemID, fxSize);
     updateFixturePosition(itemID, fxPos);
-    updateFixtureRotation(itemID, m_monProps->fixtureRotation(fxID, headIndex, linkedIndex));
+
+    QVector3D fxRot;
+    if (headIndex == 0 && linkedIndex == 0)
+        fxRot = m_doc->spatialModel()->fixtureRotationDeg(QString::number(fxID));
+    else
+        fxRot = m_monProps->fixtureRotation(fxID, headIndex, linkedIndex);
+    updateFixtureRotation(itemID, fxRot);
 
     QLayer *selectionLayer = m_sceneRootEntity->property("selectionLayer").value<QLayer *>();
     QGeometryRenderer *selectionMesh = m_sceneRootEntity->property("selectionMesh").value<QGeometryRenderer *>();
