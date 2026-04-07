@@ -32,12 +32,20 @@ void SpatialModel_Test::setAndGetTransform()
 {
     SpatialModel sm;
     rigmath::RigidTransform t = rigmath::RigidTransform::from_pose(1.5, -2.0, 3.0, 0.1, 0.2, 0.3);
-    sm.setFixtureTransform("1", t, SpatialModel::Solver);
+    sm.setFixtureTransform("1", t, SpatialModel::Committed);
 
     QVERIFY(sm.hasFixture("1"));
     QCOMPARE(sm.fixtureIds().size(), 1);
     QVERIFY(sm.fixtureIds().contains("1"));
 
+    // Committed accessor returns the value
+    auto committed = sm.committedTransform("1");
+    QVERIFY(committed.has_value());
+    QCOMPARE(committed->pos[0], t.pos[0]);
+    QCOMPARE(committed->pos[1], t.pos[1]);
+    QCOMPARE(committed->pos[2], t.pos[2]);
+
+    // renderTransform/fixtureTransform returns committed
     rigmath::RigidTransform got = sm.fixtureTransform("1");
     QCOMPARE(got.pos[0], t.pos[0]);
     QCOMPARE(got.pos[1], t.pos[1]);
@@ -47,26 +55,19 @@ void SpatialModel_Test::setAndGetTransform()
 void SpatialModel_Test::fixtureMatrix4x4()
 {
     SpatialModel sm;
-    // Identity transform at origin
     sm.setFixtureTransform("1", rigmath::RigidTransform::identity());
 
     double m[16];
     sm.fixtureMatrix4x4("1", m);
 
-    // Column-major identity:
-    // [1 0 0 0]  →  m[0]=1, m[1]=0, m[2]=0, m[3]=0
-    // [0 1 0 0]     m[4]=0, m[5]=1, m[6]=0, m[7]=0
-    // [0 0 1 0]     m[8]=0, m[9]=0, m[10]=1, m[11]=0
-    // [0 0 0 1]     m[12]=0, m[13]=0, m[14]=0, m[15]=1
     QCOMPARE(m[0], 1.0);
     QCOMPARE(m[5], 1.0);
     QCOMPARE(m[10], 1.0);
     QCOMPARE(m[15], 1.0);
-    QCOMPARE(m[12], 0.0);  // translation x
-    QCOMPARE(m[13], 0.0);  // translation y
-    QCOMPARE(m[14], 0.0);  // translation z
+    QCOMPARE(m[12], 0.0);
+    QCOMPARE(m[13], 0.0);
+    QCOMPARE(m[14], 0.0);
 
-    // With translation
     sm.setFixtureTransform("2", rigmath::RigidTransform::translation(1.5, -2.0, 3.0));
     sm.fixtureMatrix4x4("2", m);
     QCOMPARE(m[12], 1.5);
@@ -87,30 +88,171 @@ void SpatialModel_Test::removeFixture()
     QVERIFY(sm.hasFixture("2"));
 }
 
-void SpatialModel_Test::sourceTracking()
-{
-    SpatialModel sm;
-    sm.setFixtureTransform("1", rigmath::RigidTransform::identity(), SpatialModel::Manual);
-    sm.setFixtureTransform("2", rigmath::RigidTransform::identity(), SpatialModel::Solver);
-
-    QCOMPARE(sm.fixtureSource("1"), SpatialModel::Manual);
-    QCOMPARE(sm.fixtureSource("2"), SpatialModel::Solver);
-
-    // Unknown fixture defaults to Manual
-    QCOMPARE(sm.fixtureSource("999"), SpatialModel::Manual);
-}
-
 void SpatialModel_Test::identityForUnknown()
 {
     SpatialModel sm;
     rigmath::RigidTransform t = sm.fixtureTransform("nonexistent");
-    // Should return identity
     QCOMPARE(t.pos[0], 0.0);
     QCOMPARE(t.pos[1], 0.0);
     QCOMPARE(t.pos[2], 0.0);
-    QCOMPARE(t.rot[0], 1.0);  // identity rotation
+    QCOMPARE(t.rot[0], 1.0);
     QCOMPARE(t.rot[4], 1.0);
     QCOMPARE(t.rot[8], 1.0);
+}
+
+// ---------------------------------------------------------------------------
+// Three-layer model
+// ---------------------------------------------------------------------------
+
+void SpatialModel_Test::isNewFixture()
+{
+    SpatialModel sm;
+
+    // Unknown fixture is "new"
+    QVERIFY(sm.isNew("1"));
+
+    // Fixture with only agentDerived is still "new"
+    sm.setFixtureTransform("1", rigmath::RigidTransform::identity(), SpatialModel::AgentDerived);
+    QVERIFY(sm.isNew("1"));
+
+    // Fixture with only solverDerived is still "new"
+    sm.setFixtureTransform("2", rigmath::RigidTransform::identity(), SpatialModel::SolverDerived);
+    QVERIFY(sm.isNew("2"));
+
+    // Fixture with committed is NOT new
+    sm.setFixtureTransform("3", rigmath::RigidTransform::identity(), SpatialModel::Committed);
+    QVERIFY(!sm.isNew("3"));
+}
+
+void SpatialModel_Test::committedClearsProposals()
+{
+    SpatialModel sm;
+
+    // Set up agentDerived and solverDerived proposals
+    sm.setFixtureTransform("1", rigmath::RigidTransform::translation(1, 0, 0), SpatialModel::AgentDerived);
+    sm.setFixtureTransform("1", rigmath::RigidTransform::translation(2, 0, 0), SpatialModel::SolverDerived);
+    QVERIFY(sm.agentDerivedTransform("1").has_value());
+    QVERIFY(sm.solverDerivedTransform("1").has_value());
+
+    // Writing committed clears both proposals
+    sm.setFixtureTransform("1", rigmath::RigidTransform::translation(3, 0, 0), SpatialModel::Committed);
+    QVERIFY(sm.committedTransform("1").has_value());
+    QVERIFY(!sm.agentDerivedTransform("1").has_value());
+    QVERIFY(!sm.solverDerivedTransform("1").has_value());
+    QCOMPARE(sm.committedTransform("1")->pos[0], 3.0);
+}
+
+void SpatialModel_Test::agentDerivedDoesNotTouchOtherLayers()
+{
+    SpatialModel sm;
+    sm.setFixtureTransform("1", rigmath::RigidTransform::translation(1, 0, 0), SpatialModel::Committed);
+    sm.setFixtureTransform("1", rigmath::RigidTransform::translation(2, 0, 0), SpatialModel::AgentDerived);
+
+    QVERIFY(sm.committedTransform("1").has_value());
+    QCOMPARE(sm.committedTransform("1")->pos[0], 1.0);
+    QVERIFY(sm.agentDerivedTransform("1").has_value());
+    QCOMPARE(sm.agentDerivedTransform("1")->pos[0], 2.0);
+}
+
+void SpatialModel_Test::solverDerivedDoesNotTouchOtherLayers()
+{
+    SpatialModel sm;
+    sm.setFixtureTransform("1", rigmath::RigidTransform::translation(1, 0, 0), SpatialModel::Committed);
+    sm.setFixtureTransform("1", rigmath::RigidTransform::translation(3, 0, 0), SpatialModel::AgentDerived);
+    sm.setFixtureTransform("1", rigmath::RigidTransform::translation(5, 0, 0), SpatialModel::SolverDerived);
+
+    QCOMPARE(sm.committedTransform("1")->pos[0], 1.0);
+    QCOMPARE(sm.agentDerivedTransform("1")->pos[0], 3.0);
+    QCOMPARE(sm.solverDerivedTransform("1")->pos[0], 5.0);
+}
+
+void SpatialModel_Test::renderTransformPriority()
+{
+    SpatialModel sm;
+
+    // No layers: identity
+    sm.setFixtureTransform("1", rigmath::RigidTransform::translation(5, 0, 0), SpatialModel::SolverDerived);
+    // Only solverDerived
+    QCOMPARE(sm.renderTransform("1").pos[0], 5.0);
+
+    // agentDerived takes priority over solverDerived
+    sm.setFixtureTransform("1", rigmath::RigidTransform::translation(3, 0, 0), SpatialModel::AgentDerived);
+    QCOMPARE(sm.renderTransform("1").pos[0], 3.0);
+
+    // committed takes priority over agentDerived (and clears proposals)
+    sm.setFixtureTransform("1", rigmath::RigidTransform::translation(1, 0, 0), SpatialModel::Committed);
+    QCOMPARE(sm.renderTransform("1").pos[0], 1.0);
+
+    // Unknown fixture: identity
+    QCOMPARE(sm.renderTransform("nonexistent").pos[0], 0.0);
+}
+
+void SpatialModel_Test::promoteAgentDerived()
+{
+    SpatialModel sm;
+    sm.setFixtureTransform("1", rigmath::RigidTransform::translation(1, 0, 0), SpatialModel::Committed);
+    sm.setFixtureTransform("1", rigmath::RigidTransform::translation(2, 0, 0), SpatialModel::AgentDerived);
+    sm.setFixtureTransform("1", rigmath::RigidTransform::translation(3, 0, 0), SpatialModel::SolverDerived);
+
+    sm.promoteTransform("1", SpatialModel::AgentDerived);
+
+    // committed = agentDerived value, proposals cleared
+    QCOMPARE(sm.committedTransform("1")->pos[0], 2.0);
+    QVERIFY(!sm.agentDerivedTransform("1").has_value());
+    QVERIFY(!sm.solverDerivedTransform("1").has_value());
+}
+
+void SpatialModel_Test::promoteSolverDerived()
+{
+    SpatialModel sm;
+    sm.setFixtureTransform("1", rigmath::RigidTransform::translation(1, 0, 0), SpatialModel::Committed);
+    sm.setFixtureTransform("1", rigmath::RigidTransform::translation(3, 0, 0), SpatialModel::AgentDerived);
+    sm.setFixtureTransform("1", rigmath::RigidTransform::translation(5, 0, 0), SpatialModel::SolverDerived);
+
+    sm.promoteTransform("1", SpatialModel::SolverDerived);
+
+    QCOMPARE(sm.committedTransform("1")->pos[0], 5.0);
+    QVERIFY(!sm.agentDerivedTransform("1").has_value());
+    QVERIFY(!sm.solverDerivedTransform("1").has_value());
+}
+
+void SpatialModel_Test::promoteEmptyIsNoOp()
+{
+    SpatialModel sm;
+    sm.setFixtureTransform("1", rigmath::RigidTransform::translation(1, 0, 0), SpatialModel::Committed);
+
+    // No agentDerived to promote — committed unchanged
+    sm.promoteTransform("1", SpatialModel::AgentDerived);
+    QCOMPARE(sm.committedTransform("1")->pos[0], 1.0);
+
+    // Non-existent fixture — no crash
+    sm.promoteTransform("nonexistent", SpatialModel::AgentDerived);
+}
+
+void SpatialModel_Test::clearTransformLayer()
+{
+    SpatialModel sm;
+    sm.setFixtureTransform("1", rigmath::RigidTransform::translation(1, 0, 0), SpatialModel::Committed);
+    sm.setFixtureTransform("1", rigmath::RigidTransform::translation(2, 0, 0), SpatialModel::AgentDerived);
+    sm.setFixtureTransform("1", rigmath::RigidTransform::translation(3, 0, 0), SpatialModel::SolverDerived);
+
+    // Clear agentDerived — committed and solverDerived untouched
+    sm.clearTransformLayer("1", SpatialModel::AgentDerived);
+    QVERIFY(!sm.agentDerivedTransform("1").has_value());
+    QVERIFY(sm.committedTransform("1").has_value());
+    QVERIFY(sm.solverDerivedTransform("1").has_value());
+
+    // Clear solverDerived
+    sm.clearTransformLayer("1", SpatialModel::SolverDerived);
+    QVERIFY(!sm.solverDerivedTransform("1").has_value());
+    QVERIFY(sm.committedTransform("1").has_value());
+
+    // Clear committed makes fixture "new" again
+    sm.clearTransformLayer("1", SpatialModel::Committed);
+    QVERIFY(sm.isNew("1"));
+
+    // Non-existent fixture — no crash
+    sm.clearTransformLayer("nonexistent", SpatialModel::AgentDerived);
 }
 
 // ---------------------------------------------------------------------------
@@ -186,14 +328,16 @@ void SpatialModel_Test::saveAndLoadXML()
     QByteArray data = writeXML(sm);
     QVERIFY(!data.isEmpty());
 
-    // Load into a fresh model
     SpatialModel sm2;
     QVERIFY(readXML(sm2, data));
 
-    // Verify fixtures
     QCOMPARE(sm2.fixtureIds().size(), 2);
     QVERIFY(sm2.hasFixture("1"));
     QVERIFY(sm2.hasFixture("2"));
+
+    // Loaded fixtures have committed transforms
+    QVERIFY(!sm2.isNew("1"));
+    QVERIFY(!sm2.isNew("2"));
 
     rigmath::RigidTransform t1 = sm2.fixtureTransform("1");
     QVERIFY(std::abs(t1.pos[0] - 1.5) < 1e-6);
@@ -205,31 +349,35 @@ void SpatialModel_Test::saveAndLoadXML()
     QVERIFY(std::abs(t2.pos[1] - 1.0) < 1e-6);
     QVERIFY(std::abs(t2.pos[2] - 2.5) < 1e-6);
 
-    // Verify planes
     QCOMPARE(sm2.planes().size(), 1);
     QCOMPARE(sm2.planes()[0].name, QString("floor"));
+
+    // No Source attribute in XML anymore
+    QVERIFY(!data.contains("Source="));
 }
 
 void SpatialModel_Test::saveSkipsEmpty()
 {
     SpatialModel sm;
     QByteArray data = writeXML(sm);
-    // Empty model should not write a SpatialModel element
     QVERIFY(!data.contains("SpatialModel"));
 }
 
-void SpatialModel_Test::loadPreservesSource()
+void SpatialModel_Test::saveSkipsNewFixtures()
 {
     SpatialModel sm;
-    sm.setFixtureTransform("1", rigmath::RigidTransform::identity(), SpatialModel::Solver);
-    sm.setFixtureTransform("2", rigmath::RigidTransform::identity(), SpatialModel::Manual);
-
+    // Fixture with only agentDerived — not persisted
+    sm.setFixtureTransform("1", rigmath::RigidTransform::identity(), SpatialModel::AgentDerived);
     QByteArray data = writeXML(sm);
+    QVERIFY(!data.contains("SpatialModel"));
 
-    SpatialModel sm2;
-    QVERIFY(readXML(sm2, data));
-    QCOMPARE(sm2.fixtureSource("1"), SpatialModel::Solver);
-    QCOMPARE(sm2.fixtureSource("2"), SpatialModel::Manual);
+    // Add a committed fixture — should persist
+    sm.setFixtureTransform("2", rigmath::RigidTransform::translation(1, 2, 3), SpatialModel::Committed);
+    data = writeXML(sm);
+    QVERIFY(data.contains("SpatialModel"));
+    // Only fixture 2 should be in XML
+    QVERIFY(data.contains("ID=\"2\""));
+    QVERIFY(!data.contains("ID=\"1\""));
 }
 
 // ---------------------------------------------------------------------------
@@ -239,7 +387,6 @@ void SpatialModel_Test::loadPreservesSource()
 void SpatialModel_Test::migrateFromMonitorProperties()
 {
     MonitorProperties monProps;
-    // Set fixture at (2000, 1000, 3000) mm → should become (2.0, 1.0, 3.0) meters
     monProps.setFixturePosition(0, 0, 0, QVector3D(2000, 1000, 3000));
     monProps.setFixtureRotation(0, 0, 0, QVector3D(0, 0, 0));
 
@@ -247,17 +394,16 @@ void SpatialModel_Test::migrateFromMonitorProperties()
     sm.migrateFromMonitorProperties(&monProps);
 
     QVERIFY(sm.hasFixture("0"));
+    QVERIFY(!sm.isNew("0"));  // migrated to committed
     rigmath::RigidTransform t = sm.fixtureTransform("0");
     QVERIFY(std::abs(t.pos[0] - 2.0) < 1e-6);
     QVERIFY(std::abs(t.pos[1] - 1.0) < 1e-6);
     QVERIFY(std::abs(t.pos[2] - 3.0) < 1e-6);
-    QCOMPARE(sm.fixtureSource("0"), SpatialModel::Manual);
 }
 
 void SpatialModel_Test::migratePositionConversion()
 {
     MonitorProperties monProps;
-    // Fixture with rotation: 90 degrees around Z
     monProps.setFixturePosition(1, 0, 0, QVector3D(500, 0, 1500));
     monProps.setFixtureRotation(1, 0, 0, QVector3D(0, 0, 90));
 
@@ -265,12 +411,10 @@ void SpatialModel_Test::migratePositionConversion()
     sm.migrateFromMonitorProperties(&monProps);
 
     rigmath::RigidTransform t = sm.fixtureTransform("1");
-    // Position: 500mm → 0.5m, 0mm → 0m, 1500mm → 1.5m
     QVERIFY(std::abs(t.pos[0] - 0.5) < 1e-6);
     QVERIFY(std::abs(t.pos[1] - 0.0) < 1e-6);
     QVERIFY(std::abs(t.pos[2] - 1.5) < 1e-6);
 
-    // Rotation: 90 degrees around Z → axis-angle should be ~(0, 0, pi/2)
     double ax, ay, az;
     t.get_axis_angle(ax, ay, az);
     QVERIFY(std::abs(ax) < 1e-6);
@@ -282,15 +426,14 @@ void SpatialModel_Test::migratePositionConversion()
 // Solver visualization
 // ---------------------------------------------------------------------------
 
-void SpatialModel_Test::applySolverVisualization()
+void SpatialModel_Test::applySolverVisualizationWritesSolverDerived()
 {
     SpatialModel sm;
-    // Pre-populate a fixture
     sm.setFixtureTransform("1", rigmath::RigidTransform::identity());
 
     QJsonObject msg;
 
-    // Transforms
+    // Transforms — now written to solverDerived
     QJsonObject transforms;
     QJsonObject t1;
     t1["pos"] = QJsonArray{1.0, 2.0, 3.0};
@@ -313,12 +456,18 @@ void SpatialModel_Test::applySolverVisualization()
 
     sm.applySolverVisualization(msg);
 
-    // Transform NOT updated by solver viz — user position is authoritative
-    rigmath::RigidTransform t = sm.fixtureTransform("1");
-    QCOMPARE(t.pos[0], 0.0);  // still at identity (origin)
-    QCOMPARE(t.pos[1], 0.0);
-    QCOMPARE(t.pos[2], 0.0);
-    QCOMPARE(sm.fixtureSource("1"), SpatialModel::Manual);
+    // committed is unchanged (still identity at origin)
+    QVERIFY(sm.committedTransform("1").has_value());
+    QCOMPARE(sm.committedTransform("1")->pos[0], 0.0);
+
+    // solverDerived was written
+    QVERIFY(sm.solverDerivedTransform("1").has_value());
+    QCOMPARE(sm.solverDerivedTransform("1")->pos[0], 1.0);
+    QCOMPARE(sm.solverDerivedTransform("1")->pos[1], 2.0);
+    QCOMPARE(sm.solverDerivedTransform("1")->pos[2], 3.0);
+
+    // renderTransform returns committed (higher priority)
+    QCOMPARE(sm.renderTransform("1").pos[0], 0.0);
 
     // Viz data
     QVERIFY(sm.hasSolverViz());
@@ -337,25 +486,23 @@ void SpatialModel_Test::clearSolverViz()
 {
     SpatialModel sm;
     sm.setFixtureTransform("1", rigmath::RigidTransform::identity());
+    sm.setFixtureTransform("1", rigmath::RigidTransform::translation(5, 0, 0), SpatialModel::SolverDerived);
 
-    // Apply some viz
     QJsonObject msg;
-    QJsonObject transforms;
-    QJsonObject t1;
-    t1["pos"] = QJsonArray{1.0, 2.0, 3.0};
-    t1["axis_angle"] = QJsonArray{0.0, 0.0, 0.0};
-    transforms["1"] = t1;
-    msg["transforms"] = transforms;
+    msg["transforms"] = QJsonObject();
     msg["ellipsoids"] = QJsonObject();
     msg["rms_residual"] = 0.05;
     msg["converged"] = true;
     sm.applySolverVisualization(msg);
     QVERIFY(sm.hasSolverViz());
+    QVERIFY(sm.solverDerivedTransform("1").has_value());
 
     sm.clearSolverViz();
     QVERIFY(!sm.hasSolverViz());
     QCOMPARE(sm.rmsResidual(), 0.0);
     QCOMPARE(sm.converged(), false);
+    // clearSolverViz also clears solverDerived transforms
+    QVERIFY(!sm.solverDerivedTransform("1").has_value());
 }
 
 // ---------------------------------------------------------------------------
@@ -373,6 +520,17 @@ void SpatialModel_Test::transformChangedSignal()
 
     sm.setFixtureTransform("2", rigmath::RigidTransform::identity());
     QCOMPARE(spy.count(), 2);
+
+    // Signals from promote and clear
+    sm.setFixtureTransform("1", rigmath::RigidTransform::identity(), SpatialModel::AgentDerived);
+    QCOMPARE(spy.count(), 3);
+
+    sm.promoteTransform("1", SpatialModel::AgentDerived);
+    QCOMPARE(spy.count(), 4);
+
+    sm.setFixtureTransform("1", rigmath::RigidTransform::identity(), SpatialModel::SolverDerived);
+    sm.clearTransformLayer("1", SpatialModel::SolverDerived);
+    QCOMPARE(spy.count(), 6);
 }
 
 void SpatialModel_Test::solverVizChangedSignal()
@@ -391,24 +549,21 @@ void SpatialModel_Test::solverVizChangedSignal()
 }
 
 // ---------------------------------------------------------------------------
-// Coordinate conversion round-trip (mm/degrees ↔ meters/radians)
+// Coordinate conversion round-trip (mm/degrees <-> meters/radians)
 // ---------------------------------------------------------------------------
 
 void SpatialModel_Test::mmDegreesRoundTrip()
 {
     SpatialModel sm;
 
-    // Set position via mm accessor
     QVector3D posMm(2500.0f, -1500.0f, 3000.0f);
     sm.setFixturePositionMm("1", posMm);
 
-    // Read back via mm accessor — should match
     QVector3D got = sm.fixturePositionMm("1");
     QVERIFY(std::abs(got.x() - posMm.x()) < 0.1f);
     QVERIFY(std::abs(got.y() - posMm.y()) < 0.1f);
     QVERIFY(std::abs(got.z() - posMm.z()) < 0.1f);
 
-    // Verify internal storage is meters
     rigmath::RigidTransform t = sm.fixtureTransform("1");
     QVERIFY(std::abs(t.pos[0] - 2.5) < 1e-6);
     QVERIFY(std::abs(t.pos[1] - (-1.5)) < 1e-6);
@@ -419,28 +574,23 @@ void SpatialModel_Test::mmDegreesRoundTripWithRotation()
 {
     SpatialModel sm;
 
-    // Set position and rotation via mm/deg accessors
     sm.setFixturePositionMm("1", QVector3D(1000, 2000, 3000));
     sm.setFixtureRotationDeg("1", QVector3D(0, 0, 90));
 
-    // Read back rotation
     QVector3D rotDeg = sm.fixtureRotationDeg("1");
     QVERIFY(std::abs(rotDeg.x()) < 1.0f);
     QVERIFY(std::abs(rotDeg.y()) < 1.0f);
     QVERIFY(std::abs(rotDeg.z() - 90.0f) < 1.0f);
 
-    // Read back position — should be preserved after rotation set
     QVector3D posMm = sm.fixturePositionMm("1");
     QVERIFY(std::abs(posMm.x() - 1000.0f) < 0.1f);
     QVERIFY(std::abs(posMm.y() - 2000.0f) < 0.1f);
     QVERIFY(std::abs(posMm.z() - 3000.0f) < 0.1f);
 
-    // Multi-axis rotation round-trip
     sm.setFixtureRotationDeg("2", QVector3D(45, 30, 60));
     sm.setFixturePositionMm("2", QVector3D(500, -500, 1500));
 
     QVector3D rot2 = sm.fixtureRotationDeg("2");
-    // Euler decomposition may not be exact for multi-axis, but should be close
     QVERIFY(std::abs(rot2.x() - 45.0f) < 2.0f);
     QVERIFY(std::abs(rot2.y() - 30.0f) < 2.0f);
     QVERIFY(std::abs(rot2.z() - 60.0f) < 2.0f);
@@ -450,11 +600,9 @@ void SpatialModel_Test::mmPositionPreservesRotation()
 {
     SpatialModel sm;
 
-    // Set rotation first
     sm.setFixturePositionMm("1", QVector3D(0, 0, 0));
     sm.setFixtureRotationDeg("1", QVector3D(0, 0, 45));
 
-    // Now change position — rotation should be preserved
     sm.setFixturePositionMm("1", QVector3D(5000, 3000, 2000));
 
     QVector3D rot = sm.fixtureRotationDeg("1");
@@ -470,10 +618,8 @@ void SpatialModel_Test::degRotationPreservesPosition()
 {
     SpatialModel sm;
 
-    // Set position first
     sm.setFixturePositionMm("1", QVector3D(1234, -5678, 9012));
 
-    // Now change rotation — position should be preserved
     sm.setFixtureRotationDeg("1", QVector3D(90, 0, 0));
 
     QVector3D pos = sm.fixturePositionMm("1");
@@ -483,6 +629,21 @@ void SpatialModel_Test::degRotationPreservesPosition()
 
     QVector3D rot = sm.fixtureRotationDeg("1");
     QVERIFY(std::abs(rot.x() - 90.0f) < 1.0f);
+}
+
+void SpatialModel_Test::mmWritesToCommitted()
+{
+    SpatialModel sm;
+
+    // Set up agentDerived proposal
+    sm.setFixtureTransform("1", rigmath::RigidTransform::translation(1, 2, 3), SpatialModel::AgentDerived);
+    QVERIFY(sm.isNew("1"));
+
+    // setFixturePositionMm writes to committed and clears proposals
+    sm.setFixturePositionMm("1", QVector3D(5000, 0, 0));
+    QVERIFY(!sm.isNew("1"));
+    QVERIFY(!sm.agentDerivedTransform("1").has_value());
+    QCOMPARE(sm.committedTransform("1")->pos[0], 5.0);  // 5000mm = 5m
 }
 
 // ---------------------------------------------------------------------------

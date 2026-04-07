@@ -35,7 +35,6 @@
 #define KXMLQLCSpatialAttrRX        "RX"
 #define KXMLQLCSpatialAttrRY        "RY"
 #define KXMLQLCSpatialAttrRZ        "RZ"
-#define KXMLQLCSpatialAttrSource    "Source"
 #define KXMLQLCSpatialAttrName      "Name"
 #define KXMLQLCSpatialAttrNX        "NX"
 #define KXMLQLCSpatialAttrNY        "NY"
@@ -48,46 +47,150 @@ SpatialModel::SpatialModel(QObject *parent)
 }
 
 // ---------------------------------------------------------------------------
-// Fixture transforms
+// Three-layer fixture transforms
 // ---------------------------------------------------------------------------
 
 void SpatialModel::setFixtureTransform(const QString &id,
                                        const rigmath::RigidTransform &t,
-                                       Source source)
+                                       Layer layer)
 {
     FixtureEntry &entry = m_fixtures[id];
-    entry.transform = t;
-    entry.source = source;
 
-    // For manual placements, assign default uncertainty (~50cm sphere, "moderate")
-    // so ellipsoids are visible before the solver runs.
-    // Solver results overwrite this with real covariance data.
-    if (source == Manual && !m_hasSolverViz)
+    switch (layer)
     {
-        entry.viz.ellipsoidAxes[0] = 50.0;  // cm
-        entry.viz.ellipsoidAxes[1] = 50.0;
-        entry.viz.ellipsoidAxes[2] = 50.0;
-        // Identity rotation (axis-aligned sphere)
-        double identity[9] = {1,0,0, 0,1,0, 0,0,1};
-        for (int i = 0; i < 9; i++)
-            entry.viz.ellipsoidRot[i] = identity[i];
-        entry.viz.quality = "moderate";
+    case Committed:
+        entry.committed = t;
+        // Writing committed clears proposals — user decision overrides
+        entry.agentDerived.reset();
+        entry.solverDerived.reset();
+        // Default uncertainty for committed placements without solver data
+        if (!m_hasSolverViz)
+        {
+            entry.viz.ellipsoidAxes[0] = 50.0;  // cm
+            entry.viz.ellipsoidAxes[1] = 50.0;
+            entry.viz.ellipsoidAxes[2] = 50.0;
+            double identity[9] = {1,0,0, 0,1,0, 0,0,1};
+            for (int i = 0; i < 9; i++)
+                entry.viz.ellipsoidRot[i] = identity[i];
+            entry.viz.quality = "moderate";
+        }
+        break;
+    case AgentDerived:
+        entry.agentDerived = t;
+        break;
+    case SolverDerived:
+        entry.solverDerived = t;
+        break;
     }
 
     emit fixtureTransformChanged(id);
 }
 
-rigmath::RigidTransform SpatialModel::fixtureTransform(const QString &id) const
+std::optional<rigmath::RigidTransform> SpatialModel::committedTransform(const QString &id) const
+{
+    auto it = m_fixtures.find(id);
+    if (it == m_fixtures.end())
+        return std::nullopt;
+    return it->committed;
+}
+
+std::optional<rigmath::RigidTransform> SpatialModel::agentDerivedTransform(const QString &id) const
+{
+    auto it = m_fixtures.find(id);
+    if (it == m_fixtures.end())
+        return std::nullopt;
+    return it->agentDerived;
+}
+
+std::optional<rigmath::RigidTransform> SpatialModel::solverDerivedTransform(const QString &id) const
+{
+    auto it = m_fixtures.find(id);
+    if (it == m_fixtures.end())
+        return std::nullopt;
+    return it->solverDerived;
+}
+
+rigmath::RigidTransform SpatialModel::renderTransform(const QString &id) const
 {
     auto it = m_fixtures.find(id);
     if (it == m_fixtures.end())
         return rigmath::RigidTransform::identity();
-    return it->transform;
+
+    if (it->committed.has_value())
+        return it->committed.value();
+    if (it->agentDerived.has_value())
+        return it->agentDerived.value();
+    if (it->solverDerived.has_value())
+        return it->solverDerived.value();
+    return rigmath::RigidTransform::identity();
+}
+
+rigmath::RigidTransform SpatialModel::fixtureTransform(const QString &id) const
+{
+    return renderTransform(id);
 }
 
 void SpatialModel::fixtureMatrix4x4(const QString &id, double out[16]) const
 {
-    fixtureTransform(id).to_4x4_column_major(out);
+    renderTransform(id).to_4x4_column_major(out);
+}
+
+bool SpatialModel::isNew(const QString &id) const
+{
+    auto it = m_fixtures.find(id);
+    if (it == m_fixtures.end())
+        return true;
+    return !it->committed.has_value();
+}
+
+void SpatialModel::promoteTransform(const QString &id, Layer sourceLayer)
+{
+    auto it = m_fixtures.find(id);
+    if (it == m_fixtures.end())
+        return;
+
+    std::optional<rigmath::RigidTransform> value;
+    switch (sourceLayer)
+    {
+    case AgentDerived:
+        value = it->agentDerived;
+        break;
+    case SolverDerived:
+        value = it->solverDerived;
+        break;
+    case Committed:
+        return;  // promoting committed to committed is a no-op
+    }
+
+    if (!value.has_value())
+        return;
+
+    it->committed = value;
+    it->agentDerived.reset();
+    it->solverDerived.reset();
+    emit fixtureTransformChanged(id);
+}
+
+void SpatialModel::clearTransformLayer(const QString &id, Layer layer)
+{
+    auto it = m_fixtures.find(id);
+    if (it == m_fixtures.end())
+        return;
+
+    switch (layer)
+    {
+    case Committed:
+        it->committed.reset();
+        break;
+    case AgentDerived:
+        it->agentDerived.reset();
+        break;
+    case SolverDerived:
+        it->solverDerived.reset();
+        break;
+    }
+
+    emit fixtureTransformChanged(id);
 }
 
 void SpatialModel::removeFixture(const QString &id)
@@ -105,21 +208,14 @@ bool SpatialModel::hasFixture(const QString &id) const
     return m_fixtures.contains(id);
 }
 
-SpatialModel::Source SpatialModel::fixtureSource(const QString &id) const
-{
-    auto it = m_fixtures.find(id);
-    if (it == m_fixtures.end())
-        return Manual;
-    return it->source;
-}
-
 // ---------------------------------------------------------------------------
 // mm/degree convenience accessors (for 2D view compat)
+// Reads use renderTransform(). Writes go to committed layer.
 // ---------------------------------------------------------------------------
 
 QVector3D SpatialModel::fixturePositionMm(const QString &id) const
 {
-    rigmath::RigidTransform t = fixtureTransform(id);
+    rigmath::RigidTransform t = renderTransform(id);
     return QVector3D(float(t.pos[0] * 1000.0),
                      float(t.pos[1] * 1000.0),
                      float(t.pos[2] * 1000.0));
@@ -127,11 +223,9 @@ QVector3D SpatialModel::fixturePositionMm(const QString &id) const
 
 QVector3D SpatialModel::fixtureRotationDeg(const QString &id) const
 {
-    rigmath::RigidTransform t = fixtureTransform(id);
+    rigmath::RigidTransform t = renderTransform(id);
 
     // Decompose 3x3 rotation matrix (row-major) to ZYX Euler angles
-    // rot = Rz * Ry * Rx
-    // rot[0..8] = row-major: [r00 r01 r02, r10 r11 r12, r20 r21 r22]
     const double *r = t.rot;
     double rx, ry, rz;
 
@@ -140,14 +234,14 @@ QVector3D SpatialModel::fixtureRotationDeg(const QString &id) const
     {
         ry = asin(sy);
         double cy = cos(ry);
-        rx = atan2(r[7] / cy, r[8] / cy);  // r21/cy, r22/cy
-        rz = atan2(r[3] / cy, r[0] / cy);  // r10/cy, r00/cy
+        rx = atan2(r[7] / cy, r[8] / cy);
+        rz = atan2(r[3] / cy, r[0] / cy);
     }
     else
     {
         // Gimbal lock
         ry = sy > 0 ? M_PI / 2.0 : -M_PI / 2.0;
-        rx = atan2(r[1], r[2]);  // r01, r02
+        rx = atan2(r[1], r[2]);
         rz = 0;
     }
 
@@ -157,21 +251,20 @@ QVector3D SpatialModel::fixtureRotationDeg(const QString &id) const
                      float(rz * radToDeg));
 }
 
-void SpatialModel::setFixturePositionMm(const QString &id, const QVector3D &posMm,
-                                        Source source)
+void SpatialModel::setFixturePositionMm(const QString &id, const QVector3D &posMm)
 {
-    // Preserve existing rotation, update position only
-    rigmath::RigidTransform existing = fixtureTransform(id);
+    // Preserve existing rotation from the best available transform
+    rigmath::RigidTransform existing = renderTransform(id);
     existing.pos[0] = posMm.x() / 1000.0;
     existing.pos[1] = posMm.y() / 1000.0;
     existing.pos[2] = posMm.z() / 1000.0;
-    setFixtureTransform(id, existing, source);
+    setFixtureTransform(id, existing, Committed);
 }
 
 void SpatialModel::setFixtureRotationDeg(const QString &id, const QVector3D &rotDeg)
 {
-    // Preserve existing position, update rotation only
-    rigmath::RigidTransform existing = fixtureTransform(id);
+    // Preserve existing position from the best available transform
+    rigmath::RigidTransform existing = renderTransform(id);
 
     const double degToRad = M_PI / 180.0;
     double rx = rotDeg.x() * degToRad;
@@ -189,7 +282,7 @@ void SpatialModel::setFixtureRotationDeg(const QString &id, const QVector3D &rot
     combined.pos[1] = existing.pos[1];
     combined.pos[2] = existing.pos[2];
 
-    setFixtureTransform(id, combined, fixtureSource(id));
+    setFixtureTransform(id, combined, Committed);
 }
 
 // ---------------------------------------------------------------------------
@@ -213,11 +306,25 @@ QList<SpatialModel::Plane> SpatialModel::planes() const
 
 void SpatialModel::applySolverVisualization(const QJsonObject &msg)
 {
-    // NOTE: We do NOT update transforms from solver results here.
-    // The user's position (from drag or manual placement) is authoritative.
-    // The solver tells us uncertainty (ellipsoids), not where the fixture IS.
-    // Transforms are only updated via setFixtureTransform() from explicit
-    // commands like set_fixture_transform (after calibration_solve).
+    // Write solver transforms to solverDerived layer
+    QJsonObject transforms = msg["transforms"].toObject();
+    for (auto it = transforms.begin(); it != transforms.end(); ++it)
+    {
+        QJsonObject tj = it.value().toObject();
+        QJsonArray pos = tj["pos"].toArray();
+        QJsonArray aa = tj["axis_angle"].toArray();
+
+        if (pos.size() == 3 && aa.size() == 3)
+        {
+            rigmath::RigidTransform t = rigmath::RigidTransform::from_pose(
+                pos[0].toDouble(), pos[1].toDouble(), pos[2].toDouble(),
+                aa[0].toDouble(), aa[1].toDouble(), aa[2].toDouble());
+
+            FixtureEntry &entry = m_fixtures[it.key()];
+            entry.solverDerived = t;
+            emit fixtureTransformChanged(it.key());
+        }
+    }
 
     // Update ellipsoid viz data
     QJsonObject ellipsoids = msg["ellipsoids"].toObject();
@@ -271,7 +378,10 @@ SpatialModel::FixtureViz SpatialModel::fixtureViz(const QString &id) const
 void SpatialModel::clearSolverViz()
 {
     for (auto it = m_fixtures.begin(); it != m_fixtures.end(); ++it)
+    {
+        it->solverDerived.reset();
         it->viz = FixtureViz();
+    }
 
     m_hasSolverViz = false;
     m_rmsResidual = 0.0;
@@ -281,7 +391,7 @@ void SpatialModel::clearSolverViz()
 }
 
 // ---------------------------------------------------------------------------
-// XML Persistence
+// XML Persistence — only committed transforms are persisted
 // ---------------------------------------------------------------------------
 
 bool SpatialModel::loadXML(QXmlStreamReader &reader)
@@ -309,11 +419,7 @@ bool SpatialModel::loadXML(QXmlStreamReader &reader)
             double rz = attrs.value(KXMLQLCSpatialAttrRZ).toDouble();
 
             FixtureEntry entry;
-            entry.transform = rigmath::RigidTransform::from_pose(x, y, z, rx, ry, rz);
-
-            QString sourceStr = attrs.value(KXMLQLCSpatialAttrSource).toString();
-            entry.source = (sourceStr == QLatin1String("solver")) ? Solver : Manual;
-
+            entry.committed = rigmath::RigidTransform::from_pose(x, y, z, rx, ry, rz);
             m_fixtures[id] = entry;
             reader.skipCurrentElement();
         }
@@ -340,27 +446,39 @@ bool SpatialModel::loadXML(QXmlStreamReader &reader)
 
 void SpatialModel::saveXML(QXmlStreamWriter &writer) const
 {
-    if (m_fixtures.isEmpty() && m_planes.isEmpty())
+    // Only save fixtures with committed transforms + planes
+    bool hasCommitted = false;
+    for (auto it = m_fixtures.constBegin(); it != m_fixtures.constEnd(); ++it)
+    {
+        if (it->committed.has_value())
+        {
+            hasCommitted = true;
+            break;
+        }
+    }
+
+    if (!hasCommitted && m_planes.isEmpty())
         return;
 
     writer.writeStartElement(KXMLQLCSpatialModel);
 
     for (auto it = m_fixtures.constBegin(); it != m_fixtures.constEnd(); ++it)
     {
-        const FixtureEntry &entry = it.value();
+        if (!it->committed.has_value())
+            continue;
+
+        const rigmath::RigidTransform &t = it->committed.value();
         double ax, ay, az;
-        entry.transform.get_axis_angle(ax, ay, az);
+        t.get_axis_angle(ax, ay, az);
 
         writer.writeStartElement(KXMLQLCSpatialFixture);
         writer.writeAttribute(KXMLQLCSpatialAttrID, it.key());
-        writer.writeAttribute(KXMLQLCSpatialAttrX, QString::number(entry.transform.pos[0], 'g', 10));
-        writer.writeAttribute(KXMLQLCSpatialAttrY, QString::number(entry.transform.pos[1], 'g', 10));
-        writer.writeAttribute(KXMLQLCSpatialAttrZ, QString::number(entry.transform.pos[2], 'g', 10));
+        writer.writeAttribute(KXMLQLCSpatialAttrX, QString::number(t.pos[0], 'g', 10));
+        writer.writeAttribute(KXMLQLCSpatialAttrY, QString::number(t.pos[1], 'g', 10));
+        writer.writeAttribute(KXMLQLCSpatialAttrZ, QString::number(t.pos[2], 'g', 10));
         writer.writeAttribute(KXMLQLCSpatialAttrRX, QString::number(ax, 'g', 10));
         writer.writeAttribute(KXMLQLCSpatialAttrRY, QString::number(ay, 'g', 10));
         writer.writeAttribute(KXMLQLCSpatialAttrRZ, QString::number(az, 'g', 10));
-        writer.writeAttribute(KXMLQLCSpatialAttrSource,
-                              entry.source == Solver ? "solver" : "manual");
         writer.writeEndElement();
     }
 
@@ -392,36 +510,29 @@ void SpatialModel::migrateFromMonitorProperties(MonitorProperties *monProps)
         QVector3D pos = monProps->fixturePosition(fid, 0, 0);  // mm, Z-up
         QVector3D rot = monProps->fixtureRotation(fid, 0, 0);  // degrees, Euler
 
-        // Convert mm → meters
+        // Convert mm -> meters
         double x = pos.x() / 1000.0;
         double y = pos.y() / 1000.0;
         double z = pos.z() / 1000.0;
 
-        // Convert Euler degrees → axis-angle radians
-        // MonitorProperties Euler: rotX = pitch, rotY = yaw, rotZ = roll (degrees)
-        // Simple approximation: for small rotations or single-axis, Euler ≈ axis-angle
-        // For full accuracy, compose rotation matrices then decompose
+        // Convert Euler degrees -> axis-angle via ZYX composition
         double degToRad = M_PI / 180.0;
         double rx = rot.x() * degToRad;
         double ry = rot.y() * degToRad;
         double rz = rot.z() * degToRad;
 
-        // Build rotation via axis-angle composition for each Euler axis
-        // R = Rz(rz) * Ry(ry) * Rx(rx) — standard ZYX Euler order
         rigmath::RigidTransform tx = rigmath::RigidTransform::from_axis_angle(rx, 0, 0);
         rigmath::RigidTransform ty = rigmath::RigidTransform::from_axis_angle(0, ry, 0);
         rigmath::RigidTransform tz = rigmath::RigidTransform::from_axis_angle(0, 0, rz);
         rigmath::RigidTransform combined = tz.compose(ty.compose(tx));
 
-        // Set position
         combined.pos[0] = x;
         combined.pos[1] = y;
         combined.pos[2] = z;
 
         QString id = QString::number(fid);
         FixtureEntry entry;
-        entry.transform = combined;
-        entry.source = Manual;
+        entry.committed = combined;
         m_fixtures[id] = entry;
     }
 }

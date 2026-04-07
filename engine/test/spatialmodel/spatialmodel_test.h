@@ -25,8 +25,18 @@ private slots:
     void setAndGetTransform();
     void fixtureMatrix4x4();
     void removeFixture();
-    void sourceTracking();
     void identityForUnknown();
+
+    // Three-layer model
+    void isNewFixture();
+    void committedClearsProposals();
+    void agentDerivedDoesNotTouchOtherLayers();
+    void solverDerivedDoesNotTouchOtherLayers();
+    void renderTransformPriority();
+    void promoteAgentDerived();
+    void promoteSolverDerived();
+    void promoteEmptyIsNoOp();
+    void clearTransformLayer();
 
     // Named planes
     void setAndGetPlanes();
@@ -34,14 +44,14 @@ private slots:
     // XML round-trip
     void saveAndLoadXML();
     void saveSkipsEmpty();
-    void loadPreservesSource();
+    void saveSkipsNewFixtures();
 
     // Legacy migration
     void migrateFromMonitorProperties();
     void migratePositionConversion();
 
     // Solver visualization
-    void applySolverVisualization();
+    void applySolverVisualizationWritesSolverDerived();
     void clearSolverViz();
 
     // Signals
@@ -53,6 +63,7 @@ private slots:
     void mmDegreesRoundTripWithRotation();
     void mmPositionPreservesRotation();
     void degRotationPreservesPosition();
+    void mmWritesToCommitted();
 
     // Clear
     void clearAll();

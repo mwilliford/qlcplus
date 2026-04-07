@@ -1000,8 +1000,13 @@ void ContextManager::setFixturesPosition(QVector3D position)
 
         Tardis::instance()->enqueueAction(Tardis::FixtureSetPosition, itemID, QVariant(currPos), QVariant(position));
 
-        // absolute position change
-        m_monProps->setFixturePosition(fxID, headIndex, linkedIndex, position);
+        // Write to SpatialModel FIRST for base fixtures
+        if (headIndex == 0 && linkedIndex == 0)
+            m_doc->spatialModel()->setFixturePositionMm(QString::number(fxID), position);
+
+        // Sync back to MonitorProperties for legacy display
+        syncSpatialToMonProps(m_doc, fxID);
+
         if (m_3DView->isEnabled())
             m_3DView->updateFixturePosition(m_selectedFixtures.first(), position);
     }
@@ -1017,7 +1022,13 @@ void ContextManager::setFixturesPosition(QVector3D position)
             QVector3D newPos = currPos + position;
             Tardis::instance()->enqueueAction(Tardis::FixtureSetPosition, itemID, QVariant(currPos), QVariant(newPos));
 
-            m_monProps->setFixturePosition(fxID, headIndex, linkedIndex, newPos);
+            // Write to SpatialModel FIRST for base fixtures
+            if (headIndex == 0 && linkedIndex == 0)
+                m_doc->spatialModel()->setFixturePositionMm(QString::number(fxID), newPos);
+
+            // Sync back to MonitorProperties for legacy display
+            syncSpatialToMonProps(m_doc, fxID);
+
             if (m_3DView->isEnabled())
                 m_3DView->updateFixturePosition(itemID, newPos);
         }
@@ -1082,7 +1093,14 @@ void ContextManager::setFixturesAlignment(int alignment)
         QVector3D fxPos = readFixturePositionMm(m_doc, fxID, headIndex, linkedIndex);
 
         FixtureUtils::alignItem(firstPos, fxPos, m_monProps->pointOfView(), alignment);
-        m_monProps->setFixturePosition(fxID, headIndex, linkedIndex, fxPos);
+
+        // Write to SpatialModel FIRST for base fixtures
+        if (headIndex == 0 && linkedIndex == 0)
+            m_doc->spatialModel()->setFixturePositionMm(QString::number(fxID), fxPos);
+
+        // Sync back to MonitorProperties for legacy display
+        syncSpatialToMonProps(m_doc, fxID);
+
         if (m_2DView->isEnabled())
             m_2DView->updateFixturePosition(itemID, fxPos);
         if (m_3DView->isEnabled())
@@ -1196,7 +1214,13 @@ void ContextManager::setFixturesDistribution(int direction)
                 break;
             }
 
-            m_monProps->setFixturePosition(fxID, headIndex, linkedIndex, fxPos);
+            // Write to SpatialModel FIRST for base fixtures
+            if (headIndex == 0 && linkedIndex == 0)
+                m_doc->spatialModel()->setFixturePositionMm(QString::number(fxID), fxPos);
+
+            // Sync back to MonitorProperties for legacy display
+            syncSpatialToMonProps(m_doc, fxID);
+
             if (m_2DView->isEnabled())
                 m_2DView->updateFixturePosition(itemID, fxPos);
             if (m_3DView->isEnabled())
@@ -1478,7 +1502,13 @@ void ContextManager::setFixturesRotation(QVector3D degrees)
 
             Tardis::instance()->enqueueAction(Tardis::FixtureSetRotation, itemID, QVariant(rotation), QVariant(newRot));
 
-            m_monProps->setFixtureRotation(fxID, headIndex, linkedIndex, newRot);
+            // Write to SpatialModel FIRST for base fixtures
+            if (headIndex == 0 && linkedIndex == 0)
+                m_doc->spatialModel()->setFixtureRotationDeg(QString::number(fxID), newRot);
+
+            // Sync back to MonitorProperties for legacy display
+            syncSpatialToMonProps(m_doc, fxID);
+
             if (m_2DView->isEnabled())
                 m_2DView->updateFixtureRotation(itemID, newRot);
             if (m_3DView->isEnabled())
@@ -1498,8 +1528,13 @@ void ContextManager::setFixtureRotation(quint32 itemID, QVector3D degrees)
 
     Tardis::instance()->enqueueAction(Tardis::FixtureSetRotation, itemID, QVariant(rotation), QVariant(degrees));
 
-    // absolute rotation change
-    m_monProps->setFixtureRotation(fxID, headIndex, linkedIndex, degrees);
+    // Write to SpatialModel FIRST for base fixtures
+    if (headIndex == 0 && linkedIndex == 0)
+        m_doc->spatialModel()->setFixtureRotationDeg(QString::number(fxID), degrees);
+
+    // Sync back to MonitorProperties for legacy display
+    syncSpatialToMonProps(m_doc, fxID);
+
     if (m_2DView->isEnabled())
         m_2DView->updateFixtureRotation(itemID, degrees);
     if (m_3DView->isEnabled())
@@ -1555,7 +1590,10 @@ void ContextManager::slotNewFixtureCreated(quint32 fxID, qreal x, qreal y, qreal
     qDebug() << "[ContextManager] New fixture created" << fxID;
 
     if (m_uniGridView->isEnabled())
+    {
+        m_doc->spatialModel()->setFixturePositionMm(QString::number(fxID), QVector3D(0, 0, 0));
         m_monProps->setFixturePosition(fxID, 0, 0, QVector3D(0, 0, 0));
+    }
     if (m_DMXView->isEnabled())
         m_DMXView->createFixtureItem(fxID);
     if (m_2DView->isEnabled())

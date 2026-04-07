@@ -40,6 +40,7 @@
 #include "fixture.h"
 #include "tardis.h"
 #include "doc.h"
+#include "spatialmodel.h"
 #include "app.h"
 
 FixtureManager::FixtureManager(QQuickView *view, Doc *doc, QObject *parent)
@@ -1616,6 +1617,11 @@ bool FixtureManager::addRGBPanel(QString name, qreal xPos, qreal yPos)
                 rot.setX(-90);
             break;
         }
+        // Write to SpatialModel FIRST (source of truth)
+        m_doc->spatialModel()->setFixturePositionMm(QString::number(fxi->id()), pos);
+        m_doc->spatialModel()->setFixtureRotationDeg(QString::number(fxi->id()), rot);
+
+        // Sync to MonitorProperties for legacy display
         m_monProps->setFixturePosition(fxi->id(), 0, 0, pos);
         m_monProps->setFixtureRotation(fxi->id(), 0, 0, rot);
         slotFixtureAdded(fxi->id(), QVector3D(pos.x(), pos.y(), pos.z()));

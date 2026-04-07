@@ -24,6 +24,7 @@
 
 #include "doc.h"
 #include "spatialmodel.h"
+#include "spatialmodel.h"
 #include "tardis.h"
 #include "mainview2d.h"
 #include "fixtureutils.h"
@@ -222,6 +223,8 @@ void MainView2D::createFixtureItem(quint32 fxID, quint16 headIndex, quint16 link
                                                     QRectF(itemPos.x(), itemPos.y(), size.width(), size.height()));
         // add the new fixture to the Doc monitor properties
         QVector3D newPos = FixtureUtils::item3DPosition(m_monProps, itemPos, 1000.0);
+        if (headIndex == 0 && linkedIndex == 0)
+            m_doc->spatialModel()->setFixturePositionMm(QString::number(fxID), newPos);
         m_monProps->setFixturePosition(fxID, headIndex, linkedIndex, newPos);
         m_monProps->setFixtureFlags(fxID, headIndex, linkedIndex, 0);
         if (fixture->type() == QLCFixtureDef::LEDBarPixels)
@@ -229,12 +232,18 @@ void MainView2D::createFixtureItem(quint32 fxID, quint16 headIndex, quint16 link
             switch (m_monProps->pointOfView())
             {
                 case MonitorProperties::FrontView:
+                    if (headIndex == 0 && linkedIndex == 0)
+                        m_doc->spatialModel()->setFixtureRotationDeg(QString::number(fxID), QVector3D(90, 0, 0));
                     m_monProps->setFixtureRotation(fxID, headIndex, linkedIndex, QVector3D(90, 0, 0));
                 break;
                 case MonitorProperties::LeftSideView:
+                    if (headIndex == 0 && linkedIndex == 0)
+                        m_doc->spatialModel()->setFixtureRotationDeg(QString::number(fxID), QVector3D(0, -90, 0));
                     m_monProps->setFixtureRotation(fxID, headIndex, linkedIndex, QVector3D(0, -90, 0));
                 break;
                 case MonitorProperties::RightSideView:
+                    if (headIndex == 0 && linkedIndex == 0)
+                        m_doc->spatialModel()->setFixtureRotationDeg(QString::number(fxID), QVector3D(0, 90, 0));
                     m_monProps->setFixtureRotation(fxID, headIndex, linkedIndex, QVector3D(0, 90, 0));
                 break;
                 default:
