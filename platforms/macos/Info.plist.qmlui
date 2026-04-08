@@ -48,6 +48,7 @@
 			<key>CFBundleTypeExtensions</key>
 			<array>
 				<string>qxw</string>
+				<string>aqw</string>
 			</array>
 			<key>CFBundleTypeRole</key>
 			<string>Editor</string>

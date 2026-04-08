@@ -106,11 +106,28 @@ if(ANDROID)
     set_property(TARGET ${module_name} APPEND PROPERTY QT_ANDROID_EXTRA_LIBS "$<TARGET_FILE:osc>")
     set_property(TARGET ${module_name} APPEND PROPERTY QT_ANDROID_EXTRA_LIBS "$<TARGET_FILE:os2l>")
 else()
-    add_executable(${module_name} WIN32 ${SRC_FILES} ${QM_FILES})
+    add_executable(${module_name} WIN32 MACOSX_BUNDLE ${SRC_FILES} ${QM_FILES})
 endif()
 
 if(WIN32)
     target_sources(${module_name} PRIVATE qmlui.rc)
+endif()
+
+if(APPLE)
+    set_target_properties(${module_name} PROPERTIES
+        MACOSX_BUNDLE_INFO_PLIST "${PROJECT_SOURCE_DIR}/platforms/macos/Info.plist.qmlui"
+        MACOSX_BUNDLE_BUNDLE_NAME "QLC+"
+        MACOSX_BUNDLE_GUI_IDENTIFIER "org.qlcplus.qlcplus"
+        MACOSX_BUNDLE_SHORT_VERSION_STRING "${APPVERSION}"
+        MACOSX_BUNDLE_BUNDLE_VERSION "1"
+        MACOSX_BUNDLE_ICON_FILE "qlcplus.icns"
+    )
+    # Copy icon into bundle Resources
+    set(_icns "${PROJECT_SOURCE_DIR}/resources/icons/qlcplus.icns")
+    if(EXISTS "${_icns}")
+        target_sources(${module_name} PRIVATE "${_icns}")
+        set_source_files_properties("${_icns}" PROPERTIES MACOSX_PACKAGE_LOCATION "Resources")
+    endif()
 endif()
 
 target_include_directories(${module_name} PRIVATE
