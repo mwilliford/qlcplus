@@ -27,13 +27,23 @@ if [ -d "$PLUGIN_DIR" ]; then
     done
 fi
 
-# Ensure fixture definitions are accessible from the build directory.
-# On macOS, QLC+ looks for fixtures at <binary_dir>/../Resources/Fixtures.
-# The build tree has an empty Resources/fixtures/ from cmake — symlink
-# the FixturesMap.xml and manufacturer dirs from the source tree.
-FIXTURES_BUILD="$BUILD_DIR/Resources/fixtures"
+# Determine the Resources directory.
+# For a macOS .app bundle (v5), Resources lives inside the bundle.
+# For a flat build (v4 or non-bundle), it's at $BUILD_DIR/Resources.
+APP_BUNDLE="$BUILD_DIR/qmlui/qlcplus-qml.app"
+if [ "$VERSION" = "v5" ] && [ -d "$APP_BUNDLE" ]; then
+    RESOURCES_DIR="$APP_BUNDLE/Contents/Resources"
+    mkdir -p "$RESOURCES_DIR"
+else
+    RESOURCES_DIR="$BUILD_DIR/Resources"
+fi
+
+# Ensure fixture definitions are accessible.
+# QLC+ looks for fixtures at <binary_dir>/../Resources/Fixtures.
+FIXTURES_BUILD="$RESOURCES_DIR/fixtures"
 FIXTURES_SRC="$SCRIPT_DIR/resources/fixtures"
-if [ -d "$FIXTURES_BUILD" ] && [ ! -e "$FIXTURES_BUILD/FixturesMap.xml" ]; then
+mkdir -p "$FIXTURES_BUILD"
+if [ ! -e "$FIXTURES_BUILD/FixturesMap.xml" ]; then
     ln -sf "$FIXTURES_SRC/FixturesMap.xml" "$FIXTURES_BUILD/FixturesMap.xml" 2>/dev/null
     # Symlink each manufacturer directory
     for mfr in "$FIXTURES_SRC"/*/; do
@@ -43,9 +53,10 @@ if [ -d "$FIXTURES_BUILD" ] && [ ! -e "$FIXTURES_BUILD/FixturesMap.xml" ]; then
 fi
 
 # Symlink Gobos directory for 2D view gobo images
-GOBOS_BUILD="$BUILD_DIR/Resources/gobos"
+GOBOS_BUILD="$RESOURCES_DIR/gobos"
 GOBOS_SRC="$SCRIPT_DIR/resources/gobos"
-if [ -d "$GOBOS_BUILD" ] && [ ! -e "$GOBOS_BUILD/Others" ]; then
+mkdir -p "$GOBOS_BUILD"
+if [ ! -e "$GOBOS_BUILD/Others" ]; then
     for gdir in "$GOBOS_SRC"/*/; do
         base="$(basename "$gdir")"
         [ ! -e "$GOBOS_BUILD/$base" ] && ln -sf "$gdir" "$GOBOS_BUILD/$base"
@@ -53,12 +64,13 @@ if [ -d "$GOBOS_BUILD" ] && [ ! -e "$GOBOS_BUILD/Others" ]; then
 fi
 
 # Symlink 3D mesh files (fixtures, generic, stage)
-MESHES_BUILD="$BUILD_DIR/Resources/Meshes"
+MESHES_BUILD="$RESOURCES_DIR/Meshes"
 MESHES_SRC="$SCRIPT_DIR/resources/meshes"
 for subdir in fixtures generic stage; do
     srcdir="$MESHES_SRC/$subdir"
     dstdir="$MESHES_BUILD/$subdir"
-    if [ -d "$srcdir" ] && [ -d "$dstdir" ]; then
+    mkdir -p "$dstdir"
+    if [ -d "$srcdir" ]; then
         for f in "$srcdir"/*; do
             [ -f "$f" ] || continue
             base="$(basename "$f")"
@@ -72,7 +84,16 @@ if [ "$VERSION" = "v4" ]; then
     DYLD_LIBRARY_PATH="$BUILD_DIR/engine/src:$BUILD_DIR/ui/src:$BUILD_DIR/webaccess/src" \
         exec "$BUILD_DIR/main/qlcplus" "$@"
 else
-    QT_PLUGIN_PATH="/opt/homebrew/opt/qt/share/qt/plugins" \
-    DYLD_LIBRARY_PATH="$BUILD_DIR/engine/src:$BUILD_DIR/webaccess/src" \
-        exec "$BUILD_DIR/qmlui/qlcplus-qml" "$@"
+    # v5 builds as a macOS .app bundle
+    APP_BUNDLE="$BUILD_DIR/qmlui/qlcplus-qml.app"
+    if [ -d "$APP_BUNDLE" ]; then
+        QT_PLUGIN_PATH="/opt/homebrew/opt/qt/share/qt/plugins" \
+        DYLD_LIBRARY_PATH="$BUILD_DIR/engine/src:$BUILD_DIR/webaccess/src:$BUILD_DIR/render/src" \
+            exec "$APP_BUNDLE/Contents/MacOS/qlcplus-qml" "$@"
+    else
+        # Fallback for non-bundle builds
+        QT_PLUGIN_PATH="/opt/homebrew/opt/qt/share/qt/plugins" \
+        DYLD_LIBRARY_PATH="$BUILD_DIR/engine/src:$BUILD_DIR/webaccess/src:$BUILD_DIR/render/src" \
+            exec "$BUILD_DIR/qmlui/qlcplus-qml" "$@"
+    fi
 fi
