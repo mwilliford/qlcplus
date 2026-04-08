@@ -266,6 +266,51 @@ void BgfxRenderer::panCamera(float dx, float dy)
     m_camera.pan(dx, dy);
 }
 
+bool BgfxRenderer::worldToScreen(const float worldPos[3],
+                                  float &outScreenX, float &outScreenY,
+                                  bool &outVisible)
+{
+    if (m_width == 0 || m_height == 0)
+        return false;
+
+    float view[16], proj[16];
+    m_camera.viewMatrix(view);
+    float aspect = float(m_width) / float(m_height);
+    m_camera.projMatrix(proj, aspect, bgfx::getCaps()->homogeneousDepth);
+
+    // Multiply: clip = proj * view * worldPos
+    float vp[16];
+    bx::mtxMul(vp, view, proj);
+
+    float clip[4];
+    clip[0] = vp[0]*worldPos[0] + vp[4]*worldPos[1] + vp[8]*worldPos[2]  + vp[12];
+    clip[1] = vp[1]*worldPos[0] + vp[5]*worldPos[1] + vp[9]*worldPos[2]  + vp[13];
+    clip[2] = vp[2]*worldPos[0] + vp[6]*worldPos[1] + vp[10]*worldPos[2] + vp[14];
+    clip[3] = vp[3]*worldPos[0] + vp[7]*worldPos[1] + vp[11]*worldPos[2] + vp[15];
+
+    if (clip[3] <= 0.0f)
+    {
+        outVisible = false;
+        return false;
+    }
+
+    // Perspective divide → NDC
+    float ndcX = clip[0] / clip[3];
+    float ndcY = clip[1] / clip[3];
+
+    // NDC → device pixels
+    float deviceX = (ndcX * 0.5f + 0.5f) * float(m_width);
+    float deviceY = (1.0f - (ndcY * 0.5f + 0.5f)) * float(m_height);  // flip Y
+
+    // Device pixels → logical pixels (divide by DPR, but renderer doesn't know DPR)
+    // Return device pixels — the caller divides by DPR.
+    outScreenX = deviceX;
+    outScreenY = deviceY;
+    outVisible = (ndcX >= -1.0f && ndcX <= 1.0f && ndcY >= -1.0f && ndcY <= 1.0f);
+
+    return true;
+}
+
 // --- Scene data ---
 
 void BgfxRenderer::setFixtures(const std::vector<RenderFixture>& fixtures)

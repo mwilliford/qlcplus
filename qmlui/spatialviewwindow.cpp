@@ -30,6 +30,9 @@
 #include <QPainter>
 #include <QEventLoop>
 #include <QTimer>
+#include <QJsonArray>
+#include <QJsonObject>
+#include <QTest>
 
 // ---------------------------------------------------------------------------
 // SpatialViewWindow — defined entirely in this .cpp to avoid pulling <QWidget>
@@ -43,6 +46,10 @@ class SpatialViewWindow : public QWidget
     Q_DISABLE_COPY(SpatialViewWindow)
 
     friend QImage grabSpatialViewWindow();
+    friend void spatialViewSelectFixture(int32_t);
+    friend QJsonArray spatialViewGetFixtureScreenPositions();
+    friend void spatialViewSetCamera(float, float, float);
+    friend void spatialViewDrag(float, float, float, float, int);
 
 public:
     explicit SpatialViewWindow(Doc *doc)
@@ -226,4 +233,89 @@ QImage grabSpatialViewWindow()
     painter.end();
 
     return widgetImg;
+}
+
+void spatialViewSelectFixture(int32_t fixtureId)
+{
+    auto *inst = SpatialViewWindow::s_instance;
+    if (inst && inst->m_spatialView)
+        inst->m_spatialView->selectFixture(fixtureId);
+}
+
+QJsonArray spatialViewGetFixtureScreenPositions()
+{
+    auto *inst = SpatialViewWindow::s_instance;
+    if (!inst || !inst->m_spatialView)
+        return QJsonArray();
+
+    auto *renderer = inst->m_spatialView->renderer();
+    if (!renderer)
+        return QJsonArray();
+
+    auto *bgfxR = dynamic_cast<qlcrender::BgfxRenderer *>(renderer);
+    if (!bgfxR)
+        return QJsonArray();
+
+    float dpr = float(inst->m_spatialView->devicePixelRatio());
+    QJsonArray result;
+
+    // Iterate over fixtures in the renderer
+    for (const auto &f : bgfxR->fixtures())
+    {
+        // Skip ghosts (translucent)
+        if (f.color[3] < 0.99f)
+            continue;
+
+        float worldPos[3] = { f.transform[12], f.transform[13], f.transform[14] };
+        float screenX, screenY;
+        bool visible;
+
+        if (bgfxR->worldToScreen(worldPos, screenX, screenY, visible))
+        {
+            QJsonObject entry;
+            entry["id"] = static_cast<int>(f.id);
+            entry["screenX"] = qRound(screenX / dpr);  // device → logical
+            entry["screenY"] = qRound(screenY / dpr);
+            entry["visible"] = visible;
+            entry["worldX"] = double(worldPos[0]);
+            entry["worldY"] = double(worldPos[1]);
+            entry["worldZ"] = double(worldPos[2]);
+            result.append(entry);
+        }
+    }
+
+    return result;
+}
+
+void spatialViewSetCamera(float yaw, float pitch, float distance)
+{
+    auto *inst = SpatialViewWindow::s_instance;
+    if (inst && inst->m_spatialView)
+        inst->m_spatialView->setCameraOrbit(yaw, pitch, distance);
+}
+
+void spatialViewDrag(float x1, float y1, float x2, float y2, int steps)
+{
+    auto *inst = SpatialViewWindow::s_instance;
+    if (!inst || !inst->m_spatialView)
+        return;
+
+    QWindow *w = inst->m_spatialView;
+
+    // Press at start
+    QPoint startPos(qRound(x1), qRound(y1));
+    QTest::mousePress(w, Qt::LeftButton, Qt::NoModifier, startPos);
+
+    // Move in steps
+    for (int i = 1; i <= steps; i++)
+    {
+        float t = float(i) / float(steps);
+        int mx = qRound(x1 + (x2 - x1) * t);
+        int my = qRound(y1 + (y2 - y1) * t);
+        QTest::mouseMove(w, QPoint(mx, my));
+    }
+
+    // Release at end
+    QPoint endPos(qRound(x2), qRound(y2));
+    QTest::mouseRelease(w, Qt::LeftButton, Qt::NoModifier, endPos);
 }

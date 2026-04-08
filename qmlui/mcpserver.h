@@ -105,6 +105,10 @@ private:
     QJsonObject toolListFixtures(const QJsonObject &args);
     QJsonObject toolListFunctions(const QJsonObject &args);
     QJsonObject toolShowSpatialView(const QJsonObject &args);
+    QJsonObject toolSelectFixture(const QJsonObject &args);
+    QJsonObject toolGetFixtureScreenPositions(const QJsonObject &args);
+    QJsonObject toolSetCamera(const QJsonObject &args);
+    QJsonObject toolDrag(const QJsonObject &args);
 
     // Helpers
     QJsonObject makeResult(int id, const QJsonObject &result);

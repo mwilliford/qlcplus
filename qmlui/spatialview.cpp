@@ -72,6 +72,21 @@ void SpatialView::stopRendering()
     m_frameTimer.stop();
 }
 
+void SpatialView::selectFixture(int32_t fixtureId)
+{
+    if (m_bgfxReady)
+        m_renderer->setSelectedFixture(fixtureId);
+}
+
+void SpatialView::setCameraOrbit(float yaw, float pitch, float distance)
+{
+    m_cameraYaw = yaw;
+    m_cameraPitch = qBound(-89.0f, pitch, 89.0f);
+    m_cameraDistance = qBound(0.5f, distance, 200.0f);
+    if (m_bgfxReady)
+        m_renderer->setCameraOrbit(m_cameraYaw, m_cameraPitch, m_cameraDistance);
+}
+
 void SpatialView::requestViewportScreenshot()
 {
     if (!m_bgfxReady)
