@@ -81,6 +81,12 @@ DYLD_LIBRARY_PATH=build/engine/src ./build/engine/test/<feature>/<feature>_test
 
 See `../docs/PRD-testing.md` for full test architecture.
 
+**UI verification after coding:** After completing UI-facing changes (Spatial View, QML panels, rendering, gizmo, etc.), run the `qlcplus-ui-test` agent to verify visually:
+```
+Agent(subagent_type="qlcplus-ui-test", prompt="Build, launch, and verify <what you changed>", run_in_background=true)
+```
+The agent launches QLC+, takes screenshots via the embedded MCP server, and reports what it sees. It works in the background — no need for manual testing or app focus.
+
 ## Related Docs
 
 - **`TECH_SPEC.md`** — Architecture, code layout, engine APIs used (AI quick reference)

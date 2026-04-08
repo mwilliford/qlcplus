@@ -486,20 +486,36 @@ void BgfxRenderer::renderFixtures()
             bgfx::setIndexBuffer(mesh->ibh);
             useLitShader = true;
         }
-        else if (bgfx::isValid(m_cubeVbh) && bgfx::isValid(m_cubeIbh))
-        {
-            float scale[16];
-            bx::mtxScale(scale, 0.2f);
-            float model[16];
-            bx::mtxMul(model, scale, fixture.transform);
-
-            bgfx::setTransform(model);
-            bgfx::setVertexBuffer(0, m_cubeVbh);
-            bgfx::setIndexBuffer(m_cubeIbh);
-        }
         else
         {
-            continue;
+            // Fallback: use GDTF primitive based on fixture type
+            int primType = 1; // PrimitiveCube default
+            switch (fixture.fixtureType)
+            {
+            case 6:  // Laser
+            case 0:  // ColorChanger
+            case 1:  // Dimmer
+                primType = 8; // PrimitiveConventional (cylinder)
+                break;
+            case 2:  // Effect
+            case 3:  // Fan
+            case 4:  // Flower
+            case 10: // Other
+                primType = 1; // PrimitiveCube
+                break;
+            }
+            const LoadedMesh *prim = m_primitiveGen.getPrimitive(primType);
+            if (prim && prim->isValid())
+            {
+                bgfx::setTransform(fixture.transform);
+                bgfx::setVertexBuffer(0, prim->vbh);
+                bgfx::setIndexBuffer(prim->ibh);
+                useLitShader = true;
+            }
+            else
+            {
+                continue;
+            }
         }
 
         bgfx::setUniform(m_u_color, color);

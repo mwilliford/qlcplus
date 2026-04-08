@@ -184,8 +184,13 @@ def forward_to_qlcplus(tool_name, arguments):
         with urllib.request.urlopen(req, timeout=30) as resp:
             result = json.loads(resp.read())
             if "error" in result:
+                err = result["error"]
+                # Session expired (QLC+ restarted) — re-initialize and retry once
+                if err.get("code") == -32600 and "session" in err.get("message", "").lower():
+                    SESSION_ID = None
+                    return forward_to_qlcplus(tool_name, arguments)
                 return {
-                    "content": [{"type": "text", "text": f"MCP error: {result['error']}"}],
+                    "content": [{"type": "text", "text": f"MCP error: {err}"}],
                     "isError": True
                 }
             return result.get("result", {})
