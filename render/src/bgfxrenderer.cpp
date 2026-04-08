@@ -100,6 +100,9 @@ bool BgfxRenderer::init(void* nativeWindowHandle, uint32_t width, uint32_t heigh
     // Enable debug text for initial verification
     bgfx::setDebug(BGFX_DEBUG_TEXT);
 
+    // Initialize GDTF primitive mesh generator
+    m_primitiveGen.init();
+
     m_initialized = true;
     return true;
 }
@@ -110,6 +113,7 @@ void BgfxRenderer::shutdown()
         return;
 
     m_meshLoader.shutdown();
+    m_primitiveGen.shutdown();
     destroyCubeMesh(m_cubeVbh, m_cubeIbh);
     destroySphereMesh(m_sphereVbh, m_sphereIbh);
 
@@ -282,7 +286,14 @@ void BgfxRenderer::renderFixtures()
 {
     for (const auto& fixture : m_fixtures)
     {
-        // Try to load the proper 3D mesh for this fixture type
+        // If fixture has a GDTF scene graph, render hierarchically
+        if (fixture.sceneGraph && fixture.sceneGraph->valid)
+        {
+            renderSceneGraph(fixture.sceneGraph->root, fixture.transform, fixture.color);
+            continue;
+        }
+
+        // Legacy single-mesh path (QXF fixtures)
         const LoadedMesh *mesh = nullptr;
         const char *meshFile = MeshLoader::meshFileForFixtureType(fixture.fixtureType);
         if (meshFile && !m_meshBasePath.empty())
@@ -295,7 +306,6 @@ void BgfxRenderer::renderFixtures()
 
         if (mesh && mesh->isValid())
         {
-            // Render with the 3D model mesh
             bgfx::setTransform(fixture.transform);
             bgfx::setVertexBuffer(0, mesh->vbh);
             bgfx::setIndexBuffer(mesh->ibh);
@@ -303,7 +313,6 @@ void BgfxRenderer::renderFixtures()
         }
         else if (bgfx::isValid(m_cubeVbh) && bgfx::isValid(m_cubeIbh))
         {
-            // Fallback: 0.2m cube
             float scale[16];
             bx::mtxScale(scale, 0.2f);
             float model[16];
@@ -318,10 +327,8 @@ void BgfxRenderer::renderFixtures()
             continue;
         }
 
-        // Set fixture color uniform
         bgfx::setUniform(m_u_color, fixture.color);
 
-        // Alpha < 1.0 = ghost (translucent proposal) — enable alpha blending
         uint64_t state = BGFX_STATE_WRITE_RGB | BGFX_STATE_WRITE_A
                          | BGFX_STATE_WRITE_Z | BGFX_STATE_DEPTH_TEST_LESS;
         if (fixture.color[3] < 0.99f)
@@ -329,7 +336,6 @@ void BgfxRenderer::renderFixtures()
 
         bgfx::setState(state);
 
-        // Use lit shader for meshes with normals, basic for vertex-colored geometry
         bgfx::ProgramHandle prog = (useLitShader && bgfx::isValid(m_litProgram))
             ? m_litProgram : m_colorProgram;
 
@@ -338,6 +344,39 @@ void BgfxRenderer::renderFixtures()
         else
             bgfx::discard();
     }
+}
+
+void BgfxRenderer::renderSceneGraph(const SceneNode &node,
+                                     const float parentTransform[16],
+                                     const float color[4])
+{
+    // Compute world transform: parent * local
+    float worldTransform[16];
+    bx::mtxMul(worldTransform, node.localTransform, parentTransform);
+
+    // Render this node's mesh if it has one
+    if (node.mesh && node.mesh->isValid())
+    {
+        bgfx::setTransform(worldTransform);
+        bgfx::setVertexBuffer(0, node.mesh->vbh);
+        bgfx::setIndexBuffer(node.mesh->ibh);
+        bgfx::setUniform(m_u_color, color);
+
+        uint64_t state = BGFX_STATE_WRITE_RGB | BGFX_STATE_WRITE_A
+                         | BGFX_STATE_WRITE_Z | BGFX_STATE_DEPTH_TEST_LESS;
+        if (color[3] < 0.99f)
+            state |= BGFX_STATE_BLEND_ALPHA;
+        bgfx::setState(state);
+
+        if (bgfx::isValid(m_litProgram))
+            bgfx::submit(0, m_litProgram);
+        else
+            bgfx::discard();
+    }
+
+    // Recurse into children
+    for (const auto &child : node.children)
+        renderSceneGraph(child, worldTransform, color);
 }
 
 void BgfxRenderer::setCalibrationOverlays(const std::vector<RenderEllipsoid>& ellipsoids)

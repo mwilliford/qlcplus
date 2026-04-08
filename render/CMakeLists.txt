@@ -21,10 +21,14 @@ add_library(${module_name} STATIC
     src/orbitcamera.h src/orbitcamera.cpp
     src/meshgen.h src/meshgen.cpp
     src/meshloader.h src/meshloader.cpp
+    src/gltfloader.h src/gltfloader.cpp
+    src/primitivegen.h src/primitivegen.cpp
+    src/fixturescenegraph.h
     src/rendertypes.h
 )
 
 target_include_directories(${module_name} PUBLIC src/)
+target_include_directories(${module_name} PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/3rdparty/tinygltf)
 target_compile_features(${module_name} PRIVATE cxx_std_20)
 
 target_link_libraries(${module_name} PUBLIC

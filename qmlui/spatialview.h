@@ -18,10 +18,14 @@
 #include <QTimer>
 #include <QPoint>
 #include <memory>
+#include <unordered_map>
+#include <string>
 
-namespace qlcrender { class SpatialRenderer; }
+namespace qlcrender { class SpatialRenderer; struct FixtureSceneGraph; }
 class SpatialModel;
 class Doc;
+class QLCFixtureDefCache;
+struct GDTFGeometryData;
 
 #define SETTINGS_SPATIALVIEW_GEOMETRY "spatialview/geometry"
 
@@ -57,6 +61,9 @@ private:
     void initBgfx();
     void rebuildFixtures();
     void rebuildEllipsoids();
+    const qlcrender::FixtureSceneGraph *getOrBuildSceneGraph(
+        const QString &manufacturer, const QString &model,
+        const GDTFGeometryData *geoData);
 
 private slots:
     void onFrameTimer();
@@ -81,6 +88,9 @@ private:
     float m_cameraYaw = -90.0f;
     float m_cameraPitch = 30.0f;
     float m_cameraDistance = 10.0f;
+
+    // GDTF scene graph cache: one per fixture def (manufacturer+model)
+    std::unordered_map<std::string, qlcrender::FixtureSceneGraph> m_sceneGraphCache;
 };
 
 #endif // SPATIALVIEW_H

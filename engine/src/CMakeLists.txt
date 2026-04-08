@@ -11,6 +11,18 @@ FetchContent_Declare(
 )
 FetchContent_MakeAvailable(rigmath)
 
+# libMVRgdtf — GDTF/MVR file parser (tinyXML backend, no Xerces/Boost)
+FetchContent_Declare(
+    libMVRgdtf
+    GIT_REPOSITORY https://github.com/mvrdevelopment/libMVRgdtf.git
+    GIT_TAG        v9.0.15
+    GIT_SHALLOW    TRUE
+)
+set(DONT_USE_XERCES_AS_XMLLIB TRUE CACHE BOOL "" FORCE)
+set(BUILD_MVR_XCHANGE FALSE CACHE BOOL "" FORCE)
+set(UNITTEST FALSE CACHE BOOL "" FORCE)
+FetchContent_MakeAvailable(libMVRgdtf)
+
 add_library(${module_name} SHARED
     ../../plugins/interfaces/qlcioplugin.cpp ../../plugins/interfaces/qlcioplugin.h
     ../../plugins/interfaces/utils.h
@@ -22,6 +34,8 @@ add_library(${module_name} SHARED
     agentcredentialstore.cpp agentcredentialstore.h
     agentsession.cpp agentsession.h
     avolitesd4parser.cpp avolitesd4parser.h
+    gdtfgeometrydata.h
+    gdtfparser.cpp gdtfparser.h
     bus.cpp bus.h
     channelmodifier.cpp channelmodifier.h
     channelsgroup.cpp channelsgroup.h
@@ -104,6 +118,8 @@ target_link_libraries(${module_name} PUBLIC
 
 target_link_libraries(${module_name} PRIVATE qlcplusaudio)
 target_link_libraries(${module_name} PUBLIC rigmath)
+target_link_libraries(${module_name} PRIVATE MvrGdtf)
+target_include_directories(${module_name} PRIVATE ${libmvrgdtf_SOURCE_DIR}/src)
 
 # Optional: secure credential storage via OS keychain
 find_package(Qt6Keychain QUIET)

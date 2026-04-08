@@ -27,6 +27,7 @@
 
 class QXmlStreamReader;
 class QLCFixtureDef;
+struct GDTFGeometryData;
 
 /** @addtogroup engine Engine
  * @{
@@ -186,9 +187,20 @@ public:
     /** Load an Avolites D4 fixture definition from the file specified in $path */
     bool loadD4(const QString& path);
 
+    /** Load a GDTF fixture definition from the file specified in $path */
+    bool loadGDTF(const QString& path);
+
+    /**
+     * Get GDTF geometry data for a fixture definition (if loaded from .gdtf).
+     * Returns nullptr for QXF/D4 fixtures.
+     */
+    const GDTFGeometryData *gdtfGeometry(const QString &manufacturer,
+                                         const QString &model) const;
+
 private:
     QString m_mapAbsolutePath;
     QList <QLCFixtureDef*> m_defs;
+    QMap<QString, GDTFGeometryData*> m_gdtfGeometry;  // key: "manufacturer\0model"
 };
 
 /** @} */

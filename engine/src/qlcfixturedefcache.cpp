@@ -30,6 +30,8 @@
 #endif
 
 #include "qlcfixturedefcache.h"
+#include "gdtfparser.h"
+#include "gdtfgeometrydata.h"
 #include "avolitesd4parser.h"
 #include "qlcfixturedef.h"
 #include "qlcconfig.h"
@@ -210,6 +212,8 @@ bool QLCFixtureDefCache::load(const QDir& dir)
             loadQXF(path, true);
         else if (path.toLower().endsWith(KExtAvolitesFixture) == true)
             loadD4(path);
+        else if (path.toLower().endsWith(KExtGDTFFixture) == true)
+            loadGDTF(path);
         else
             qWarning() << Q_FUNC_INFO << "Unrecognized fixture extension:" << path;
     }
@@ -381,6 +385,9 @@ void QLCFixtureDefCache::clear()
 {
     while (m_defs.isEmpty() == false)
         delete m_defs.takeFirst();
+
+    qDeleteAll(m_gdtfGeometry);
+    m_gdtfGeometry.clear();
 }
 
 QDir QLCFixtureDefCache::systemDefinitionDirectory()
@@ -394,6 +401,7 @@ QDir QLCFixtureDefCache::userDefinitionDirectory()
     filters << QString("*%1").arg(KExtFixture);
     filters << QString("*%1").arg(KExtAgentFixture);
     filters << QString("*%1").arg(KExtAvolitesFixture);
+    filters << QString("*%1").arg(KExtGDTFFixture);
 
     return QLCFile::userDirectory(QString(USERFIXTUREDIR), QString(FIXTUREDIR), filters);
 }
@@ -452,4 +460,46 @@ bool QLCFixtureDefCache::loadD4(const QString& path)
     fxi = NULL;
 
     return true;
+}
+
+bool QLCFixtureDefCache::loadGDTF(const QString& path)
+{
+    QLCFixtureDef *fxi = new QLCFixtureDef();
+    GDTFParser parser;
+    if (parser.loadGDTF(path, fxi) == false)
+    {
+        qWarning() << Q_FUNC_INFO << "Unable to load GDTF fixture from" << path
+                   << ":" << parser.lastError();
+        delete fxi;
+        return false;
+    }
+
+    fxi->setIsUser(true);
+    fxi->setDefinitionSourceFile(path);
+    fxi->setLoaded(true);
+
+    // Store geometry data before potentially deleting fxi
+    GDTFGeometryData *geoData = parser.takeGeometryData();
+    QString geoKey = fxi->manufacturer() + QChar('\0') + fxi->model();
+
+    if (addFixtureDef(fxi) == false)
+    {
+        qDebug() << Q_FUNC_INFO << "Deleting duplicate GDTF" << path;
+        delete fxi;
+        delete geoData;
+    }
+    else if (geoData != nullptr)
+    {
+        m_gdtfGeometry.insert(geoKey, geoData);
+    }
+    fxi = NULL;
+
+    return true;
+}
+
+const GDTFGeometryData *QLCFixtureDefCache::gdtfGeometry(
+    const QString &manufacturer, const QString &model) const
+{
+    QString key = manufacturer + QChar('\0') + model;
+    return m_gdtfGeometry.value(key, nullptr);
 }

@@ -19,10 +19,15 @@
 
 #include "spatialview.h"
 #include "spatialrenderer.h"
+#include "fixturescenegraph.h"
+#include "gltfloader.h"
+#include "primitivegen.h"
 #include "spatialmodel.h"
 #include "doc.h"
 #include "fixture.h"
 #include "qlcfixturedef.h"
+#include "qlcfixturedefcache.h"
+#include "gdtfgeometrydata.h"
 #include "qlcfile.h"
 #include "qlcconfig.h"
 
@@ -241,11 +246,13 @@ void SpatialView::onSolverVizChanged()
 static void addFixtureEntry(std::vector<qlcrender::RenderFixture> &out,
                             uint32_t id, int fixtureType,
                             const rigmath::RigidTransform &t,
-                            float r, float g, float b, float a)
+                            float r, float g, float b, float a,
+                            const qlcrender::FixtureSceneGraph *sg = nullptr)
 {
     qlcrender::RenderFixture rf;
     rf.id = id;
     rf.fixtureType = fixtureType;
+    rf.sceneGraph = sg;
 
     double d[16];
     t.to_4x4_column_major(d);
@@ -264,18 +271,31 @@ void SpatialView::rebuildFixtures()
     SpatialModel *sm = m_doc->spatialModel();
     std::vector<qlcrender::RenderFixture> fixtures;
 
+    QLCFixtureDefCache *defCache = m_doc->fixtureDefCache();
+
     for (const QString &id : sm->fixtureIds())
     {
         Fixture *fxi = m_doc->fixture(id.toUInt());
         int fxType = fxi ? fxi->type() : -1;
         uint32_t fxId = id.toUInt();
 
+        // Look up GDTF scene graph for this fixture
+        const qlcrender::FixtureSceneGraph *sg = nullptr;
+        if (fxi && fxi->fixtureDef())
+        {
+            const QString &mfg = fxi->fixtureDef()->manufacturer();
+            const QString &mdl = fxi->fixtureDef()->model();
+            const GDTFGeometryData *geoData = defCache->gdtfGeometry(mfg, mdl);
+            if (geoData)
+                sg = getOrBuildSceneGraph(mfg, mdl, geoData);
+        }
+
         // Committed (solid)
         auto committed = sm->committedTransform(id);
         if (committed.has_value())
         {
             addFixtureEntry(fixtures, fxId, fxType, committed.value(),
-                            1.0f, 0.6f, 0.2f, 1.0f);  // orange solid
+                            1.0f, 0.6f, 0.2f, 1.0f, sg);  // orange solid
         }
         else
         {
@@ -284,14 +304,14 @@ void SpatialView::rebuildFixtures()
             if (agent.has_value())
             {
                 addFixtureEntry(fixtures, fxId, fxType, agent.value(),
-                                0.2f, 0.9f, 0.3f, 0.8f);  // green, slightly translucent
+                                0.2f, 0.9f, 0.3f, 0.8f, sg);  // green, slightly translucent
             }
             else
             {
                 // Truly new — show at origin, cyan
                 addFixtureEntry(fixtures, fxId, fxType,
                                 rigmath::RigidTransform::identity(),
-                                0.2f, 0.8f, 0.9f, 1.0f);  // cyan
+                                0.2f, 0.8f, 0.9f, 1.0f, sg);  // cyan
             }
             // For new fixtures, don't show separate ghosts — the primary is already the proposal
             continue;
@@ -302,7 +322,7 @@ void SpatialView::rebuildFixtures()
         if (agentDerived.has_value())
         {
             addFixtureEntry(fixtures, fxId, fxType, agentDerived.value(),
-                            0.2f, 0.9f, 0.3f, 0.4f);  // green ghost
+                            0.2f, 0.9f, 0.3f, 0.4f, sg);  // green ghost
         }
 
         // solverDerived ghost (cyan, translucent) — only if committed exists
@@ -310,7 +330,7 @@ void SpatialView::rebuildFixtures()
         if (solverDerived.has_value())
         {
             addFixtureEntry(fixtures, fxId, fxType, solverDerived.value(),
-                            0.2f, 0.8f, 0.9f, 0.4f);  // cyan ghost
+                            0.2f, 0.8f, 0.9f, 0.4f, sg);  // cyan ghost
         }
     }
 
@@ -376,4 +396,81 @@ void SpatialView::rebuildEllipsoids()
     }
 
     m_renderer->setCalibrationOverlays(ellipsoids);
+}
+
+// ---------------------------------------------------------------------------
+// GDTF scene graph builder
+// ---------------------------------------------------------------------------
+
+static void buildSceneNode(const GDTFGeometryNode &geoNode,
+                           qlcrender::SceneNode &sceneNode,
+                           const QMap<QString, QByteArray> &meshData,
+                           qlcrender::PrimitiveGen &primGen,
+                           std::unordered_map<std::string, qlcrender::LoadedMesh> &meshCache)
+{
+    // Copy transform
+    for (int i = 0; i < 16; i++)
+        sceneNode.localTransform[i] = geoNode.localTransform[i];
+
+    // Resolve mesh: prefer glTF model, fall back to primitive
+    if (!geoNode.meshRef.isEmpty() && meshData.contains(geoNode.meshRef))
+    {
+        std::string key = geoNode.meshRef.toStdString();
+        auto it = meshCache.find(key);
+        if (it == meshCache.end())
+        {
+            const QByteArray &glbData = meshData[geoNode.meshRef];
+            auto mesh = qlcrender::GltfLoader::loadFromMemory(
+                reinterpret_cast<const unsigned char *>(glbData.constData()),
+                glbData.size(), key);
+            it = meshCache.emplace(key, mesh).first;
+        }
+        if (it->second.isValid())
+            sceneNode.mesh = &it->second;
+    }
+
+    if (!sceneNode.mesh && geoNode.primitiveType > 0)
+        sceneNode.mesh = primGen.getPrimitive(geoNode.primitiveType);
+
+    // Recurse
+    for (const auto &childGeo : geoNode.children)
+    {
+        sceneNode.children.emplace_back();
+        buildSceneNode(childGeo, sceneNode.children.back(), meshData, primGen, meshCache);
+    }
+}
+
+const qlcrender::FixtureSceneGraph *SpatialView::getOrBuildSceneGraph(
+    const QString &manufacturer, const QString &model,
+    const GDTFGeometryData *geoData)
+{
+    std::string key = manufacturer.toStdString() + '\0' + model.toStdString();
+    auto it = m_sceneGraphCache.find(key);
+    if (it != m_sceneGraphCache.end())
+        return &it->second;
+
+    // Build scene graph from geometry data
+    qlcrender::FixtureSceneGraph graph;
+
+    // Get the primitive gen from the renderer — we need a reference to the
+    // BgfxRenderer's PrimitiveGen. Since SpatialView creates the renderer,
+    // we can access it via a static helper on the renderer.
+    // For now, use a local PrimitiveGen that shares the same bgfx context.
+    static qlcrender::PrimitiveGen s_primGen;
+    static bool s_primInit = false;
+    if (!s_primInit)
+    {
+        s_primGen.init();
+        s_primInit = true;
+    }
+
+    // Shared mesh cache for glTF models (persists across rebuilds)
+    static std::unordered_map<std::string, qlcrender::LoadedMesh> s_gltfMeshCache;
+
+    buildSceneNode(geoData->root, graph.root, geoData->meshData,
+                   s_primGen, s_gltfMeshCache);
+    graph.valid = true;
+
+    auto result = m_sceneGraphCache.emplace(key, std::move(graph));
+    return &result.first->second;
 }
