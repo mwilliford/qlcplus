@@ -57,6 +57,7 @@
 #include "inputoutputmanager.h"
 
 #include "agentconnection.h"
+#include "mcpserver.h"
 #include "virtualconsole/vcserializer.h"
 #include "virtualconsole/vccommandhandler.h"
 #include "monitorproperties.h"
@@ -99,6 +100,7 @@ App::App()
     , m_importManager(nullptr)
     , m_fixtureEditor(nullptr)
     , m_agentConnection(nullptr)
+    , m_mcpServer(nullptr)
 {
     QSettings settings;
 
@@ -286,6 +288,17 @@ void App::startup()
 
     // and here we go!
     setSource(QUrl("qrc:/MainView.qml"));
+
+    // MCP server for AI-driven development (screenshot, click, scene graph access)
+    // Started after setSource to ensure QML is loaded and router state is clean
+    quint16 mcpPort = 9876;
+    if (qEnvironmentVariableIsSet("MCP_PORT"))
+        mcpPort = qEnvironmentVariable("MCP_PORT").toUShort();
+    m_mcpServer = new McpServer(this, m_doc, mcpPort, this);
+    if (m_mcpServer->start())
+        qInfo() << "MCP server started on port" << mcpPort;
+    else
+        qWarning() << "MCP server FAILED to start on port" << mcpPort;
 
     if (restoreWindowGeometry)
         setGeometry(rect);
@@ -1234,4 +1247,9 @@ void App::closeFixtureEditor()
 AgentConnection *App::agentConnection() const
 {
     return m_agentConnection;
+}
+
+McpServer *App::mcpServer() const
+{
+    return m_mcpServer;
 }

@@ -19,6 +19,7 @@ set(QML_IMPORT_PATH ".")
 set(SRC_FILES
     ../plugins/interfaces/utils.h
     app.cpp app.h
+    mcpserver.cpp mcpserver.h
     audioeditor.cpp audioeditor.h
     chasereditor.cpp chasereditor.h
     collectioneditor.cpp collectioneditor.h
@@ -229,6 +230,8 @@ target_link_libraries(${module_name} PRIVATE
     Qt${QT_MAJOR_VERSION}::Svg
     Qt${QT_MAJOR_VERSION}::Widgets
     Qt${QT_MAJOR_VERSION}::WebSockets
+    Qt${QT_MAJOR_VERSION}::HttpServer
+    Qt${QT_MAJOR_VERSION}::Test
     qlcplusengine
     qlcpluswebaccess
     qlcplusrender

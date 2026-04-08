@@ -41,7 +41,7 @@ set(CMAKE_AUTOMOC ON)
 include(GNUInstallDirs)
 
 find_package(QT NAMES Qt5 Qt6 REQUIRED COMPONENTS Core)
-find_package(Qt${QT_VERSION_MAJOR} REQUIRED COMPONENTS Gui Multimedia MultimediaWidgets Network PrintSupport Qml Quick QuickWidgets Svg Test Widgets LinguistTools WebSockets)
+find_package(Qt${QT_VERSION_MAJOR} REQUIRED COMPONENTS Gui HttpServer Multimedia MultimediaWidgets Network PrintSupport Qml Quick QuickWidgets Svg Test Widgets LinguistTools WebSockets)
 if(qmlui)
     find_package(Qt${QT_VERSION_MAJOR} REQUIRED COMPONENTS 3DCore 3DInput 3DLogic 3DQuick 3DQuickExtras 3DRender WebSockets)
     if(ANDROID)
