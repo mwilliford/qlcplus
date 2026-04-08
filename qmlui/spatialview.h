@@ -21,7 +21,11 @@
 #include <unordered_map>
 #include <string>
 
-namespace qlcrender { class SpatialRenderer; struct FixtureSceneGraph; }
+namespace qlcrender {
+    class SpatialRenderer;
+    struct FixtureSceneGraph;
+    struct Ray;
+}
 class SpatialModel;
 class Doc;
 class QLCFixtureDefCache;
@@ -51,6 +55,16 @@ public:
     void stopRendering();
     bool isRendering() const { return m_frameTimer.isActive(); }
 
+    /**
+     * Request a screenshot of the bgfx viewport from the GPU framebuffer.
+     * Returns raw RGBA pixel data. Call this, then wait ~2 frames (~32ms)
+     * for the callback to fire, then call takeScreenshot().
+     */
+    void requestViewportScreenshot();
+
+    /** Retrieve the screenshot if ready. Returns empty QImage if not ready. */
+    QImage takeViewportScreenshot();
+
 protected:
     void exposeEvent(QExposeEvent *event) override;
     void resizeEvent(QResizeEvent *event) override;
@@ -66,6 +80,10 @@ private:
     const qlcrender::FixtureSceneGraph *getOrBuildSceneGraph(
         const QString &manufacturer, const QString &model,
         const GDTFGeometryData *geoData);
+
+    /** Convert mouse position to device-pixel coordinates for renderer. */
+    void mouseToViewport(const QPoint &pos, float &mx, float &my,
+                         uint32_t &vw, uint32_t &vh) const;
 
 private slots:
     void onFrameTimer();
@@ -83,6 +101,10 @@ private:
     QPoint m_pressPos;
     bool m_orbiting = false;
     bool m_panning = false;
+    bool m_draggingGizmo = false;
+
+    // Gizmo drag state
+    float m_dragStartPos[3] = {0, 0, 0};  // fixture position at drag start
 
     // Default: front-of-house view (audience looking at stage)
     float m_cameraYaw = -90.0f;

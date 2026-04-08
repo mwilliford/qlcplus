@@ -18,7 +18,10 @@
 
 #include "spatialview.h"
 #include "spatialrenderer.h"
+#include "bgfxrenderer.h"
 #include "fixturescenegraph.h"
+#include "gizmo.h"
+#include "raypick.h"
 #include "gltfloader.h"
 #include "primitivegen.h"
 #include "spatialmodel.h"
@@ -67,6 +70,36 @@ void SpatialView::startRendering()
 void SpatialView::stopRendering()
 {
     m_frameTimer.stop();
+}
+
+void SpatialView::requestViewportScreenshot()
+{
+    if (!m_bgfxReady)
+        return;
+    auto *bgfxR = dynamic_cast<qlcrender::BgfxRenderer *>(m_renderer.get());
+    if (bgfxR)
+        bgfxR->callback().requestScreenshot();
+}
+
+QImage SpatialView::takeViewportScreenshot()
+{
+    if (!m_bgfxReady)
+        return QImage();
+    auto *bgfxR = dynamic_cast<qlcrender::BgfxRenderer *>(m_renderer.get());
+    if (!bgfxR)
+        return QImage();
+
+    std::vector<uint8_t> rgba;
+    uint32_t w, h;
+    if (!bgfxR->callback().takeScreenshot(rgba, w, h))
+        return QImage();
+
+    // Convert raw RGBA to QImage
+    QImage img(w, h, QImage::Format_RGBA8888);
+    for (uint32_t y = 0; y < h; y++)
+        memcpy(img.scanLine(y), rgba.data() + y * w * 4, w * 4);
+
+    return img;
 }
 
 void SpatialView::initBgfx()
@@ -129,20 +162,105 @@ void SpatialView::resizeEvent(QResizeEvent *event)
 
 // --- Mouse interaction ---
 
+void SpatialView::mouseToViewport(const QPoint &pos, float &mx, float &my,
+                                   uint32_t &vw, uint32_t &vh) const
+{
+    float dpr = float(devicePixelRatio());
+    mx = float(pos.x()) * dpr;
+    my = float(pos.y()) * dpr;
+    vw = uint32_t(width() * dpr);
+    vh = uint32_t(height() * dpr);
+}
+
 void SpatialView::mousePressEvent(QMouseEvent *event)
 {
     m_lastMousePos = event->pos();
     m_pressPos = event->pos();
-    if (event->button() == Qt::LeftButton)
+
+    if (event->button() == Qt::LeftButton && m_bgfxReady)
+    {
+        // Check gizmo first (if a fixture is selected)
+        float mx, my;
+        uint32_t vw, vh;
+        mouseToViewport(event->pos(), mx, my, vw, vh);
+
+        qlcrender::GizmoAxis axis = m_renderer->gizmoHitTest(mx, my, vw, vh);
+        if (axis != qlcrender::GizmoAxis::None)
+        {
+            // Start gizmo drag
+            m_draggingGizmo = true;
+            m_orbiting = false;
+
+            // Store drag start position
+            // Get the selected fixture's current position from the gizmo
+            // (set during renderGizmo from the fixture transform)
+            auto *bgfxR = dynamic_cast<qlcrender::BgfxRenderer *>(m_renderer.get());
+            if (bgfxR)
+            {
+                bgfxR->gizmo().setActiveAxis(axis);
+                bgfxR->gizmo().getPosition(m_dragStartPos);
+            }
+            return;
+        }
+
         m_orbiting = true;
+    }
     else if (event->button() == Qt::RightButton || event->button() == Qt::MiddleButton)
+    {
         m_panning = true;
+    }
 }
 
 void SpatialView::mouseMoveEvent(QMouseEvent *event)
 {
     QPoint delta = event->pos() - m_lastMousePos;
     m_lastMousePos = event->pos();
+
+    if (m_draggingGizmo && m_bgfxReady)
+    {
+        auto *bgfxR = dynamic_cast<qlcrender::BgfxRenderer *>(m_renderer.get());
+        if (!bgfxR)
+            return;
+
+        float mx, my, mxStart, myStart;
+        uint32_t vw, vh;
+        mouseToViewport(event->pos(), mx, my, vw, vh);
+        mouseToViewport(m_pressPos, mxStart, myStart, vw, vh);
+
+        // Get camera matrices for ray computation
+        float view[16], proj[16];
+        bgfxR->camera().viewMatrix(view);
+        float aspect = float(vw) / float(vh);
+        bgfxR->camera().projMatrix(proj, aspect, true);  // Metal = homogeneous depth
+
+        qlcrender::Ray currentRay = qlcrender::screenToRay(mx, my, vw, vh, view, proj);
+        qlcrender::Ray startRay = qlcrender::screenToRay(mxStart, myStart, vw, vh, view, proj);
+
+        float outDelta[3];
+        if (bgfxR->gizmo().projectDrag(currentRay, startRay, m_dragStartPos, outDelta))
+        {
+            // Update gizmo position (visual feedback during drag)
+            bgfxR->gizmo().setPosition(
+                m_dragStartPos[0] + outDelta[0],
+                m_dragStartPos[1] + outDelta[1],
+                m_dragStartPos[2] + outDelta[2]
+            );
+
+            // Update the fixture's transform in the SpatialModel
+            int32_t selId = m_renderer->selectedFixture();
+            if (selId >= 0)
+            {
+                SpatialModel *sm = m_doc->spatialModel();
+                QString id = QString::number(selId);
+                rigmath::RigidTransform t = sm->fixtureTransform(id);
+                t.pos[0] = m_dragStartPos[0] + outDelta[0];
+                t.pos[1] = m_dragStartPos[1] + outDelta[1];
+                t.pos[2] = m_dragStartPos[2] + outDelta[2];
+                sm->setFixtureTransform(id, t, SpatialModel::Committed);
+            }
+        }
+        return;
+    }
 
     if (m_orbiting)
     {
@@ -160,16 +278,32 @@ void SpatialView::mouseMoveEvent(QMouseEvent *event)
 
 void SpatialView::mouseReleaseEvent(QMouseEvent *event)
 {
+    if (event->button() == Qt::LeftButton && m_draggingGizmo)
+    {
+        // End gizmo drag
+        auto *bgfxR = dynamic_cast<qlcrender::BgfxRenderer *>(m_renderer.get());
+        if (bgfxR)
+            bgfxR->gizmo().setActiveAxis(qlcrender::GizmoAxis::None);
+        m_draggingGizmo = false;
+        qDebug() << "[SpatialView] Gizmo drag completed";
+        return;
+    }
+
     // Detect click vs drag: if mouse didn't move more than 4px, it's a click
     if (event->button() == Qt::LeftButton
         && (event->pos() - m_pressPos).manhattanLength() < 5
         && m_bgfxReady)
     {
-        float dpr = float(devicePixelRatio());
-        float mx = float(event->pos().x()) * dpr;
-        float my = float(event->pos().y()) * dpr;
-        uint32_t vw = uint32_t(width() * dpr);
-        uint32_t vh = uint32_t(height() * dpr);
+        float mx, my;
+        uint32_t vw, vh;
+        mouseToViewport(event->pos(), mx, my, vw, vh);
+
+        qDebug() << "[SpatialView] Click at logical:" << event->pos()
+                 << "viewport(device):" << mx << my
+                 << "viewportSize:" << vw << vh
+                 << "windowSize:" << width() << height()
+                 << "geometry:" << geometry()
+                 << "dpr:" << devicePixelRatio();
 
         int32_t hitId = m_renderer->hitTest(mx, my, vw, vh);
         m_renderer->setSelectedFixture(hitId);
@@ -182,6 +316,7 @@ void SpatialView::mouseReleaseEvent(QMouseEvent *event)
 
     m_orbiting = false;
     m_panning = false;
+    m_draggingGizmo = false;
 }
 
 void SpatialView::wheelEvent(QWheelEvent *event)

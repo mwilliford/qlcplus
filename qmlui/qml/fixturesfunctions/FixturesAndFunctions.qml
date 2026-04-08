@@ -205,6 +205,7 @@ Rectangle
                 MenuBarEntry
                 {
                     id: threedView
+                    objectName: "threedView"
                     visible: !View3D.detached
                     imgSource: "3dview.svg"
                     entryText: qsTr("3D View")

@@ -25,10 +25,18 @@
 //
 
 class Doc;
+class QImage;
 
 #define SETTINGS_SPATIALVIEW_GEOMETRY "spatialview/geometry"
 
 /** Show (or create) the Spatial View window. */
 void showSpatialViewWindow(Doc *doc);
+
+/**
+ * Grab a screenshot of the Spatial View.
+ * Composites the bgfx 3D viewport (GPU readback) with the QML panel (QWidget::grab).
+ * Works even when the window is behind other windows.
+ */
+QImage grabSpatialViewWindow();
 
 #endif // SPATIALVIEWWINDOW_H
