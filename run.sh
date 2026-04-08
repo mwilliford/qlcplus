@@ -17,7 +17,7 @@ if [ ! -d "$BUILD_DIR" ]; then
 fi
 
 # Plugins are built to build/PlugIns/<name>/src/*.dylib (nested subdirs) but
-# the app's IOPluginCache scans build/PlugIns/*.dylib (flat, no recursion).
+# the app's IOPluginCache scans PlugIns/*.dylib (flat, no recursion).
 # Flatten by symlinking each .dylib into the top-level PlugIns dir.
 PLUGIN_DIR="$BUILD_DIR/PlugIns"
 if [ -d "$PLUGIN_DIR" ]; then
@@ -25,6 +25,15 @@ if [ -d "$PLUGIN_DIR" ]; then
         base="$(basename "$dylib")"
         [ ! -e "$PLUGIN_DIR/$base" ] && ln -sf "$dylib" "$PLUGIN_DIR/$base"
     done
+fi
+
+# For macOS .app bundles, the app looks for plugins at Contents/PlugIns
+# (relative to the executable via ../PlugIns). Symlink the build PlugIns dir
+# into the bundle so the app can find them.
+APP_BUNDLE="$BUILD_DIR/qmlui/qlcplus-qml.app"
+if [ "$VERSION" = "v5" ] && [ -d "$APP_BUNDLE" ] && [ -d "$PLUGIN_DIR" ]; then
+    BUNDLE_PLUGINS="$APP_BUNDLE/Contents/PlugIns"
+    [ ! -e "$BUNDLE_PLUGINS" ] && ln -sf "$PLUGIN_DIR" "$BUNDLE_PLUGINS"
 fi
 
 # Determine the Resources directory.
