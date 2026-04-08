@@ -203,6 +203,42 @@ void BgfxRenderer::panCamera(float dx, float dy)
 void BgfxRenderer::setFixtures(const std::vector<RenderFixture>& fixtures)
 {
     m_fixtures = fixtures;
+
+    // Compute local AABBs for picking
+    m_localAABBs.resize(m_fixtures.size());
+    for (size_t i = 0; i < m_fixtures.size(); i++)
+    {
+        const auto &f = m_fixtures[i];
+        if (f.sceneGraph && f.sceneGraph->valid)
+        {
+            // Use cached AABB if already computed, otherwise compute
+            if (f.sceneGraph->localAABB.valid())
+                m_localAABBs[i] = f.sceneGraph->localAABB;
+            else
+                m_localAABBs[i] = computeSceneGraphAABB(f.sceneGraph->root);
+        }
+        else
+        {
+            m_localAABBs[i] = defaultFixtureAABB();
+        }
+    }
+}
+
+int32_t BgfxRenderer::hitTest(float mouseX, float mouseY,
+                               uint32_t viewportW, uint32_t viewportH)
+{
+    float view[16], proj[16];
+    m_camera.viewMatrix(view);
+    float aspect = float(m_width) / float(m_height);
+    m_camera.projMatrix(proj, aspect, bgfx::getCaps()->homogeneousDepth);
+
+    HitResult hit;
+    if (pickFixture(mouseX, mouseY, viewportW, viewportH,
+                    view, proj, m_fixtures, m_localAABBs, hit))
+    {
+        return int32_t(hit.fixtureId);
+    }
+    return -1;
 }
 
 // --- Private rendering ---
@@ -284,12 +320,23 @@ void BgfxRenderer::renderGrid()
 
 void BgfxRenderer::renderFixtures()
 {
+    static const float selectColor[4] = { 1.0f, 1.0f, 1.0f, 1.0f };  // white highlight
+
     for (const auto& fixture : m_fixtures)
     {
+        // Determine color: highlight if selected (and solid, not ghost)
+        const float *color = fixture.color;
+        if (m_selectedFixtureId >= 0
+            && fixture.id == uint32_t(m_selectedFixtureId)
+            && fixture.color[3] >= 0.99f)
+        {
+            color = selectColor;
+        }
+
         // If fixture has a GDTF scene graph, render hierarchically
         if (fixture.sceneGraph && fixture.sceneGraph->valid)
         {
-            renderSceneGraph(fixture.sceneGraph->root, fixture.transform, fixture.color);
+            renderSceneGraph(fixture.sceneGraph->root, fixture.transform, color);
             continue;
         }
 
@@ -327,11 +374,11 @@ void BgfxRenderer::renderFixtures()
             continue;
         }
 
-        bgfx::setUniform(m_u_color, fixture.color);
+        bgfx::setUniform(m_u_color, color);
 
         uint64_t state = BGFX_STATE_WRITE_RGB | BGFX_STATE_WRITE_A
                          | BGFX_STATE_WRITE_Z | BGFX_STATE_DEPTH_TEST_LESS;
-        if (fixture.color[3] < 0.99f)
+        if (color[3] < 0.99f)
             state |= BGFX_STATE_BLEND_ALPHA;
 
         bgfx::setState(state);

@@ -34,7 +34,7 @@
 #include "mainviewdmx.h"
 #include "mainview2d.h"
 #include "mainview3d.h"
-#include "spatialview.h"
+#include "spatialviewwindow.h"
 #include "spatialmodel.h"
 #include "qlcchannel.h"
 
@@ -203,7 +203,7 @@ PreviewContext *ContextManager::contextByName(QString ctxName)
 
 void ContextManager::showSpatialView()
 {
-    SpatialView::createAndShow(m_doc);
+    showSpatialViewWindow(m_doc);
 }
 
 void ContextManager::detachContext(QString name)

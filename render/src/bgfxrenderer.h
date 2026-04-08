@@ -37,6 +37,10 @@ public:
     void setFixtures(const std::vector<RenderFixture>& fixtures) override;
     void setCalibrationOverlays(const std::vector<RenderEllipsoid>& ellipsoids) override;
 
+    // --- Selection ---
+    int32_t hitTest(float mouseX, float mouseY,
+                    uint32_t viewportW, uint32_t viewportH) override;
+
     OrbitCamera& camera() { return m_camera; }
 
     void setMeshBasePath(const std::string &path) override { m_meshBasePath = path; }
@@ -70,6 +74,9 @@ private:
 
     // GDTF primitive mesh generator
     PrimitiveGen m_primitiveGen;
+
+    // Per-fixture local AABBs (indexed same as m_fixtures)
+    std::vector<AABB> m_localAABBs;
 
     // Calibration overlays
     std::vector<RenderEllipsoid> m_ellipsoids;

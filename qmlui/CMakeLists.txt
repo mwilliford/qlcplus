@@ -45,6 +45,7 @@ set(SRC_FILES
     mainview2d.cpp mainview2d.h
     mainview3d.cpp mainview3d.h
     spatialview.cpp spatialview.h
+    spatialviewwindow.cpp spatialviewwindow.h
     $<$<PLATFORM_ID:Darwin>:spatialview_macos.mm>
     mainviewdmx.cpp mainviewdmx.h
     modelselector.cpp modelselector.h
@@ -224,6 +225,7 @@ target_link_libraries(${module_name} PRIVATE
     Qt${QT_MAJOR_VERSION}::PrintSupport
     Qt${QT_MAJOR_VERSION}::Qml
     Qt${QT_MAJOR_VERSION}::Quick
+    Qt${QT_MAJOR_VERSION}::QuickWidgets
     Qt${QT_MAJOR_VERSION}::Svg
     Qt${QT_MAJOR_VERSION}::Widgets
     Qt${QT_MAJOR_VERSION}::WebSockets

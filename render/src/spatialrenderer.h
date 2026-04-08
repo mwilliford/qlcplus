@@ -3,6 +3,7 @@
 #include <cstdint>
 #include <vector>
 #include "rendertypes.h"
+#include "raypick.h"
 
 namespace qlcrender {
 
@@ -33,10 +34,21 @@ public:
     virtual void setFixtures(const std::vector<RenderFixture>& fixtures) = 0;
     virtual void setMeshBasePath(const std::string& path) { (void)path; }
 
+    // --- Selection ---
+    virtual void setSelectedFixture(int32_t fixtureId) { m_selectedFixtureId = fixtureId; }
+    int32_t selectedFixture() const { return m_selectedFixtureId; }
+
+    /** Pick fixture at screen coordinates. Returns fixture ID or -1. */
+    virtual int32_t hitTest(float mouseX, float mouseY,
+                            uint32_t viewportW, uint32_t viewportH) { return -1; }
+
     // --- Calibration overlays (Phase C, no-op default) ---
     virtual void setCalibrationOverlays(const std::vector<RenderEllipsoid>& ellipsoids) { (void)ellipsoids; }
     virtual void setObservationLines(const std::vector<RenderLine>& lines) { (void)lines; }
     virtual void setNamedPlanes(const std::vector<RenderPlane>& planes) { (void)planes; }
+
+protected:
+    int32_t m_selectedFixtureId = -1;
 };
 
 /** Factory: create a bgfx-based SpatialRenderer. Caller owns the pointer. */

@@ -12,7 +12,6 @@
 */
 
 #include <QExposeEvent>
-#include <QSettings>
 #include <QScreen>
 #include <QGuiApplication>
 #include <QDebug>
@@ -35,22 +34,16 @@
 extern void *setupMetalLayerForView(void *nativeHandle);
 #endif
 
-SpatialView *SpatialView::s_instance = nullptr;
-
-SpatialView::SpatialView(Doc *doc)
-    : QWindow()
+SpatialView::SpatialView(Doc *doc, QWindow *parent)
+    : QWindow(parent)
     , m_doc(doc)
     , m_renderer(qlcrender::createBgfxRenderer())
 {
-    // Use RasterSurface — let bgfx create its own CAMetalLayer
     setSurfaceType(QSurface::RasterSurface);
-    setTitle(QStringLiteral("QLC+ Spatial View"));
     setMinimumSize(QSize(400, 300));
 
-    // Frame timer — 60Hz
     connect(&m_frameTimer, &QTimer::timeout, this, &SpatialView::onFrameTimer);
 
-    // Listen to SpatialModel changes
     SpatialModel *sm = m_doc->spatialModel();
     connect(sm, &SpatialModel::fixtureTransformChanged,
             this, &SpatialView::onSpatialTransformChanged);
@@ -63,43 +56,17 @@ SpatialView::~SpatialView()
     m_frameTimer.stop();
     if (m_bgfxReady)
         m_renderer->shutdown();
-    s_instance = nullptr;
 }
 
-void SpatialView::createAndShow(Doc *doc)
+void SpatialView::startRendering()
 {
-    if (s_instance != nullptr)
-    {
-        s_instance->show();
-        s_instance->raise();
-        s_instance->requestActivate();
-        return;
-    }
+    if (m_bgfxReady && !m_frameTimer.isActive())
+        m_frameTimer.start(16);
+}
 
-    s_instance = new SpatialView(doc);
-
-    // Restore geometry
-    QSettings settings;
-    QVariant var = settings.value(SETTINGS_SPATIALVIEW_GEOMETRY);
-    if (var.isValid())
-    {
-        s_instance->setGeometry(var.toRect());
-    }
-    else
-    {
-        QScreen *screen = QGuiApplication::primaryScreen();
-        if (screen)
-        {
-            QRect screenGeo = screen->availableGeometry();
-            s_instance->resize(screenGeo.width() * 3 / 4, screenGeo.height() * 3 / 4);
-        }
-        else
-        {
-            s_instance->resize(1024, 768);
-        }
-    }
-
-    s_instance->show();
+void SpatialView::stopRendering()
+{
+    m_frameTimer.stop();
 }
 
 void SpatialView::initBgfx()
@@ -121,7 +88,6 @@ void SpatialView::initBgfx()
     {
         m_bgfxReady = true;
 
-        // Set mesh path to the bgfx-converted fixture meshes
         QString meshPath = QLCFile::systemDirectory(MESHESDIR).path()
                            + QDir::separator() + "fixtures"
                            + QDir::separator() + "bgfx" + QDir::separator();
@@ -131,7 +97,7 @@ void SpatialView::initBgfx()
         m_renderer->setCameraOrbit(m_cameraYaw, m_cameraPitch, m_cameraDistance);
         rebuildFixtures();
         rebuildEllipsoids();
-        m_frameTimer.start(16);  // ~60Hz
+        m_frameTimer.start(16);
         qDebug() << "[SpatialView] bgfx initialized" << w << "x" << h;
     }
     else
@@ -140,28 +106,12 @@ void SpatialView::initBgfx()
     }
 }
 
-bool SpatialView::event(QEvent *event)
-{
-    if (event->type() == QEvent::Close)
-    {
-        // Save geometry, then just hide — don't destroy bgfx
-        // (bgfx::init/shutdown can only be called once per process on Metal)
-        QSettings settings;
-        settings.setValue(SETTINGS_SPATIALVIEW_GEOMETRY, geometry());
-        m_frameTimer.stop();
-        hide();
-        return true;  // consume the event — don't actually close/destroy
-    }
-    return QWindow::event(event);
-}
-
 void SpatialView::exposeEvent(QExposeEvent *event)
 {
     Q_UNUSED(event);
     if (isExposed() && !m_bgfxReady)
         initBgfx();
 
-    // Resume frame timer when re-shown
     if (isExposed() && m_bgfxReady && !m_frameTimer.isActive())
         m_frameTimer.start(16);
 }
@@ -182,6 +132,7 @@ void SpatialView::resizeEvent(QResizeEvent *event)
 void SpatialView::mousePressEvent(QMouseEvent *event)
 {
     m_lastMousePos = event->pos();
+    m_pressPos = event->pos();
     if (event->button() == Qt::LeftButton)
         m_orbiting = true;
     else if (event->button() == Qt::RightButton || event->button() == Qt::MiddleButton)
@@ -209,14 +160,33 @@ void SpatialView::mouseMoveEvent(QMouseEvent *event)
 
 void SpatialView::mouseReleaseEvent(QMouseEvent *event)
 {
-    Q_UNUSED(event);
+    // Detect click vs drag: if mouse didn't move more than 4px, it's a click
+    if (event->button() == Qt::LeftButton
+        && (event->pos() - m_pressPos).manhattanLength() < 5
+        && m_bgfxReady)
+    {
+        float dpr = float(devicePixelRatio());
+        float mx = float(event->pos().x()) * dpr;
+        float my = float(event->pos().y()) * dpr;
+        uint32_t vw = uint32_t(width() * dpr);
+        uint32_t vh = uint32_t(height() * dpr);
+
+        int32_t hitId = m_renderer->hitTest(mx, my, vw, vh);
+        m_renderer->setSelectedFixture(hitId);
+
+        if (hitId >= 0)
+            qDebug() << "[SpatialView] Selected fixture:" << hitId;
+        else
+            qDebug() << "[SpatialView] Deselected";
+    }
+
     m_orbiting = false;
     m_panning = false;
 }
 
 void SpatialView::wheelEvent(QWheelEvent *event)
 {
-    float zoomDelta = -event->angleDelta().y() / 120.0f;
+    float zoomDelta = event->angleDelta().y() / 120.0f;
     m_cameraDistance *= (1.0f + zoomDelta * 0.1f);
     m_cameraDistance = qBound(0.5f, m_cameraDistance, 200.0f);
     m_renderer->setCameraOrbit(m_cameraYaw, m_cameraPitch, m_cameraDistance);
@@ -299,7 +269,6 @@ void SpatialView::rebuildFixtures()
         }
         else
         {
-            // New fixture (no committed) — show agentDerived as primary if present
             auto agent = sm->agentDerivedTransform(id);
             if (agent.has_value())
             {
@@ -308,29 +277,27 @@ void SpatialView::rebuildFixtures()
             }
             else
             {
-                // Truly new — show at origin, cyan
                 addFixtureEntry(fixtures, fxId, fxType,
                                 rigmath::RigidTransform::identity(),
                                 0.2f, 0.8f, 0.9f, 1.0f, sg);  // cyan
             }
-            // For new fixtures, don't show separate ghosts — the primary is already the proposal
             continue;
         }
 
-        // agentDerived ghost (green, translucent) — only if committed exists
+        // agentDerived ghost (green, translucent)
         auto agentDerived = sm->agentDerivedTransform(id);
         if (agentDerived.has_value())
         {
             addFixtureEntry(fixtures, fxId, fxType, agentDerived.value(),
-                            0.2f, 0.9f, 0.3f, 0.4f, sg);  // green ghost
+                            0.2f, 0.9f, 0.3f, 0.4f, sg);
         }
 
-        // solverDerived ghost (cyan, translucent) — only if committed exists
+        // solverDerived ghost (cyan, translucent)
         auto solverDerived = sm->solverDerivedTransform(id);
         if (solverDerived.has_value())
         {
             addFixtureEntry(fixtures, fxId, fxType, solverDerived.value(),
-                            0.2f, 0.8f, 0.9f, 0.4f, sg);  // cyan ghost
+                            0.2f, 0.8f, 0.9f, 0.4f, sg);
         }
     }
 
@@ -345,36 +312,28 @@ void SpatialView::rebuildEllipsoids()
     SpatialModel *sm = m_doc->spatialModel();
     std::vector<qlcrender::RenderEllipsoid> ellipsoids;
 
-    // Note: don't early-return on !hasSolverViz() — manual placements
-    // have default uncertainty ellipsoids even without solver data.
-
     for (const QString &id : sm->fixtureIds())
     {
         SpatialModel::FixtureViz viz = sm->fixtureViz(id);
 
-        // Skip if no ellipsoid data (all axes zero)
         if (viz.ellipsoidAxes[0] <= 0.0 && viz.ellipsoidAxes[1] <= 0.0 && viz.ellipsoidAxes[2] <= 0.0)
             continue;
 
         qlcrender::RenderEllipsoid ell;
         ell.fixtureId = id.toUInt();
 
-        // Center at fixture position
         rigmath::RigidTransform t = sm->fixtureTransform(id);
         ell.center[0] = float(t.pos[0]);
         ell.center[1] = float(t.pos[1]);
         ell.center[2] = float(t.pos[2]);
 
-        // Semi-axes: convert cm → meters
         ell.semiAxes[0] = float(viz.ellipsoidAxes[0] / 100.0);
         ell.semiAxes[1] = float(viz.ellipsoidAxes[1] / 100.0);
         ell.semiAxes[2] = float(viz.ellipsoidAxes[2] / 100.0);
 
-        // Eigenvector rotation (row-major 3x3)
         for (int i = 0; i < 9; i++)
             ell.rotation[i] = float(viz.ellipsoidRot[i]);
 
-        // Color by quality
         if (viz.quality == "good")
         {
             ell.color[0] = 0.2f; ell.color[1] = 0.8f; ell.color[2] = 0.2f; ell.color[3] = 0.3f;
@@ -387,7 +346,7 @@ void SpatialView::rebuildEllipsoids()
         {
             ell.color[0] = 0.9f; ell.color[1] = 0.2f; ell.color[2] = 0.2f; ell.color[3] = 0.3f;
         }
-        else  // unconstrained
+        else
         {
             ell.color[0] = 0.5f; ell.color[1] = 0.5f; ell.color[2] = 0.5f; ell.color[3] = 0.2f;
         }
@@ -408,11 +367,9 @@ static void buildSceneNode(const GDTFGeometryNode &geoNode,
                            qlcrender::PrimitiveGen &primGen,
                            std::unordered_map<std::string, qlcrender::LoadedMesh> &meshCache)
 {
-    // Copy transform
     for (int i = 0; i < 16; i++)
         sceneNode.localTransform[i] = geoNode.localTransform[i];
 
-    // Resolve mesh: prefer glTF model, fall back to primitive
     if (!geoNode.meshRef.isEmpty() && meshData.contains(geoNode.meshRef))
     {
         std::string key = geoNode.meshRef.toStdString();
@@ -432,7 +389,6 @@ static void buildSceneNode(const GDTFGeometryNode &geoNode,
     if (!sceneNode.mesh && geoNode.primitiveType > 0)
         sceneNode.mesh = primGen.getPrimitive(geoNode.primitiveType);
 
-    // Recurse
     for (const auto &childGeo : geoNode.children)
     {
         sceneNode.children.emplace_back();
@@ -449,13 +405,8 @@ const qlcrender::FixtureSceneGraph *SpatialView::getOrBuildSceneGraph(
     if (it != m_sceneGraphCache.end())
         return &it->second;
 
-    // Build scene graph from geometry data
     qlcrender::FixtureSceneGraph graph;
 
-    // Get the primitive gen from the renderer — we need a reference to the
-    // BgfxRenderer's PrimitiveGen. Since SpatialView creates the renderer,
-    // we can access it via a static helper on the renderer.
-    // For now, use a local PrimitiveGen that shares the same bgfx context.
     static qlcrender::PrimitiveGen s_primGen;
     static bool s_primInit = false;
     if (!s_primInit)
@@ -464,7 +415,6 @@ const qlcrender::FixtureSceneGraph *SpatialView::getOrBuildSceneGraph(
         s_primInit = true;
     }
 
-    // Shared mesh cache for glTF models (persists across rebuilds)
     static std::unordered_map<std::string, qlcrender::LoadedMesh> s_gltfMeshCache;
 
     buildSceneNode(geoData->root, graph.root, geoData->meshData,

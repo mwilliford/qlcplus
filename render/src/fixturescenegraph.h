@@ -21,6 +21,7 @@
 #define FIXTURESCENEGRAPH_H
 
 #include "meshloader.h"
+#include "raypick.h"
 #include <vector>
 
 namespace qlcrender {
@@ -30,10 +31,7 @@ namespace qlcrender {
  *
  * Each node has a local transform relative to its parent, an optional
  * mesh to render, and zero or more children. The tree mirrors the GDTF
- * geometry hierarchy (e.g., Base → Yoke → Head → Beam).
- *
- * For SV-1, all transforms are static (from GDTF file).
- * In Phase T4, axis nodes will have pan/tilt rotation injected from DMX.
+ * geometry hierarchy (e.g., Base -> Yoke -> Head -> Beam).
  */
 struct SceneNode
 {
@@ -51,7 +49,7 @@ struct SceneNode
 /**
  * Complete scene graph for one fixture definition.
  *
- * Shared by all fixtures of the same type — each fixture instance
+ * Shared by all fixtures of the same type -- each fixture instance
  * provides its own root transform (from SpatialModel) which is multiplied
  * by the scene graph's internal transforms during rendering.
  */
@@ -59,7 +57,30 @@ struct FixtureSceneGraph
 {
     SceneNode root;
     bool valid = false;
+
+    /** Local-space AABB encompassing all geometry nodes. */
+    AABB localAABB;
 };
+
+/** Default local-space AABB for fixtures without GDTF (unit cube centered at origin). */
+inline AABB defaultFixtureAABB()
+{
+    AABB box;
+    box.min[0] = -0.15f; box.min[1] = -0.15f; box.min[2] = -0.15f;
+    box.max[0] =  0.15f; box.max[1] =  0.15f; box.max[2] =  0.15f;
+    return box;
+}
+
+/**
+ * Compute the local-space AABB of a scene graph by walking all nodes
+ * and accumulating their mesh bounding boxes through transforms.
+ *
+ * This uses a simplified approach: it transforms each node's position
+ * (translation from the local transform) into root space and expands
+ * the AABB by a per-node padding. For accurate bounds, mesh vertex
+ * bounds would be needed, but this is sufficient for picking.
+ */
+AABB computeSceneGraphAABB(const SceneNode &root);
 
 } // namespace qlcrender
 
