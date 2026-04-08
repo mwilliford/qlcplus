@@ -4,6 +4,7 @@
 #include <vector>
 #include "rendertypes.h"
 #include "raypick.h"
+#include "gizmo.h"
 
 namespace qlcrender {
 
@@ -41,6 +42,10 @@ public:
     /** Pick fixture at screen coordinates. Returns fixture ID or -1. */
     virtual int32_t hitTest(float mouseX, float mouseY,
                             uint32_t viewportW, uint32_t viewportH) { return -1; }
+
+    /** Test if mouse hits a gizmo axis. Returns the axis or None. */
+    virtual GizmoAxis gizmoHitTest(float mouseX, float mouseY,
+                                    uint32_t viewportW, uint32_t viewportH) { return GizmoAxis::None; }
 
     // --- Calibration overlays (Phase C, no-op default) ---
     virtual void setCalibrationOverlays(const std::vector<RenderEllipsoid>& ellipsoids) { (void)ellipsoids; }

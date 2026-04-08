@@ -32,11 +32,17 @@
 #include <QUuid>
 
 #include "doc.h"
+#include "spatialviewwindow.h"
 #include "fixture.h"
 #include "function.h"
 #include "qlcfixturedef.h"
 #include "universe.h"
 #include "inputoutputmap.h"
+
+#include <QGuiApplication>
+#include <QMouseEvent>
+#include <QScreen>
+#include <QTimer>
 
 // ---------------------------------------------------------------------------
 // McpHttpServer — minimal QAbstractHttpServer subclass
@@ -305,13 +311,14 @@ void McpServer::registerBuiltinTools()
 
     registerTool({
         "click",
-        "Click at (x, y) coordinates in the QLC+ window.",
+        "Click at (x, y) coordinates in a QLC+ window. Coordinates are in logical pixels (not retina/device pixels).",
         QJsonObject{
             {"type", "object"},
             {"properties", QJsonObject{
-                {"x", QJsonObject{{"type", "number"}, {"description", "X coordinate"}}},
-                {"y", QJsonObject{{"type", "number"}, {"description", "Y coordinate"}}},
+                {"x", QJsonObject{{"type", "number"}, {"description", "X coordinate (logical pixels)"}}},
+                {"y", QJsonObject{{"type", "number"}, {"description", "Y coordinate (logical pixels)"}}},
                 {"button", QJsonObject{{"type", "string"}, {"enum", QJsonArray{"left", "right", "middle"}}, {"default", "left"}}},
+                {"window", QJsonObject{{"type", "string"}, {"enum", QJsonArray{"main", "3d"}}, {"default", "main"}, {"description", "Target window"}}},
             }},
             {"required", QJsonArray{"x", "y"}}
         },
@@ -383,26 +390,104 @@ void McpServer::registerBuiltinTools()
         },
         [this](const QJsonObject &args) { return toolListFunctions(args); }
     });
+
+    registerTool({
+        "show_spatial_view",
+        "Open the 3D Spatial View window. Programmatic — does not require clicking a UI button.",
+        QJsonObject{
+            {"type", "object"},
+            {"properties", QJsonObject{}},
+        },
+        [this](const QJsonObject &args) { return toolShowSpatialView(args); }
+    });
+}
+
+// Find a window by title substring from the application's window list.
+// Used to locate the Spatial View popup (title: "QLC+ Spatial View").
+static QWindow *findWindowByTitle(const QString &titleSubstr)
+{
+    for (QWindow *w : QGuiApplication::topLevelWindows())
+    {
+        // Match by exact title and QWidgetWindow type to avoid matching
+        // terminal windows that happen to contain the same text
+        if (w->isVisible()
+            && w->title() == titleSubstr
+            && QString::fromUtf8(w->metaObject()->className()) == "QWidgetWindow")
+            return w;
+    }
+    return nullptr;
+}
+
+// Find the embedded SpatialView QWindow (child of the QWidgetWindow).
+// createWindowContainer makes it a child window, so it appears in allWindows but not topLevelWindows.
+static QWindow *findSpatialViewWindow()
+{
+    for (QWindow *w : QGuiApplication::allWindows())
+    {
+        // SpatialView is a QWindow with parent (embedded), class name "SpatialView"
+        if (w->parent() && QString::fromUtf8(w->metaObject()->className()) == "SpatialView"
+            && w->isVisible())
+            return w;
+    }
+    return nullptr;
+}
+
+// Resolve which window to target based on the "window" arg.
+// Returns the QWindow* and a human-readable name.
+QWindow *McpServer::resolveWindow(const QJsonObject &args, QString &outName)
+{
+    QString which = args.value("window").toString("main");
+
+    if (which == "3d" || which == "spatial")
+    {
+        outName = "spatial";
+        // For clicks: use the embedded SpatialView QWindow (receives mouse events)
+        // For screenshots: use the QWidgetWindow (captures the whole window including QML panel)
+        // The caller differentiates by checking the "forClick" flag.
+        // Default: try embedded SpatialView first, fall back to QWidgetWindow.
+        QWindow *embedded = findSpatialViewWindow();
+        if (embedded)
+            return embedded;
+        return findWindowByTitle("QLC+ Spatial View");
+    }
+
+    outName = "main";
+    return m_window;
 }
 
 QJsonObject McpServer::toolScreenshot(const QJsonObject &args)
 {
-    Q_UNUSED(args);
+    QString which = args.value("window").toString("main");
+    QImage image;
 
-    if (!m_window) {
-        return QJsonObject{
-            {"content", QJsonArray{QJsonObject{{"type", "text"}, {"text", "No window available"}}}},
-            {"isError", true}
-        };
+    if (which == "3d" || which == "spatial")
+    {
+        // grabSpatialViewWindow() uses QWidget::grab() — works off-screen,
+        // no z-order dependency, captures viewport + QML panel together.
+        image = grabSpatialViewWindow();
+        if (image.isNull()) {
+            return QJsonObject{
+                {"content", QJsonArray{QJsonObject{{"type", "text"},
+                    {"text", "Spatial View not open. Call show_spatial_view first."}}}},
+                {"isError", true}
+            };
+        }
     }
-
-    QImage image = m_window->grabWindow();
-
-    if (image.isNull()) {
-        return QJsonObject{
-            {"content", QJsonArray{QJsonObject{{"type", "text"}, {"text", "Screenshot failed: null image"}}}},
-            {"isError", true}
-        };
+    else
+    {
+        if (!m_window) {
+            return QJsonObject{
+                {"content", QJsonArray{QJsonObject{{"type", "text"}, {"text", "No window available"}}}},
+                {"isError", true}
+            };
+        }
+        image = m_window->grabWindow();
+        if (image.isNull()) {
+            return QJsonObject{
+                {"content", QJsonArray{QJsonObject{{"type", "text"}, {"text", "Screenshot failed"}}}},
+                {"isError", true}
+            };
+        }
     }
 
     QByteArray pngData;
@@ -424,9 +509,13 @@ QJsonObject McpServer::toolScreenshot(const QJsonObject &args)
 
 QJsonObject McpServer::toolClick(const QJsonObject &args)
 {
-    if (!m_window) {
+    QString windowName;
+    QWindow *targetWindow = resolveWindow(args, windowName);
+
+    if (!targetWindow) {
         return QJsonObject{
-            {"content", QJsonArray{QJsonObject{{"type", "text"}, {"text", "No window available"}}}},
+            {"content", QJsonArray{QJsonObject{{"type", "text"},
+                {"text", QString("Window '%1' not found. Is it open?").arg(windowName)}}}},
             {"isError", true}
         };
     }
@@ -440,12 +529,20 @@ QJsonObject McpServer::toolClick(const QJsonObject &args)
     if (button == "right") btn = Qt::RightButton;
     else if (button == "middle") btn = Qt::MiddleButton;
 
-    QTest::mouseClick(m_window, btn, Qt::NoModifier, pos);
+    qDebug() << "[MCP click]" << windowName << "window:" << targetWindow
+             << "pos:" << pos << "btn:" << btn
+             << "windowSize:" << targetWindow->width() << "x" << targetWindow->height()
+             << "dpr:" << targetWindow->devicePixelRatio();
+
+    QTest::mouseClick(targetWindow, btn, Qt::NoModifier, pos);
 
     return QJsonObject{
         {"content", QJsonArray{QJsonObject{
             {"type", "text"},
-            {"text", QString("Clicked at (%1, %2)").arg(x).arg(y)}
+            {"text", QString("Clicked at (%1, %2) on %3 window (size: %4x%5, dpr: %6)")
+                .arg(x).arg(y).arg(windowName)
+                .arg(targetWindow->width()).arg(targetWindow->height())
+                .arg(targetWindow->devicePixelRatio())}
         }}}
     };
 }
@@ -674,6 +771,23 @@ QJsonObject McpServer::toolListFunctions(const QJsonObject &args)
     QJsonObject ret;
     ret["content"] = QJsonArray{content};
     return ret;
+}
+
+QJsonObject McpServer::toolShowSpatialView(const QJsonObject &args)
+{
+    Q_UNUSED(args);
+
+    // Must run on GUI thread
+    QTimer::singleShot(0, this, [this]() {
+        showSpatialViewWindow(m_doc);
+    });
+
+    return QJsonObject{
+        {"content", QJsonArray{QJsonObject{
+            {"type", "text"},
+            {"text", "Spatial View opened"}
+        }}}
+    };
 }
 
 // ---------------------------------------------------------------------------

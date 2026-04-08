@@ -25,6 +25,7 @@ add_library(${module_name} STATIC
     src/primitivegen.h src/primitivegen.cpp
     src/fixturescenegraph.h src/fixturescenegraph.cpp
     src/raypick.h src/raypick.cpp
+    src/gizmo.h src/gizmo.cpp
     src/rendertypes.h
 )
 

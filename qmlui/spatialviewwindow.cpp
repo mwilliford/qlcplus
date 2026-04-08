@@ -26,6 +26,10 @@
 
 #include "spatialviewwindow.h"
 #include "spatialview.h"
+#include "bgfxrenderer.h"
+#include <QPainter>
+#include <QEventLoop>
+#include <QTimer>
 
 // ---------------------------------------------------------------------------
 // SpatialViewWindow — defined entirely in this .cpp to avoid pulling <QWidget>
@@ -37,6 +41,8 @@ class SpatialViewWindow : public QWidget
 {
     Q_OBJECT
     Q_DISABLE_COPY(SpatialViewWindow)
+
+    friend QImage grabSpatialViewWindow();
 
 public:
     explicit SpatialViewWindow(Doc *doc)
@@ -179,4 +185,45 @@ SpatialViewWindow *SpatialViewWindow::s_instance = nullptr;
 void showSpatialViewWindow(Doc *doc)
 {
     SpatialViewWindow::createAndShow(doc);
+}
+
+QImage grabSpatialViewWindow()
+{
+    auto *inst = SpatialViewWindow::s_instance;
+    if (!inst || !inst->m_spatialView)
+        return QImage();
+
+    // Request GPU framebuffer readback from bgfx
+    inst->m_spatialView->requestViewportScreenshot();
+
+    // Spin the event loop for ~50ms to let bgfx::frame() fire the callback.
+    // The screenshot is delivered during bgfx::frame() which runs on a 60Hz timer.
+    QEventLoop loop;
+    QTimer::singleShot(50, &loop, &QEventLoop::quit);
+    loop.exec();
+
+    // Get the viewport image from bgfx
+    QImage viewportImg = inst->m_spatialView->takeViewportScreenshot();
+
+    // Get the QML panel via QWidget::grab (works off-screen)
+    QImage widgetImg = inst->grab().toImage();
+
+    if (viewportImg.isNull())
+    {
+        // bgfx screenshot not ready — return widget grab (panel visible, viewport gray)
+        return widgetImg;
+    }
+
+    // Composite: paint the bgfx viewport over the gray area in the widget grab.
+    // widgetImg has devicePixelRatio=2, so QPainter coordinates are in logical pixels.
+    // viewportImg is raw device pixels from bgfx. Draw it scaled down by DPR.
+    qreal dpr = widgetImg.devicePixelRatio();
+    int logicalW = qRound(viewportImg.width() / dpr);
+    int logicalH = qRound(viewportImg.height() / dpr);
+
+    QPainter painter(&widgetImg);
+    painter.drawImage(QRect(0, 0, logicalW, logicalH), viewportImg);
+    painter.end();
+
+    return widgetImg;
 }

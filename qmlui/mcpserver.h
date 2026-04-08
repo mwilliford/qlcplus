@@ -27,6 +27,7 @@
 #include <QMap>
 #include <functional>
 
+class QWindow;
 class QQuickWindow;
 class Doc;
 
@@ -103,10 +104,12 @@ private:
     QJsonObject toolGetDmxValues(const QJsonObject &args);
     QJsonObject toolListFixtures(const QJsonObject &args);
     QJsonObject toolListFunctions(const QJsonObject &args);
+    QJsonObject toolShowSpatialView(const QJsonObject &args);
 
     // Helpers
     QJsonObject makeResult(int id, const QJsonObject &result);
     QJsonObject makeError(int id, int code, const QString &message);
+    QWindow *resolveWindow(const QJsonObject &args, QString &outName);
 
     McpHttpServer *m_httpServer = nullptr;
     QQuickWindow *m_window = nullptr;

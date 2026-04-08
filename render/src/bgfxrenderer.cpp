@@ -14,6 +14,66 @@
 
 namespace qlcrender {
 
+// ---------------------------------------------------------------------------
+// BgfxCallback — screenshot capture from GPU framebuffer
+// ---------------------------------------------------------------------------
+
+void BgfxCallback::screenShot(const char *, uint32_t width, uint32_t height,
+                               uint32_t pitch, bgfx::TextureFormat::Enum format,
+                               const void *data, uint32_t size, bool yflip)
+{
+    // Convert raw BGRA/RGBA pixel data to PNG in memory
+    // bgfx typically delivers BGRA8 on Metal
+    m_width = width;
+    m_height = height;
+
+    // Build raw RGBA image (swap B/R if BGRA)
+    bool isBGRA = (format == bgfx::TextureFormat::BGRA8);
+    std::vector<uint8_t> rgba(width * height * 4);
+
+    for (uint32_t y = 0; y < height; y++)
+    {
+        uint32_t srcY = yflip ? (height - 1 - y) : y;
+        const uint8_t *srcRow = (const uint8_t *)data + srcY * pitch;
+        uint8_t *dstRow = rgba.data() + y * width * 4;
+        for (uint32_t x = 0; x < width; x++)
+        {
+            if (isBGRA)
+            {
+                dstRow[x*4 + 0] = srcRow[x*4 + 2]; // R
+                dstRow[x*4 + 1] = srcRow[x*4 + 1]; // G
+                dstRow[x*4 + 2] = srcRow[x*4 + 0]; // B
+                dstRow[x*4 + 3] = srcRow[x*4 + 3]; // A
+            }
+            else
+            {
+                memcpy(dstRow + x*4, srcRow + x*4, 4);
+            }
+        }
+    }
+
+    // Use stb_image_write (already available via tinygltf) — but simpler to
+    // just store raw RGBA and let the caller encode. Actually, let's use
+    // QImage to encode PNG since Qt is available in the qmlui layer.
+    // For now, store raw RGBA and dimensions. The MCP server will convert.
+    m_pngData = std::move(rgba);
+    m_ready = true;
+    m_requested = false;
+}
+
+bool BgfxCallback::takeScreenshot(std::vector<uint8_t> &outData, uint32_t &outW, uint32_t &outH)
+{
+    if (!m_ready)
+        return false;
+    outData = std::move(m_pngData);
+    outW = m_width;
+    outH = m_height;
+    m_ready = false;
+    return true;
+}
+
+// ---------------------------------------------------------------------------
+
 static bgfx::ShaderHandle loadEmbeddedShader(const uint8_t* data, uint32_t size)
 {
     const bgfx::Memory* mem = bgfx::copy(data, size);
@@ -51,6 +111,7 @@ bool BgfxRenderer::init(void* nativeWindowHandle, uint32_t width, uint32_t heigh
     init.resolution.width = width;
     init.resolution.height = height;
     init.resolution.reset = BGFX_RESET_VSYNC;
+    init.callback = &m_callback;
 
     if (!bgfx::init(init))
         return false;
@@ -177,6 +238,13 @@ void BgfxRenderer::frame()
     renderGrid();
     renderFixtures();
     renderEllipsoids();
+    renderGizmo();
+
+    // Handle screenshot request (fires callback during bgfx::frame)
+    if (m_callback.isRequested())
+    {
+        bgfx::requestScreenShot(BGFX_INVALID_HANDLE, "mcp_screenshot");
+    }
 
     bgfx::frame();
 }
@@ -239,6 +307,21 @@ int32_t BgfxRenderer::hitTest(float mouseX, float mouseY,
         return int32_t(hit.fixtureId);
     }
     return -1;
+}
+
+GizmoAxis BgfxRenderer::gizmoHitTest(float mouseX, float mouseY,
+                                      uint32_t viewportW, uint32_t viewportH)
+{
+    if (m_selectedFixtureId < 0)
+        return GizmoAxis::None;
+
+    float view[16], proj[16];
+    m_camera.viewMatrix(view);
+    float aspect = float(m_width) / float(m_height);
+    m_camera.projMatrix(proj, aspect, bgfx::getCaps()->homogeneousDepth);
+
+    Ray ray = screenToRay(mouseX, mouseY, viewportW, viewportH, view, proj);
+    return m_gizmo.hitTest(ray);
 }
 
 // --- Private rendering ---
@@ -479,6 +562,144 @@ void BgfxRenderer::renderEllipsoids()
 
         bgfx::submit(0, m_litProgram);
     }
+}
+
+void BgfxRenderer::renderGizmo()
+{
+    if (m_selectedFixtureId < 0 || !bgfx::isValid(m_colorProgram))
+        return;
+
+    // Find the selected fixture's position for gizmo placement
+    for (const auto &f : m_fixtures)
+    {
+        if (f.id == uint32_t(m_selectedFixtureId) && f.color[3] >= 0.99f)
+        {
+            m_gizmo.setPosition(f.transform[12], f.transform[13], f.transform[14]);
+            m_gizmo.setCameraDistance(m_camera.distance());
+            break;
+        }
+    }
+
+    float pos[3];
+    m_gizmo.getPosition(pos);
+    float s = m_gizmo.scale();
+
+    // Each arrow: 2 verts for shaft line + 6 verts for arrowhead (2 triangles as a diamond)
+    // 3 axes × (2 + 6) = 24 verts for lines, but let's use triangles for arrowheads
+    // Simpler approach: draw each arrow as thick lines for shaft + a triangle fan for the cone.
+    // Simplest: shaft as 2 lines, arrowhead as a flat diamond (4 triangles = 12 verts)
+    // Total: 3 axes × (2 shaft + 12 cone) = 42 verts
+
+    const uint32_t shaftVerts = 6;   // 3 axes × 2 verts
+    const uint32_t coneVerts = 36;   // 3 axes × 12 verts (4 triangles each)
+    const uint32_t totalVerts = shaftVerts + coneVerts;
+
+    if (!bgfx::getAvailTransientVertexBuffer(totalVerts, PosColorVertex::layout))
+        return;
+
+    bgfx::TransientVertexBuffer tvb;
+    bgfx::allocTransientVertexBuffer(&tvb, totalVerts, PosColorVertex::layout);
+    auto *v = (PosColorVertex *)tvb.data;
+    uint32_t idx = 0;
+
+    struct AxisInfo {
+        GizmoAxis axis;
+        float dir[3];
+        uint32_t color;
+        uint32_t highlightColor;
+    };
+
+    AxisInfo axes[3] = {
+        { GizmoAxis::X, {1, 0, 0}, 0xff0000cc, 0xff0000ff },  // red (ABGR)
+        { GizmoAxis::Y, {0, 1, 0}, 0xff00cc00, 0xff00ff00 },  // green
+        { GizmoAxis::Z, {0, 0, 1}, 0xffcc0000, 0xffff0000 },  // blue
+    };
+
+    GizmoAxis active = m_gizmo.activeAxis();
+    GizmoAxis hovered = m_gizmo.hoveredAxis();
+
+    for (const auto &a : axes)
+    {
+        bool highlight = (a.axis == active || a.axis == hovered);
+        uint32_t col = highlight ? a.highlightColor : a.color;
+
+        float shaftLen = TranslateGizmo::kShaftLength * s;
+        float headLen = TranslateGizmo::kHeadLength * s;
+        float headRad = TranslateGizmo::kHeadRadius * s;
+
+        // Shaft: from center to shaft end
+        float tipBase[3] = {
+            pos[0] + a.dir[0] * shaftLen,
+            pos[1] + a.dir[1] * shaftLen,
+            pos[2] + a.dir[2] * shaftLen,
+        };
+        float tip[3] = {
+            pos[0] + a.dir[0] * (shaftLen + headLen),
+            pos[1] + a.dir[1] * (shaftLen + headLen),
+            pos[2] + a.dir[2] * (shaftLen + headLen),
+        };
+
+        // Shaft line
+        v[idx++] = { pos[0], pos[1], pos[2], col };
+        v[idx++] = { tipBase[0], tipBase[1], tipBase[2], col };
+
+        // Arrowhead: 4 triangles forming a diamond/pyramid
+        // Need two perpendicular vectors to the axis direction
+        float perp1[3], perp2[3];
+        if (std::abs(a.dir[2]) < 0.9f)
+        {
+            // cross with Z
+            perp1[0] = -a.dir[1]; perp1[1] = a.dir[0]; perp1[2] = 0;
+        }
+        else
+        {
+            // cross with X
+            perp1[0] = 0; perp1[1] = -a.dir[2]; perp1[2] = a.dir[1];
+        }
+        float len = std::sqrt(perp1[0]*perp1[0] + perp1[1]*perp1[1] + perp1[2]*perp1[2]);
+        if (len > 1e-6f) { perp1[0] /= len; perp1[1] /= len; perp1[2] /= len; }
+
+        // perp2 = dir × perp1
+        perp2[0] = a.dir[1]*perp1[2] - a.dir[2]*perp1[1];
+        perp2[1] = a.dir[2]*perp1[0] - a.dir[0]*perp1[2];
+        perp2[2] = a.dir[0]*perp1[1] - a.dir[1]*perp1[0];
+
+        // 4 base points of the arrowhead
+        float bp[4][3];
+        for (int i = 0; i < 4; i++)
+        {
+            float angle = (i * 3.14159f * 0.5f);  // 0, 90, 180, 270 degrees
+            float c = std::cos(angle) * headRad;
+            float sn = std::sin(angle) * headRad;
+            bp[i][0] = tipBase[0] + perp1[0]*c + perp2[0]*sn;
+            bp[i][1] = tipBase[1] + perp1[1]*c + perp2[1]*sn;
+            bp[i][2] = tipBase[2] + perp1[2]*c + perp2[2]*sn;
+        }
+
+        // 4 triangles: tip → base[i] → base[i+1]
+        for (int i = 0; i < 4; i++)
+        {
+            int j = (i + 1) % 4;
+            v[idx++] = { tip[0], tip[1], tip[2], col };
+            v[idx++] = { bp[i][0], bp[i][1], bp[i][2], col };
+            v[idx++] = { bp[j][0], bp[j][1], bp[j][2], col };
+        }
+    }
+
+    // Draw shafts as lines
+    float identity[16];
+    bx::mtxIdentity(identity);
+    bgfx::setTransform(identity);
+
+    // Render shaft lines (first 6 verts)
+    bgfx::setState(BGFX_STATE_WRITE_RGB | BGFX_STATE_PT_LINES);
+    bgfx::setVertexBuffer(0, &tvb, 0, shaftVerts);
+    bgfx::submit(0, m_colorProgram);
+
+    // Render arrowhead triangles (remaining verts) — no depth test so gizmo is always on top
+    bgfx::setState(BGFX_STATE_WRITE_RGB | BGFX_STATE_WRITE_A | BGFX_STATE_WRITE_Z);
+    bgfx::setVertexBuffer(0, &tvb, shaftVerts, coneVerts);
+    bgfx::submit(0, m_colorProgram);
 }
 
 // --- Factory ---
