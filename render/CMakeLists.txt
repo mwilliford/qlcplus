@@ -23,7 +23,8 @@ add_library(${module_name} STATIC
     src/meshloader.h src/meshloader.cpp
     src/gltfloader.h src/gltfloader.cpp
     src/primitivegen.h src/primitivegen.cpp
-    src/fixturescenegraph.h
+    src/fixturescenegraph.h src/fixturescenegraph.cpp
+    src/raypick.h src/raypick.cpp
     src/rendertypes.h
 )
 

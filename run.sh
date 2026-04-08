@@ -72,7 +72,7 @@ if [ ! -e "$GOBOS_BUILD/Others" ]; then
     done
 fi
 
-# Symlink 3D mesh files (fixtures, generic, stage)
+# Symlink 3D mesh files (fixtures, generic, stage) — including subdirs like fixtures/bgfx/
 MESHES_BUILD="$RESOURCES_DIR/Meshes"
 MESHES_SRC="$SCRIPT_DIR/resources/meshes"
 for subdir in fixtures generic stage; do
@@ -80,10 +80,15 @@ for subdir in fixtures generic stage; do
     dstdir="$MESHES_BUILD/$subdir"
     mkdir -p "$dstdir"
     if [ -d "$srcdir" ]; then
+        # Symlink files in this directory
         for f in "$srcdir"/*; do
-            [ -f "$f" ] || continue
             base="$(basename "$f")"
-            [ ! -e "$dstdir/$base" ] && ln -sf "$f" "$dstdir/$base"
+            if [ -f "$f" ]; then
+                [ ! -e "$dstdir/$base" ] && ln -sf "$f" "$dstdir/$base"
+            elif [ -d "$f" ]; then
+                # Symlink entire subdirectory (e.g., fixtures/bgfx/)
+                [ ! -e "$dstdir/$base" ] && ln -sf "$f" "$dstdir/$base"
+            fi
         done
     fi
 done

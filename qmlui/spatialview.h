@@ -27,14 +27,15 @@ class Doc;
 class QLCFixtureDefCache;
 struct GDTFGeometryData;
 
-#define SETTINGS_SPATIALVIEW_GEOMETRY "spatialview/geometry"
-
 /**
- * @brief Floating QWindow hosting the bgfx-based 3D spatial view.
+ * @brief QWindow hosting the bgfx-based 3D spatial viewport.
  *
- * Uses QWindow (not QWidget) to avoid QTransform name collision between
- * QtGui and Qt3DCore in the qmlui target. bgfx renders directly into
- * the native window handle.
+ * Uses QWindow (not QWidget) because bgfx renders directly into the
+ * native window handle. Intended to be embedded in a QWidget layout
+ * via QWidget::createWindowContainer().
+ *
+ * Does NOT manage its own lifecycle — the owning SpatialViewWindow
+ * handles show/hide, geometry, and singleton semantics.
  */
 class SpatialView : public QWindow
 {
@@ -42,9 +43,13 @@ class SpatialView : public QWindow
     Q_DISABLE_COPY(SpatialView)
 
 public:
-    static SpatialView *instance() { return s_instance; }
-    static void createAndShow(Doc *doc);
+    explicit SpatialView(Doc *doc, QWindow *parent = nullptr);
     ~SpatialView();
+
+    /** Start/stop the 60Hz frame timer (called by owning widget on show/hide). */
+    void startRendering();
+    void stopRendering();
+    bool isRendering() const { return m_frameTimer.isActive(); }
 
 protected:
     void exposeEvent(QExposeEvent *event) override;
@@ -53,11 +58,8 @@ protected:
     void mouseMoveEvent(QMouseEvent *event) override;
     void mouseReleaseEvent(QMouseEvent *event) override;
     void wheelEvent(QWheelEvent *event) override;
-    bool event(QEvent *event) override;
 
 private:
-    explicit SpatialView(Doc *doc);
-
     void initBgfx();
     void rebuildFixtures();
     void rebuildEllipsoids();
@@ -71,8 +73,6 @@ private slots:
     void onSolverVizChanged();
 
 private:
-    static SpatialView *s_instance;
-
     Doc *m_doc;
     std::unique_ptr<qlcrender::SpatialRenderer> m_renderer;
     QTimer m_frameTimer;
@@ -80,11 +80,11 @@ private:
 
     // Mouse interaction
     QPoint m_lastMousePos;
+    QPoint m_pressPos;
     bool m_orbiting = false;
     bool m_panning = false;
 
     // Default: front-of-house view (audience looking at stage)
-    // +Y (upstage) goes away, +X (stage left) goes right
     float m_cameraYaw = -90.0f;
     float m_cameraPitch = 30.0f;
     float m_cameraDistance = 10.0f;
