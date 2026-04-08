@@ -45,6 +45,7 @@ class NetworkManager;
 class VideoProvider;
 class FixtureEditor;
 class AgentConnection;
+class McpServer;
 class Tardis;
 class QMouseEvent;
 
@@ -415,5 +416,15 @@ public:
 
 private:
     AgentConnection *m_agentConnection;
+
+    /*********************************************************************
+     * MCP Server
+     *********************************************************************/
+public:
+    /** Return the MCP server instance */
+    McpServer *mcpServer() const;
+
+private:
+    McpServer *m_mcpServer;
 };
 #endif // APP_H
