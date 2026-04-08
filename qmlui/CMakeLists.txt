@@ -45,6 +45,7 @@ set(SRC_FILES
     main.cpp
     mainview2d.cpp mainview2d.h
     mainview3d.cpp mainview3d.h
+    spatialcontroller.cpp spatialcontroller.h
     spatialview.cpp spatialview.h
     spatialviewwindow.cpp spatialviewwindow.h
     $<$<PLATFORM_ID:Darwin>:spatialview_macos.mm>

@@ -76,6 +76,10 @@ void SpatialView::selectFixture(int32_t fixtureId)
 {
     if (m_bgfxReady)
         m_renderer->setSelectedFixture(fixtureId);
+
+    // Notify the controller (QML panel) of selection change
+    if (m_selectionCallback)
+        m_selectionCallback(fixtureId);
 }
 
 void SpatialView::setCameraOrbit(float yaw, float pitch, float distance)
@@ -254,12 +258,16 @@ void SpatialView::mouseMoveEvent(QMouseEvent *event)
         float outDelta[3];
         if (bgfxR->gizmo().projectDrag(currentRay, startRay, m_dragStartPos, outDelta))
         {
+            double newX = m_dragStartPos[0] + outDelta[0];
+            double newY = m_dragStartPos[1] + outDelta[1];
+            double newZ = m_dragStartPos[2] + outDelta[2];
+
+            // Apply grid snap if configured
+            if (m_snapCallback)
+                m_snapCallback(newX, newY, newZ);
+
             // Update gizmo position (visual feedback during drag)
-            bgfxR->gizmo().setPosition(
-                m_dragStartPos[0] + outDelta[0],
-                m_dragStartPos[1] + outDelta[1],
-                m_dragStartPos[2] + outDelta[2]
-            );
+            bgfxR->gizmo().setPosition(float(newX), float(newY), float(newZ));
 
             // Update the fixture's transform in the SpatialModel
             int32_t selId = m_renderer->selectedFixture();
@@ -268,9 +276,9 @@ void SpatialView::mouseMoveEvent(QMouseEvent *event)
                 SpatialModel *sm = m_doc->spatialModel();
                 QString id = QString::number(selId);
                 rigmath::RigidTransform t = sm->fixtureTransform(id);
-                t.pos[0] = m_dragStartPos[0] + outDelta[0];
-                t.pos[1] = m_dragStartPos[1] + outDelta[1];
-                t.pos[2] = m_dragStartPos[2] + outDelta[2];
+                t.pos[0] = newX;
+                t.pos[1] = newY;
+                t.pos[2] = newZ;
                 sm->setFixtureTransform(id, t, SpatialModel::Committed);
             }
         }
@@ -323,6 +331,10 @@ void SpatialView::mouseReleaseEvent(QMouseEvent *event)
         int32_t hitId = m_renderer->hitTest(mx, my, vw, vh);
         m_renderer->setSelectedFixture(hitId);
 
+        // Notify the controller (and QML panel) of selection change
+        if (m_selectionCallback)
+            m_selectionCallback(hitId);
+
         if (hitId >= 0)
             qDebug() << "[SpatialView] Selected fixture:" << hitId;
         else
@@ -365,6 +377,7 @@ void SpatialView::onSolverVizChanged()
 
 static void addFixtureEntry(std::vector<qlcrender::RenderFixture> &out,
                             uint32_t id, int fixtureType,
+                            const std::string &name,
                             const rigmath::RigidTransform &t,
                             float r, float g, float b, float a,
                             const qlcrender::FixtureSceneGraph *sg = nullptr)
@@ -372,6 +385,7 @@ static void addFixtureEntry(std::vector<qlcrender::RenderFixture> &out,
     qlcrender::RenderFixture rf;
     rf.id = id;
     rf.fixtureType = fixtureType;
+    rf.name = name;
     rf.sceneGraph = sg;
 
     double d[16];
@@ -398,6 +412,7 @@ void SpatialView::rebuildFixtures()
         Fixture *fxi = m_doc->fixture(id.toUInt());
         int fxType = fxi ? fxi->type() : -1;
         uint32_t fxId = id.toUInt();
+        std::string fxName = fxi ? fxi->name().toStdString() : ("Fixture " + id.toStdString());
 
         // Look up GDTF scene graph for this fixture
         const qlcrender::FixtureSceneGraph *sg = nullptr;
@@ -414,7 +429,7 @@ void SpatialView::rebuildFixtures()
         auto committed = sm->committedTransform(id);
         if (committed.has_value())
         {
-            addFixtureEntry(fixtures, fxId, fxType, committed.value(),
+            addFixtureEntry(fixtures, fxId, fxType, fxName, committed.value(),
                             1.0f, 0.6f, 0.2f, 1.0f, sg);  // orange solid
         }
         else
@@ -422,12 +437,12 @@ void SpatialView::rebuildFixtures()
             auto agent = sm->agentDerivedTransform(id);
             if (agent.has_value())
             {
-                addFixtureEntry(fixtures, fxId, fxType, agent.value(),
+                addFixtureEntry(fixtures, fxId, fxType, fxName, agent.value(),
                                 0.2f, 0.9f, 0.3f, 0.8f, sg);  // green, slightly translucent
             }
             else
             {
-                addFixtureEntry(fixtures, fxId, fxType,
+                addFixtureEntry(fixtures, fxId, fxType, fxName,
                                 rigmath::RigidTransform::identity(),
                                 0.2f, 0.8f, 0.9f, 1.0f, sg);  // cyan
             }
@@ -438,7 +453,7 @@ void SpatialView::rebuildFixtures()
         auto agentDerived = sm->agentDerivedTransform(id);
         if (agentDerived.has_value())
         {
-            addFixtureEntry(fixtures, fxId, fxType, agentDerived.value(),
+            addFixtureEntry(fixtures, fxId, fxType, fxName, agentDerived.value(),
                             0.2f, 0.9f, 0.3f, 0.4f, sg);
         }
 
@@ -446,7 +461,7 @@ void SpatialView::rebuildFixtures()
         auto solverDerived = sm->solverDerivedTransform(id);
         if (solverDerived.has_value())
         {
-            addFixtureEntry(fixtures, fxId, fxType, solverDerived.value(),
+            addFixtureEntry(fixtures, fxId, fxType, fxName, solverDerived.value(),
                             0.2f, 0.8f, 0.9f, 0.4f, sg);
         }
     }

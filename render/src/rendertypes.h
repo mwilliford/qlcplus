@@ -1,6 +1,7 @@
 #pragma once
 
 #include <cstdint>
+#include <string>
 #include <vector>
 
 namespace qlcrender {
@@ -13,6 +14,7 @@ struct RenderFixture
     int fixtureType;      // QLCFixtureDef::FixtureType enum value
     float transform[16];  // 4x4 column-major (from RigidTransform::to_4x4_column_major)
     float color[4];       // RGBA
+    std::string name;     // fixture display name for labels
     const FixtureSceneGraph *sceneGraph = nullptr;  // null = legacy single-mesh path
 };
 

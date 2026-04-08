@@ -26,6 +26,8 @@
 
 #include "spatialviewwindow.h"
 #include "spatialview.h"
+#include "spatialcontroller.h"
+#include <cmath>
 #include "bgfxrenderer.h"
 #include <QPainter>
 #include <QEventLoop>
@@ -65,11 +67,32 @@ public:
         viewportContainer->setMinimumSize(400, 300);
         viewportContainer->setFocusPolicy(Qt::StrongFocus);
 
+        // --- Controller (C++ ↔ QML bridge) ---
+        m_controller = new SpatialController(doc, m_spatialView, this);
+
+        // When the user clicks a fixture in the viewport, update the controller
+        m_spatialView->setSelectionCallback([this](int32_t fixtureId) {
+            m_controller->notifySelectionChanged(fixtureId);
+        });
+
+        // Grid snap: round position to nearest grid increment
+        m_spatialView->setSnapCallback([this](double &x, double &y, double &z) {
+            if (!m_controller->gridSnap())
+                return;
+            double g = m_controller->gridSize();
+            x = std::round(x / g) * g;
+            y = std::round(y / g) * g;
+            z = std::round(z / g) * g;
+        });
+
         // --- QML side panel ---
         m_sidePanel = new QQuickWidget(this);
         m_sidePanel->setResizeMode(QQuickWidget::SizeRootObjectToView);
         m_sidePanel->setClearColor(QColor(0x2a, 0x2a, 0x2a));
         m_sidePanel->setFixedWidth(280);
+
+        // Expose controller to QML before loading source
+        m_sidePanel->rootContext()->setContextProperty("spatialController", m_controller);
 
         // Load QML — try paths relative to the app binary.
         // Binary is at: build-v5/qmlui/qlcplus-qml.app/Contents/MacOS/qlcplus-qml
@@ -179,6 +202,7 @@ protected:
 private:
     Doc *m_doc;
     SpatialView *m_spatialView = nullptr;
+    SpatialController *m_controller = nullptr;
     QQuickWidget *m_sidePanel = nullptr;
 };
 
