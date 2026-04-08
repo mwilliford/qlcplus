@@ -4,6 +4,8 @@
 #include "orbitcamera.h"
 #include "meshgen.h"
 #include "meshloader.h"
+#include "primitivegen.h"
+#include "fixturescenegraph.h"
 #include <bgfx/bgfx.h>
 
 namespace qlcrender {
@@ -42,6 +44,8 @@ public:
 private:
     void renderGrid();
     void renderFixtures();
+    void renderSceneGraph(const SceneNode &node, const float parentTransform[16],
+                          const float color[4]);
 
     bool m_initialized = false;
     uint32_t m_width = 0;
@@ -63,6 +67,9 @@ private:
     // Fixture mesh loader + cache
     MeshLoader m_meshLoader;
     std::string m_meshBasePath;
+
+    // GDTF primitive mesh generator
+    PrimitiveGen m_primitiveGen;
 
     // Calibration overlays
     std::vector<RenderEllipsoid> m_ellipsoids;
