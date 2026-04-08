@@ -239,6 +239,7 @@ void BgfxRenderer::frame()
     renderFixtures();
     renderEllipsoids();
     renderGizmo();
+    renderLabels();
 
     // Handle screenshot request (fires callback during bgfx::frame)
     if (m_callback.isRequested())
@@ -761,6 +762,73 @@ void BgfxRenderer::renderGizmo()
     bgfx::setState(BGFX_STATE_WRITE_RGB | BGFX_STATE_WRITE_A | BGFX_STATE_WRITE_Z);
     bgfx::setVertexBuffer(0, &tvb, shaftVerts, coneVerts);
     bgfx::submit(0, m_colorProgram);
+}
+
+// --- Labels ---
+
+void BgfxRenderer::renderLabels()
+{
+    if (m_fixtures.empty() || m_width == 0 || m_height == 0)
+        return;
+
+    float view[16], proj[16];
+    m_camera.viewMatrix(view);
+    float aspect = float(m_width) / float(m_height);
+    m_camera.projMatrix(proj, aspect, bgfx::getCaps()->homogeneousDepth);
+
+    // dbgText uses an 8x16 character grid
+    const uint32_t charW = 8;
+    const uint32_t charH = 16;
+    uint32_t cols = m_width / charW;
+    uint32_t rows = m_height / charH;
+
+    for (const auto &f : m_fixtures)
+    {
+        // Only label solid (non-ghost) fixtures
+        if (f.color[3] < 0.99f || f.name.empty())
+            continue;
+
+        float worldPos[3] = { f.transform[12], f.transform[13], f.transform[14] };
+        float sx, sy;
+        bool visible;
+        if (!worldToScreen(worldPos, sx, sy, visible) || !visible)
+            continue;
+
+        // Convert device pixels to character grid coordinates
+        // Offset label slightly above the fixture
+        uint32_t col = uint32_t(sx) / charW;
+        uint32_t row = uint32_t(sy) / charH;
+
+        // Place label above the fixture (2 rows up)
+        if (row < 2)
+            row = 0;
+        else
+            row -= 2;
+
+        // Center the label horizontally
+        uint32_t nameLen = uint32_t(f.name.size());
+        if (col > nameLen / 2)
+            col -= nameLen / 2;
+        else
+            col = 0;
+
+        // Clamp to screen bounds
+        if (col + nameLen > cols)
+            col = (cols > nameLen) ? cols - nameLen : 0;
+        if (row >= rows)
+            row = rows - 1;
+
+        // Skip if it would overlap the debug text area (top 4 rows)
+        if (row < 5)
+            continue;
+
+        // Color: white for selected, dim gray for others
+        uint8_t attr = (m_selectedFixtureId >= 0 && f.id == uint32_t(m_selectedFixtureId))
+                       ? 0x0f  // bright white
+                       : 0x07; // gray
+
+        bgfx::dbgTextPrintf(uint16_t(col), uint16_t(row), attr, "%s", f.name.c_str());
+    }
 }
 
 // --- Factory ---

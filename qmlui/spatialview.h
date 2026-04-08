@@ -18,6 +18,7 @@
 #include <QTimer>
 #include <QPoint>
 #include <memory>
+#include <functional>
 #include <unordered_map>
 #include <string>
 
@@ -70,6 +71,12 @@ public:
     /** Set camera orbit and update view. */
     void setCameraOrbit(float yaw, float pitch, float distance);
 
+    /** Set a callback that fires when the user clicks to select/deselect a fixture. */
+    void setSelectionCallback(std::function<void(int32_t)> cb) { m_selectionCallback = std::move(cb); }
+
+    /** Set snap callback: returns snapped position given raw position. */
+    void setSnapCallback(std::function<void(double &x, double &y, double &z)> cb) { m_snapCallback = std::move(cb); }
+
     /** Get current camera state. */
     float cameraYaw() const { return m_cameraYaw; }
     float cameraPitch() const { return m_cameraPitch; }
@@ -120,6 +127,12 @@ private:
     float m_cameraYaw = -90.0f;
     float m_cameraPitch = 30.0f;
     float m_cameraDistance = 10.0f;
+
+    // Selection callback (fired on click-select/deselect)
+    std::function<void(int32_t)> m_selectionCallback;
+
+    // Snap callback (applies grid snap to position)
+    std::function<void(double &, double &, double &)> m_snapCallback;
 
     // GDTF scene graph cache: one per fixture def (manufacturer+model)
     std::unordered_map<std::string, qlcrender::FixtureSceneGraph> m_sceneGraphCache;

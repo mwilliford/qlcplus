@@ -38,12 +38,14 @@ Rectangle
 
                 Button
                 {
-                    width: (root.width - 16 - 6) / 4  // fill width minus margins and spacing
+                    width: (root.width - 16 - 6) / 4
                     height: 32
                     text: modelData
                     checkable: true
-                    checked: index === 0
+                    checked: spatialController.mode === index
                     autoExclusive: true
+
+                    onClicked: spatialController.mode = index
 
                     background: Rectangle
                     {
@@ -67,65 +69,269 @@ Rectangle
         // --- Separator ---
         Rectangle { Layout.fillWidth: true; height: 1; color: "#444" }
 
-        // --- Properties header ---
+        // --- Selection header ---
         Text
         {
-            text: "Properties"
-            color: "#ccc"
+            text: spatialController.hasSelection
+                  ? spatialController.selectedFixtureName
+                  : "No Selection"
+            color: spatialController.hasSelection ? "#ccc" : "#666"
             font.pixelSize: 13
             font.bold: true
+            elide: Text.ElideRight
+            Layout.fillWidth: true
         }
 
-        // --- Position ---
-        Text { text: "Position"; color: "#999"; font.pixelSize: 11 }
-
-        GridLayout
+        // --- Properties (visible only when a fixture is selected) ---
+        ColumnLayout
         {
+            visible: spatialController.hasSelection
             Layout.fillWidth: true
-            columns: 4
-            columnSpacing: 4
-            rowSpacing: 4
+            spacing: 6
 
-            Text { text: "X"; color: "#e74c3c"; font.pixelSize: 11; Layout.preferredWidth: 14 }
-            SpinBox { from: -10000; to: 10000; value: 0; Layout.fillWidth: true; editable: true }
-            Text { text: "\u00b1"; color: "#888"; font.pixelSize: 11 }
-            SpinBox { from: 1; to: 5000; value: 50; Layout.preferredWidth: 70; editable: true }
+            // --- Position ---
+            Text { text: "Position (m)"; color: "#999"; font.pixelSize: 11 }
 
-            Text { text: "Y"; color: "#2ecc71"; font.pixelSize: 11; Layout.preferredWidth: 14 }
-            SpinBox { from: -10000; to: 10000; value: 0; Layout.fillWidth: true; editable: true }
-            Text { text: "\u00b1"; color: "#888"; font.pixelSize: 11 }
-            SpinBox { from: 1; to: 5000; value: 50; Layout.preferredWidth: 70; editable: true }
+            GridLayout
+            {
+                Layout.fillWidth: true
+                columns: 2
+                columnSpacing: 4
+                rowSpacing: 4
 
-            Text { text: "Z"; color: "#3498db"; font.pixelSize: 11; Layout.preferredWidth: 14 }
-            SpinBox { from: -10000; to: 10000; value: 0; Layout.fillWidth: true; editable: true }
-            Text { text: "\u00b1"; color: "#888"; font.pixelSize: 11 }
-            SpinBox { from: 1; to: 5000; value: 5; Layout.preferredWidth: 70; editable: true }
-        }
+                Text { text: "X"; color: "#e74c3c"; font.pixelSize: 11; Layout.preferredWidth: 14 }
+                SpinBox
+                {
+                    id: posXSpin
+                    from: -100000; to: 100000
+                    value: Math.round(spatialController.posX * 100)
+                    stepSize: 10
+                    Layout.fillWidth: true
+                    editable: true
 
-        // --- Rotation ---
-        Text { text: "Rotation"; color: "#999"; font.pixelSize: 11 }
+                    property bool updating: false
 
-        GridLayout
-        {
-            Layout.fillWidth: true
-            columns: 4
-            columnSpacing: 4
-            rowSpacing: 4
+                    onValueModified:
+                    {
+                        if (!updating)
+                            spatialController.posX = value / 100.0
+                    }
 
-            Text { text: "P"; color: "#e74c3c"; font.pixelSize: 11; Layout.preferredWidth: 14 }
-            SpinBox { from: -3600; to: 3600; value: 0; Layout.fillWidth: true; editable: true }
-            Text { text: "\u00b1"; color: "#888"; font.pixelSize: 11 }
-            SpinBox { from: 1; to: 1800; value: 150; Layout.preferredWidth: 70; editable: true }
+                    textFromValue: function(value, locale) {
+                        return (value / 100.0).toFixed(2)
+                    }
+                    valueFromText: function(text, locale) {
+                        return Math.round(parseFloat(text) * 100)
+                    }
 
-            Text { text: "Y"; color: "#2ecc71"; font.pixelSize: 11; Layout.preferredWidth: 14 }
-            SpinBox { from: -3600; to: 3600; value: 0; Layout.fillWidth: true; editable: true }
-            Text { text: "\u00b1"; color: "#888"; font.pixelSize: 11 }
-            SpinBox { from: 1; to: 1800; value: 50; Layout.preferredWidth: 70; editable: true }
+                    Connections
+                    {
+                        target: spatialController
+                        function onTransformChanged()
+                        {
+                            posXSpin.updating = true
+                            posXSpin.value = Math.round(spatialController.posX * 100)
+                            posXSpin.updating = false
+                        }
+                    }
+                }
 
-            Text { text: "R"; color: "#3498db"; font.pixelSize: 11; Layout.preferredWidth: 14 }
-            SpinBox { from: -3600; to: 3600; value: 0; Layout.fillWidth: true; editable: true }
-            Text { text: "\u00b1"; color: "#888"; font.pixelSize: 11 }
-            SpinBox { from: 1; to: 1800; value: 50; Layout.preferredWidth: 70; editable: true }
+                Text { text: "Y"; color: "#2ecc71"; font.pixelSize: 11; Layout.preferredWidth: 14 }
+                SpinBox
+                {
+                    id: posYSpin
+                    from: -100000; to: 100000
+                    value: Math.round(spatialController.posY * 100)
+                    stepSize: 10
+                    Layout.fillWidth: true
+                    editable: true
+
+                    property bool updating: false
+
+                    onValueModified:
+                    {
+                        if (!updating)
+                            spatialController.posY = value / 100.0
+                    }
+
+                    textFromValue: function(value, locale) {
+                        return (value / 100.0).toFixed(2)
+                    }
+                    valueFromText: function(text, locale) {
+                        return Math.round(parseFloat(text) * 100)
+                    }
+
+                    Connections
+                    {
+                        target: spatialController
+                        function onTransformChanged()
+                        {
+                            posYSpin.updating = true
+                            posYSpin.value = Math.round(spatialController.posY * 100)
+                            posYSpin.updating = false
+                        }
+                    }
+                }
+
+                Text { text: "Z"; color: "#3498db"; font.pixelSize: 11; Layout.preferredWidth: 14 }
+                SpinBox
+                {
+                    id: posZSpin
+                    from: -100000; to: 100000
+                    value: Math.round(spatialController.posZ * 100)
+                    stepSize: 1
+                    Layout.fillWidth: true
+                    editable: true
+
+                    property bool updating: false
+
+                    onValueModified:
+                    {
+                        if (!updating)
+                            spatialController.posZ = value / 100.0
+                    }
+
+                    textFromValue: function(value, locale) {
+                        return (value / 100.0).toFixed(2)
+                    }
+                    valueFromText: function(text, locale) {
+                        return Math.round(parseFloat(text) * 100)
+                    }
+
+                    Connections
+                    {
+                        target: spatialController
+                        function onTransformChanged()
+                        {
+                            posZSpin.updating = true
+                            posZSpin.value = Math.round(spatialController.posZ * 100)
+                            posZSpin.updating = false
+                        }
+                    }
+                }
+            }
+
+            // --- Rotation ---
+            Text { text: "Rotation (\u00B0)"; color: "#999"; font.pixelSize: 11 }
+
+            GridLayout
+            {
+                Layout.fillWidth: true
+                columns: 2
+                columnSpacing: 4
+                rowSpacing: 4
+
+                Text { text: "P"; color: "#e74c3c"; font.pixelSize: 11; Layout.preferredWidth: 14 }
+                SpinBox
+                {
+                    id: rotPSpin
+                    from: -36000; to: 36000
+                    value: Math.round(spatialController.rotPitch * 10)
+                    stepSize: 50
+                    Layout.fillWidth: true
+                    editable: true
+
+                    property bool updating: false
+
+                    onValueModified:
+                    {
+                        if (!updating)
+                            spatialController.rotPitch = value / 10.0
+                    }
+
+                    textFromValue: function(value, locale) {
+                        return (value / 10.0).toFixed(1)
+                    }
+                    valueFromText: function(text, locale) {
+                        return Math.round(parseFloat(text) * 10)
+                    }
+
+                    Connections
+                    {
+                        target: spatialController
+                        function onTransformChanged()
+                        {
+                            rotPSpin.updating = true
+                            rotPSpin.value = Math.round(spatialController.rotPitch * 10)
+                            rotPSpin.updating = false
+                        }
+                    }
+                }
+
+                Text { text: "Y"; color: "#2ecc71"; font.pixelSize: 11; Layout.preferredWidth: 14 }
+                SpinBox
+                {
+                    id: rotYSpin
+                    from: -36000; to: 36000
+                    value: Math.round(spatialController.rotYaw * 10)
+                    stepSize: 50
+                    Layout.fillWidth: true
+                    editable: true
+
+                    property bool updating: false
+
+                    onValueModified:
+                    {
+                        if (!updating)
+                            spatialController.rotYaw = value / 10.0
+                    }
+
+                    textFromValue: function(value, locale) {
+                        return (value / 10.0).toFixed(1)
+                    }
+                    valueFromText: function(text, locale) {
+                        return Math.round(parseFloat(text) * 10)
+                    }
+
+                    Connections
+                    {
+                        target: spatialController
+                        function onTransformChanged()
+                        {
+                            rotYSpin.updating = true
+                            rotYSpin.value = Math.round(spatialController.rotYaw * 10)
+                            rotYSpin.updating = false
+                        }
+                    }
+                }
+
+                Text { text: "R"; color: "#3498db"; font.pixelSize: 11; Layout.preferredWidth: 14 }
+                SpinBox
+                {
+                    id: rotRSpin
+                    from: -36000; to: 36000
+                    value: Math.round(spatialController.rotRoll * 10)
+                    stepSize: 50
+                    Layout.fillWidth: true
+                    editable: true
+
+                    property bool updating: false
+
+                    onValueModified:
+                    {
+                        if (!updating)
+                            spatialController.rotRoll = value / 10.0
+                    }
+
+                    textFromValue: function(value, locale) {
+                        return (value / 10.0).toFixed(1)
+                    }
+                    valueFromText: function(text, locale) {
+                        return Math.round(parseFloat(text) * 10)
+                    }
+
+                    Connections
+                    {
+                        target: spatialController
+                        function onTransformChanged()
+                        {
+                            rotRSpin.updating = true
+                            rotRSpin.value = Math.round(spatialController.rotRoll * 10)
+                            rotRSpin.updating = false
+                        }
+                    }
+                }
+            }
         }
 
         // --- Separator ---
@@ -148,27 +354,10 @@ Rectangle
             {
                 text: "Grid"
                 checkable: true
-                checked: true
+                checked: spatialController.gridSnap
                 width: 60; height: 28
 
-                background: Rectangle
-                {
-                    color: parent.checked ? "#4a9eff" : (parent.hovered ? "#444" : "#333")
-                    radius: 3
-                }
-                contentItem: Text
-                {
-                    text: parent.text; color: parent.checked ? "#fff" : "#aaa"
-                    font.pixelSize: 11; horizontalAlignment: Text.AlignHCenter
-                    verticalAlignment: Text.AlignVCenter
-                }
-            }
-
-            Button
-            {
-                text: "Plane"
-                checkable: true
-                width: 60; height: 28
+                onClicked: spatialController.gridSnap = checked
 
                 background: Rectangle
                 {
@@ -196,9 +385,11 @@ Rectangle
             {
                 text: "World"
                 checkable: true
-                checked: true
+                checked: spatialController.axisMode === 0
                 autoExclusive: true
                 width: 60; height: 28
+
+                onClicked: spatialController.axisMode = 0
 
                 background: Rectangle
                 {
@@ -217,8 +408,11 @@ Rectangle
             {
                 text: "Local"
                 checkable: true
+                checked: spatialController.axisMode === 1
                 autoExclusive: true
                 width: 60; height: 28
+
+                onClicked: spatialController.axisMode = 1
 
                 background: Rectangle
                 {
@@ -257,6 +451,8 @@ Rectangle
                 {
                     width: 56; height: 28
                     text: modelData
+
+                    onClicked: spatialController.setCameraPreset(modelData)
 
                     background: Rectangle
                     {
