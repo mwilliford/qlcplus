@@ -200,12 +200,15 @@ QImage grabSpatialViewWindow()
     if (!inst || !inst->m_spatialView)
         return QImage();
 
+    // Let a couple frames render before capturing (avoids blank on first open)
+    QEventLoop loop;
+    QTimer::singleShot(100, &loop, &QEventLoop::quit);
+    loop.exec();
+
     // Request GPU framebuffer readback from bgfx
     inst->m_spatialView->requestViewportScreenshot();
 
-    // Spin the event loop for ~50ms to let bgfx::frame() fire the callback.
-    // The screenshot is delivered during bgfx::frame() which runs on a 60Hz timer.
-    QEventLoop loop;
+    // Wait for bgfx::frame() to fire the callback (~1-2 frames at 60Hz)
     QTimer::singleShot(50, &loop, &QEventLoop::quit);
     loop.exec();
 

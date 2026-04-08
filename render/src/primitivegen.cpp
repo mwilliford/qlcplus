@@ -217,8 +217,8 @@ void PrimitiveGen::init()
     // Scanner: flat body
     m_meshes[PrimitiveScanner_] = makeCube(0.3f, 0.1f, 0.15f);
 
-    // Conventional: cylinder (PAR can shape)
-    m_meshes[PrimitiveConventional_] = makeCylinder(0.12f, 0.25f, 16);
+    // Conventional: cylinder (PAR can / laser housing shape)
+    m_meshes[PrimitiveConventional_] = makeCylinder(0.15f, 0.35f, 16);
 }
 
 const LoadedMesh *PrimitiveGen::getPrimitive(int primitiveType) const
