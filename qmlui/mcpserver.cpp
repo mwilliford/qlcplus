@@ -400,6 +400,63 @@ void McpServer::registerBuiltinTools()
         },
         [this](const QJsonObject &args) { return toolShowSpatialView(args); }
     });
+
+    registerTool({
+        "select_fixture",
+        "Select a fixture by ID in the Spatial View. Pass id=-1 to deselect. No click coordinates needed.",
+        QJsonObject{
+            {"type", "object"},
+            {"properties", QJsonObject{
+                {"id", QJsonObject{{"type", "integer"}, {"description", "Fixture ID to select, or -1 to deselect"}}},
+            }},
+            {"required", QJsonArray{"id"}}
+        },
+        [this](const QJsonObject &args) { return toolSelectFixture(args); }
+    });
+
+    registerTool({
+        "get_fixture_screen_positions",
+        "Get screen positions of all fixtures projected through the current camera. Returns logical pixel coordinates in the Spatial View viewport. Camera-independent — always returns current positions.",
+        QJsonObject{
+            {"type", "object"},
+            {"properties", QJsonObject{}},
+        },
+        [this](const QJsonObject &args) { return toolGetFixtureScreenPositions(args); }
+    });
+
+    registerTool({
+        "set_camera",
+        "Set the Spatial View camera. Use preset names or explicit yaw/pitch/distance values.",
+        QJsonObject{
+            {"type", "object"},
+            {"properties", QJsonObject{
+                {"preset", QJsonObject{{"type", "string"}, {"enum", QJsonArray{"foh", "top", "front", "side"}},
+                    {"description", "Camera preset name"}}},
+                {"yaw", QJsonObject{{"type", "number"}, {"description", "Yaw angle in degrees"}}},
+                {"pitch", QJsonObject{{"type", "number"}, {"description", "Pitch angle in degrees"}}},
+                {"distance", QJsonObject{{"type", "number"}, {"description", "Camera distance in meters"}}},
+            }},
+        },
+        [this](const QJsonObject &args) { return toolSetCamera(args); }
+    });
+
+    registerTool({
+        "drag",
+        "Simulate a mouse drag in the Spatial View viewport. Coordinates are in logical pixels. Use for gizmo drag testing.",
+        QJsonObject{
+            {"type", "object"},
+            {"properties", QJsonObject{
+                {"x1", QJsonObject{{"type", "number"}, {"description", "Start X (logical pixels)"}}},
+                {"y1", QJsonObject{{"type", "number"}, {"description", "Start Y (logical pixels)"}}},
+                {"x2", QJsonObject{{"type", "number"}, {"description", "End X (logical pixels)"}}},
+                {"y2", QJsonObject{{"type", "number"}, {"description", "End Y (logical pixels)"}}},
+                {"steps", QJsonObject{{"type", "integer"}, {"default", 10}, {"description", "Number of intermediate move events"}}},
+                {"window", QJsonObject{{"type", "string"}, {"enum", QJsonArray{"main", "3d"}}, {"default", "3d"}}},
+            }},
+            {"required", QJsonArray{"x1", "y1", "x2", "y2"}}
+        },
+        [this](const QJsonObject &args) { return toolDrag(args); }
+    });
 }
 
 // Find a window by title substring from the application's window list.
@@ -776,16 +833,73 @@ QJsonObject McpServer::toolListFunctions(const QJsonObject &args)
 QJsonObject McpServer::toolShowSpatialView(const QJsonObject &args)
 {
     Q_UNUSED(args);
-
-    // Must run on GUI thread
     QTimer::singleShot(0, this, [this]() {
         showSpatialViewWindow(m_doc);
     });
-
     return QJsonObject{
         {"content", QJsonArray{QJsonObject{
-            {"type", "text"},
-            {"text", "Spatial View opened"}
+            {"type", "text"}, {"text", "Spatial View opened"}
+        }}}
+    };
+}
+
+QJsonObject McpServer::toolSelectFixture(const QJsonObject &args)
+{
+    int id = args.value("id").toInt(-1);
+    spatialViewSelectFixture(id);
+    QString msg = (id >= 0) ? QString("Selected fixture %1").arg(id) : "Deselected";
+    return QJsonObject{
+        {"content", QJsonArray{QJsonObject{{"type", "text"}, {"text", msg}}}}
+    };
+}
+
+QJsonObject McpServer::toolGetFixtureScreenPositions(const QJsonObject &args)
+{
+    Q_UNUSED(args);
+    QJsonArray positions = spatialViewGetFixtureScreenPositions();
+    QString text = QString::fromUtf8(QJsonDocument(positions).toJson(QJsonDocument::Indented));
+    return QJsonObject{
+        {"content", QJsonArray{QJsonObject{{"type", "text"}, {"text", text}}}}
+    };
+}
+
+QJsonObject McpServer::toolSetCamera(const QJsonObject &args)
+{
+    QString preset = args.value("preset").toString();
+    float yaw, pitch, distance;
+
+    if (preset == "foh")          { yaw = -90.0f; pitch = 30.0f;  distance = 10.0f; }
+    else if (preset == "top")     { yaw = -90.0f; pitch = 89.0f;  distance = 10.0f; }
+    else if (preset == "front")   { yaw = -90.0f; pitch = 0.0f;   distance = 10.0f; }
+    else if (preset == "side")    { yaw = 0.0f;   pitch = 0.0f;   distance = 10.0f; }
+    else
+    {
+        yaw = float(args.value("yaw").toDouble(-90.0));
+        pitch = float(args.value("pitch").toDouble(30.0));
+        distance = float(args.value("distance").toDouble(10.0));
+    }
+
+    spatialViewSetCamera(yaw, pitch, distance);
+    return QJsonObject{
+        {"content", QJsonArray{QJsonObject{{"type", "text"},
+            {"text", QString("Camera: yaw=%1 pitch=%2 dist=%3").arg(yaw).arg(pitch).arg(distance)}
+        }}}
+    };
+}
+
+QJsonObject McpServer::toolDrag(const QJsonObject &args)
+{
+    float x1 = float(args.value("x1").toDouble());
+    float y1 = float(args.value("y1").toDouble());
+    float x2 = float(args.value("x2").toDouble());
+    float y2 = float(args.value("y2").toDouble());
+    int steps = args.value("steps").toInt(10);
+
+    spatialViewDrag(x1, y1, x2, y2, steps);
+    return QJsonObject{
+        {"content", QJsonArray{QJsonObject{{"type", "text"},
+            {"text", QString("Dragged from (%1,%2) to (%3,%4) in %5 steps")
+                .arg(x1).arg(y1).arg(x2).arg(y2).arg(steps)}
         }}}
     };
 }

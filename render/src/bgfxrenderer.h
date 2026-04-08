@@ -80,10 +80,14 @@ public:
                     uint32_t viewportW, uint32_t viewportH) override;
     GizmoAxis gizmoHitTest(float mouseX, float mouseY,
                             uint32_t viewportW, uint32_t viewportH) override;
+    bool worldToScreen(const float worldPos[3],
+                        float &outScreenX, float &outScreenY,
+                        bool &outVisible) override;
 
     OrbitCamera& camera() { return m_camera; }
     TranslateGizmo& gizmo() { return m_gizmo; }
     BgfxCallback& callback() { return m_callback; }
+    const std::vector<RenderFixture>& fixtures() const { return m_fixtures; }
 
     void setMeshBasePath(const std::string &path) override { m_meshBasePath = path; }
 

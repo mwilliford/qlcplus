@@ -47,6 +47,14 @@ public:
     virtual GizmoAxis gizmoHitTest(float mouseX, float mouseY,
                                     uint32_t viewportW, uint32_t viewportH) { return GizmoAxis::None; }
 
+    /**
+     * Project a world position to screen coordinates (logical pixels).
+     * Returns false if the point is behind the camera.
+     */
+    virtual bool worldToScreen(const float worldPos[3],
+                                float &outScreenX, float &outScreenY,
+                                bool &outVisible) { return false; }
+
     // --- Calibration overlays (Phase C, no-op default) ---
     virtual void setCalibrationOverlays(const std::vector<RenderEllipsoid>& ellipsoids) { (void)ellipsoids; }
     virtual void setObservationLines(const std::vector<RenderLine>& lines) { (void)lines; }

@@ -55,15 +55,25 @@ public:
     void stopRendering();
     bool isRendering() const { return m_frameTimer.isActive(); }
 
-    /**
-     * Request a screenshot of the bgfx viewport from the GPU framebuffer.
-     * Returns raw RGBA pixel data. Call this, then wait ~2 frames (~32ms)
-     * for the callback to fire, then call takeScreenshot().
-     */
+    /** Request a screenshot of the bgfx viewport from the GPU framebuffer. */
     void requestViewportScreenshot();
 
     /** Retrieve the screenshot if ready. Returns empty QImage if not ready. */
     QImage takeViewportScreenshot();
+
+    /** Select a fixture by ID (-1 to deselect). */
+    void selectFixture(int32_t fixtureId);
+
+    /** Get the renderer (for screen position projection, etc). */
+    qlcrender::SpatialRenderer *renderer() const { return m_renderer.get(); }
+
+    /** Set camera orbit and update view. */
+    void setCameraOrbit(float yaw, float pitch, float distance);
+
+    /** Get current camera state. */
+    float cameraYaw() const { return m_cameraYaw; }
+    float cameraPitch() const { return m_cameraPitch; }
+    float cameraDistance() const { return m_cameraDistance; }
 
 protected:
     void exposeEvent(QExposeEvent *event) override;

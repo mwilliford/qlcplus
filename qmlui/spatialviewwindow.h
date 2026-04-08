@@ -26,6 +26,7 @@
 
 class Doc;
 class QImage;
+class QJsonArray;
 
 #define SETTINGS_SPATIALVIEW_GEOMETRY "spatialview/geometry"
 
@@ -38,5 +39,21 @@ void showSpatialViewWindow(Doc *doc);
  * Works even when the window is behind other windows.
  */
 QImage grabSpatialViewWindow();
+
+/** Select a fixture by ID in the Spatial View (-1 to deselect). */
+void spatialViewSelectFixture(int32_t fixtureId);
+
+/**
+ * Get fixture screen positions projected through the current camera.
+ * Returns JSON array: [{id, screenX, screenY, visible, worldX, worldY, worldZ}]
+ * Coordinates are in logical pixels relative to the SpatialView viewport.
+ */
+QJsonArray spatialViewGetFixtureScreenPositions();
+
+/** Set camera by preset name ("foh", "top", "front", "side") or explicit values. */
+void spatialViewSetCamera(float yaw, float pitch, float distance);
+
+/** Simulate a mouse drag in the Spatial View viewport (logical pixels). */
+void spatialViewDrag(float x1, float y1, float x2, float y2, int steps = 10);
 
 #endif // SPATIALVIEWWINDOW_H
