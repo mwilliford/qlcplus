@@ -40,6 +40,10 @@
 #define KXMLQLCSpatialAttrNY        "NY"
 #define KXMLQLCSpatialAttrNZ        "NZ"
 #define KXMLQLCSpatialAttrD         "D"
+#define KXMLQLCSpatialTruss         "Truss"
+#define KXMLQLCSpatialAttrX2        "X2"
+#define KXMLQLCSpatialAttrY2        "Y2"
+#define KXMLQLCSpatialAttrZ2        "Z2"
 
 SpatialModel::SpatialModel(QObject *parent)
     : QObject(parent)
@@ -301,6 +305,74 @@ QList<SpatialModel::Plane> SpatialModel::planes() const
 }
 
 // ---------------------------------------------------------------------------
+// Truss / pipe elements
+// ---------------------------------------------------------------------------
+
+void SpatialModel::addTruss(const Truss &truss)
+{
+    m_trusses.append(truss);
+    emit trussesChanged();
+}
+
+void SpatialModel::removeTruss(const QString &id)
+{
+    for (int i = 0; i < m_trusses.size(); i++)
+    {
+        if (m_trusses[i].id == id)
+        {
+            m_trusses.removeAt(i);
+            emit trussesChanged();
+            return;
+        }
+    }
+}
+
+QList<SpatialModel::Truss> SpatialModel::trusses() const
+{
+    return m_trusses;
+}
+
+bool SpatialModel::snapToTruss(double x, double y, double z,
+                                double &outX, double &outY, double &outZ,
+                                double snapDistance) const
+{
+    double bestDist = snapDistance;
+    bool found = false;
+
+    for (const Truss &truss : m_trusses)
+    {
+        // Project point onto line segment start→end
+        double dx = truss.end[0] - truss.start[0];
+        double dy = truss.end[1] - truss.start[1];
+        double dz = truss.end[2] - truss.start[2];
+        double lenSq = dx*dx + dy*dy + dz*dz;
+        if (lenSq < 1e-12)
+            continue;
+
+        double t = ((x - truss.start[0]) * dx +
+                    (y - truss.start[1]) * dy +
+                    (z - truss.start[2]) * dz) / lenSq;
+        t = qBound(0.0, t, 1.0);  // clamp to segment
+
+        double px = truss.start[0] + t * dx;
+        double py = truss.start[1] + t * dy;
+        double pz = truss.start[2] + t * dz;
+
+        double dist = std::sqrt((x-px)*(x-px) + (y-py)*(y-py) + (z-pz)*(z-pz));
+        if (dist < bestDist)
+        {
+            bestDist = dist;
+            outX = px;
+            outY = py;
+            outZ = pz;
+            found = true;
+        }
+    }
+
+    return found;
+}
+
+// ---------------------------------------------------------------------------
 // Ephemeral solver visualization
 // ---------------------------------------------------------------------------
 
@@ -435,6 +507,21 @@ bool SpatialModel::loadXML(QXmlStreamReader &reader)
             m_planes.append(plane);
             reader.skipCurrentElement();
         }
+        else if (reader.name() == QLatin1String(KXMLQLCSpatialTruss))
+        {
+            QXmlStreamAttributes attrs = reader.attributes();
+            Truss truss;
+            truss.id = attrs.value(KXMLQLCSpatialAttrID).toString();
+            truss.name = attrs.value(KXMLQLCSpatialAttrName).toString();
+            truss.start[0] = attrs.value(KXMLQLCSpatialAttrX).toDouble();
+            truss.start[1] = attrs.value(KXMLQLCSpatialAttrY).toDouble();
+            truss.start[2] = attrs.value(KXMLQLCSpatialAttrZ).toDouble();
+            truss.end[0] = attrs.value(KXMLQLCSpatialAttrX2).toDouble();
+            truss.end[1] = attrs.value(KXMLQLCSpatialAttrY2).toDouble();
+            truss.end[2] = attrs.value(KXMLQLCSpatialAttrZ2).toDouble();
+            m_trusses.append(truss);
+            reader.skipCurrentElement();
+        }
         else
         {
             reader.skipCurrentElement();
@@ -457,7 +544,7 @@ void SpatialModel::saveXML(QXmlStreamWriter &writer) const
         }
     }
 
-    if (!hasCommitted && m_planes.isEmpty())
+    if (!hasCommitted && m_planes.isEmpty() && m_trusses.isEmpty())
         return;
 
     writer.writeStartElement(KXMLQLCSpatialModel);
@@ -490,6 +577,20 @@ void SpatialModel::saveXML(QXmlStreamWriter &writer) const
         writer.writeAttribute(KXMLQLCSpatialAttrNY, QString::number(plane.normal[1], 'g', 10));
         writer.writeAttribute(KXMLQLCSpatialAttrNZ, QString::number(plane.normal[2], 'g', 10));
         writer.writeAttribute(KXMLQLCSpatialAttrD, QString::number(plane.distance, 'g', 10));
+        writer.writeEndElement();
+    }
+
+    for (const Truss &truss : m_trusses)
+    {
+        writer.writeStartElement(KXMLQLCSpatialTruss);
+        writer.writeAttribute(KXMLQLCSpatialAttrID, truss.id);
+        writer.writeAttribute(KXMLQLCSpatialAttrName, truss.name);
+        writer.writeAttribute(KXMLQLCSpatialAttrX, QString::number(truss.start[0], 'g', 10));
+        writer.writeAttribute(KXMLQLCSpatialAttrY, QString::number(truss.start[1], 'g', 10));
+        writer.writeAttribute(KXMLQLCSpatialAttrZ, QString::number(truss.start[2], 'g', 10));
+        writer.writeAttribute(KXMLQLCSpatialAttrX2, QString::number(truss.end[0], 'g', 10));
+        writer.writeAttribute(KXMLQLCSpatialAttrY2, QString::number(truss.end[1], 'g', 10));
+        writer.writeAttribute(KXMLQLCSpatialAttrZ2, QString::number(truss.end[2], 'g', 10));
         writer.writeEndElement();
     }
 
@@ -545,5 +646,6 @@ void SpatialModel::clear()
 {
     m_fixtures.clear();
     m_planes.clear();
+    m_trusses.clear();
     clearSolverViz();
 }

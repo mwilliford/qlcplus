@@ -102,6 +102,7 @@ private:
     void initBgfx();
     void rebuildFixtures();
     void rebuildEllipsoids();
+    void rebuildTrusses();
     const qlcrender::FixtureSceneGraph *getOrBuildSceneGraph(
         const QString &manufacturer, const QString &model,
         const GDTFGeometryData *geoData);

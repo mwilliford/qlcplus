@@ -42,4 +42,11 @@ struct RenderPlane
     float extent;         // visual size in meters
 };
 
+struct RenderTruss
+{
+    float start[3];
+    float end[3];
+    float color[4] = {0.8f, 0.8f, 0.2f, 1.0f};  // yellow
+};
+
 } // namespace qlcrender

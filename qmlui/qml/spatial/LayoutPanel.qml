@@ -535,6 +535,32 @@ Rectangle
             }
         }
 
+        // --- Truss ---
+        Rectangle { Layout.fillWidth: true; height: 1; color: "#444" }
+
+        Text { text: "Truss"; color: "#ccc"; font.pixelSize: 13; font.bold: true }
+
+        Button
+        {
+            text: "+ Add Truss"
+            implicitHeight: 28
+            Layout.fillWidth: true
+
+            onClicked: spatialController.addDefaultTruss()
+
+            background: Rectangle
+            {
+                color: parent.hovered ? "#444" : "#333"
+                radius: 3
+            }
+            contentItem: Text
+            {
+                text: parent.text; color: "#aaa"
+                font.pixelSize: 11; horizontalAlignment: Text.AlignHCenter
+                verticalAlignment: Text.AlignVCenter
+            }
+        }
+
         // --- Spacer ---
         Item { Layout.fillHeight: true }
 

@@ -69,6 +69,9 @@ public:
                                 float &outScreenX, float &outScreenY,
                                 bool &outVisible) { return false; }
 
+    // --- Trusses ---
+    virtual void setTrusses(const std::vector<RenderTruss>& trusses) { m_trusses = trusses; }
+
     // --- Calibration overlays (Phase C, no-op default) ---
     virtual void setCalibrationOverlays(const std::vector<RenderEllipsoid>& ellipsoids) { (void)ellipsoids; }
     virtual void setObservationLines(const std::vector<RenderLine>& lines) { (void)lines; }
@@ -77,6 +80,7 @@ public:
 protected:
     std::set<int32_t> m_selectedIds;
     int m_gizmoMode = 0;
+    std::vector<RenderTruss> m_trusses;
 };
 
 /** Factory: create a bgfx-based SpatialRenderer. Caller owns the pointer. */

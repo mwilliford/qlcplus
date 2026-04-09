@@ -112,6 +112,10 @@ public:
     // --- Align (Q_INVOKABLE for QML button clicks) ---
     Q_INVOKABLE void alignSelection(const QString &axis);
 
+    // --- Truss ---
+    Q_INVOKABLE void addDefaultTruss();
+    Q_INVOKABLE void removeTruss(const QString &id);
+
     // --- Camera (Q_INVOKABLE for QML button clicks) ---
     Q_INVOKABLE void setCameraPreset(const QString &preset);
 

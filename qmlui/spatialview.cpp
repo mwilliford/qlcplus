@@ -52,6 +52,8 @@ SpatialView::SpatialView(Doc *doc, QWindow *parent)
             this, &SpatialView::onSpatialTransformChanged);
     connect(sm, &SpatialModel::solverVizChanged,
             this, &SpatialView::onSolverVizChanged);
+    connect(sm, &SpatialModel::trussesChanged,
+            this, [this]() { rebuildTrusses(); });
 }
 
 SpatialView::~SpatialView()
@@ -149,6 +151,7 @@ void SpatialView::initBgfx()
         m_renderer->setCameraOrbit(m_cameraYaw, m_cameraPitch, m_cameraDistance);
         rebuildFixtures();
         rebuildEllipsoids();
+        rebuildTrusses();
         m_frameTimer.start(16);
         qDebug() << "[SpatialView] bgfx initialized" << w << "x" << h;
     }
@@ -643,6 +646,25 @@ void SpatialView::rebuildEllipsoids()
     }
 
     m_renderer->setCalibrationOverlays(ellipsoids);
+}
+
+void SpatialView::rebuildTrusses()
+{
+    if (!m_bgfxReady)
+        return;
+
+    SpatialModel *sm = m_doc->spatialModel();
+    std::vector<qlcrender::RenderTruss> trusses;
+
+    for (const SpatialModel::Truss &t : sm->trusses())
+    {
+        qlcrender::RenderTruss rt;
+        rt.start[0] = float(t.start[0]); rt.start[1] = float(t.start[1]); rt.start[2] = float(t.start[2]);
+        rt.end[0] = float(t.end[0]); rt.end[1] = float(t.end[1]); rt.end[2] = float(t.end[2]);
+        trusses.push_back(rt);
+    }
+
+    m_renderer->setTrusses(trusses);
 }
 
 // ---------------------------------------------------------------------------

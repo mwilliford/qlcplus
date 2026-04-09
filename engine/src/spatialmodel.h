@@ -122,6 +122,25 @@ public:
     void setPlanes(const QList<Plane> &planes);
     QList<Plane> planes() const;
 
+    // --- Truss/pipe elements (linear snap geometry) ---
+
+    struct Truss
+    {
+        QString id;
+        QString name;
+        double start[3] = {0, 0, 0};  // meters
+        double end[3]   = {0, 0, 0};  // meters
+    };
+
+    void addTruss(const Truss &truss);
+    void removeTruss(const QString &id);
+    QList<Truss> trusses() const;
+
+    /** Project a point onto the nearest truss line. Returns true if within snapDistance. */
+    bool snapToTruss(double x, double y, double z,
+                     double &outX, double &outY, double &outZ,
+                     double snapDistance = 0.5) const;
+
     // --- Ephemeral solver visualization (from server, NOT persisted) ---
 
     struct FixtureViz
@@ -160,6 +179,9 @@ signals:
     /** Emitted when the set of planes changes. */
     void planesChanged();
 
+    /** Emitted when trusses are added/removed. */
+    void trussesChanged();
+
     /** Emitted when ephemeral solver viz data changes (ellipsoids, quality, rms). */
     void solverVizChanged();
 
@@ -174,6 +196,7 @@ private:
 
     QMap<QString, FixtureEntry> m_fixtures;
     QList<Plane> m_planes;
+    QList<Truss> m_trusses;
 
     // Ephemeral solver state (not persisted)
     bool m_hasSolverViz = false;

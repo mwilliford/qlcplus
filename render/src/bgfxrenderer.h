@@ -97,6 +97,7 @@ private:
     void renderFixtures();
     void renderGizmo();
     void renderRotateGizmo();
+    void renderTrusses();
     void renderLabels();
     void renderSceneGraph(const SceneNode &node, const float parentTransform[16],
                           const float color[4]);

@@ -262,6 +262,26 @@ void SpatialController::alignSelection(const QString &axis)
     }
 }
 
+// --- Truss ---
+
+void SpatialController::addDefaultTruss()
+{
+    SpatialModel *sm = m_doc->spatialModel();
+    static int trussCounter = 0;
+    SpatialModel::Truss truss;
+    truss.id = QString("truss_%1").arg(trussCounter++);
+    truss.name = QString("Truss %1").arg(trussCounter);
+    // Default: 6m horizontal pipe at 3m height, centered on stage
+    truss.start[0] = -3.0; truss.start[1] = 0.0; truss.start[2] = 3.0;
+    truss.end[0]   =  3.0; truss.end[1]   = 0.0; truss.end[2]   = 3.0;
+    sm->addTruss(truss);
+}
+
+void SpatialController::removeTruss(const QString &id)
+{
+    m_doc->spatialModel()->removeTruss(id);
+}
+
 // --- Gizmo mode ---
 
 void SpatialController::setGizmoMode(int m)

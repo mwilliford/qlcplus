@@ -65,4 +65,8 @@ void spatialViewSetGizmoMode(int mode);
 /** Align all selected fixtures on an axis ("X", "Y", or "Z"). */
 void spatialViewAlignSelection(const QString &axis);
 
+/** Add a truss to the scene. */
+void spatialViewAddTruss(const QString &name, double x1, double y1, double z1,
+                          double x2, double y2, double z2);
+
 #endif // SPATIALVIEWWINDOW_H
