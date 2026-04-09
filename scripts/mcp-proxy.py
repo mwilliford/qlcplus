@@ -143,6 +143,17 @@ TOOLS = [
         "inputSchema": {"type": "object", "properties": {}}
     },
     {
+        "name": "align_selection",
+        "description": "Align all selected fixtures on an axis. Sets all to the primary fixture's coordinate.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "axis": {"type": "string", "enum": ["X", "Y", "Z"], "description": "Axis to align on"}
+            },
+            "required": ["axis"]
+        }
+    },
+    {
         "name": "set_gizmo_mode",
         "description": "Switch gizmo tool: 0=Translate (Move), 1=Rotate. Keyboard shortcuts: W=Move, E=Rotate.",
         "inputSchema": {

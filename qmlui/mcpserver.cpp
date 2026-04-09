@@ -472,6 +472,20 @@ void McpServer::registerBuiltinTools()
         },
         [this](const QJsonObject &args) { return toolSetGizmoMode(args); }
     });
+
+    registerTool({
+        "align_selection",
+        "Align all selected fixtures on an axis. Sets all to the primary fixture's coordinate. Requires 2+ fixtures selected.",
+        QJsonObject{
+            {"type", "object"},
+            {"properties", QJsonObject{
+                {"axis", QJsonObject{{"type", "string"}, {"enum", QJsonArray{"X", "Y", "Z"}},
+                    {"description", "Axis to align on"}}},
+            }},
+            {"required", QJsonArray{"axis"}}
+        },
+        [this](const QJsonObject &args) { return toolAlignSelection(args); }
+    });
 }
 
 // Find a window by title substring from the application's window list.
@@ -933,6 +947,15 @@ QJsonObject McpServer::toolSetGizmoMode(const QJsonObject &args)
     QString name = (mode == 0) ? "Translate" : "Rotate";
     return QJsonObject{
         {"content", QJsonArray{QJsonObject{{"type", "text"}, {"text", "Gizmo mode: " + name}}}}
+    };
+}
+
+QJsonObject McpServer::toolAlignSelection(const QJsonObject &args)
+{
+    QString axis = args.value("axis").toString("X");
+    spatialViewAlignSelection(axis);
+    return QJsonObject{
+        {"content", QJsonArray{QJsonObject{{"type", "text"}, {"text", "Aligned selection on " + axis}}}}
     };
 }
 

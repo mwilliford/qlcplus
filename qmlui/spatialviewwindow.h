@@ -62,4 +62,7 @@ void spatialViewDrag(float x1, float y1, float x2, float y2, int steps = 10);
 /** Set gizmo mode: 0=Translate, 1=Rotate. */
 void spatialViewSetGizmoMode(int mode);
 
+/** Align all selected fixtures on an axis ("X", "Y", or "Z"). */
+void spatialViewAlignSelection(const QString &axis);
+
 #endif // SPATIALVIEWWINDOW_H

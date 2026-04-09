@@ -110,6 +110,7 @@ private:
     QJsonObject toolSetCamera(const QJsonObject &args);
     QJsonObject toolDrag(const QJsonObject &args);
     QJsonObject toolSetGizmoMode(const QJsonObject &args);
+    QJsonObject toolAlignSelection(const QJsonObject &args);
 
     // Helpers
     QJsonObject makeResult(int id, const QJsonObject &result);
