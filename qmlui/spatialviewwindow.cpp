@@ -27,6 +27,8 @@
 #include "spatialviewwindow.h"
 #include "spatialview.h"
 #include "spatialcontroller.h"
+#include "spatialmodel.h"
+#include "doc.h"
 #include <cmath>
 #include "bgfxrenderer.h"
 #include <QPainter>
@@ -55,6 +57,7 @@ class SpatialViewWindow : public QWidget
     friend void spatialViewDrag(float, float, float, float, int);
     friend void spatialViewSetGizmoMode(int);
     friend void spatialViewAlignSelection(const QString &);
+    friend void spatialViewAddTruss(const QString &, double, double, double, double, double, double);
 
 public:
     explicit SpatialViewWindow(Doc *doc)
@@ -99,8 +102,18 @@ public:
                 m_spatialView->renderer()->setGizmoMode(m_controller->gizmoMode());
         });
 
-        // Grid snap: round position to nearest grid increment
+        // Snap: truss first, then grid
         m_spatialView->setSnapCallback([this](double &x, double &y, double &z) {
+            // Try truss snap first (0.5m proximity)
+            SpatialModel *sm = m_doc->spatialModel();
+            double tx, ty, tz;
+            if (sm->snapToTruss(x, y, z, tx, ty, tz, 0.5))
+            {
+                x = tx; y = ty; z = tz;
+                return;
+            }
+
+            // Grid snap fallback
             if (!m_controller->gridSnap())
                 return;
             double g = m_controller->gridSize();
@@ -376,6 +389,22 @@ void spatialViewAlignSelection(const QString &axis)
     auto *inst = SpatialViewWindow::s_instance;
     if (inst && inst->m_controller)
         inst->m_controller->alignSelection(axis);
+}
+
+void spatialViewAddTruss(const QString &name, double x1, double y1, double z1,
+                          double x2, double y2, double z2)
+{
+    auto *inst = SpatialViewWindow::s_instance;
+    if (!inst || !inst->m_doc)
+        return;
+
+    static int counter = 0;
+    SpatialModel::Truss truss;
+    truss.id = QString("truss_%1").arg(counter++);
+    truss.name = name.isEmpty() ? QString("Truss %1").arg(counter) : name;
+    truss.start[0] = x1; truss.start[1] = y1; truss.start[2] = z1;
+    truss.end[0] = x2; truss.end[1] = y2; truss.end[2] = z2;
+    inst->m_doc->spatialModel()->addTruss(truss);
 }
 
 void spatialViewDrag(float x1, float y1, float x2, float y2, int steps)

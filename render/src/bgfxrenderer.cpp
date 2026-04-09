@@ -236,6 +236,7 @@ void BgfxRenderer::frame()
     bgfx::dbgTextPrintf(30, 3, 0x07, "=up");
 
     renderGrid();
+    renderTrusses();
     renderFixtures();
     renderEllipsoids();
     if (m_gizmoMode == 0)
@@ -763,6 +764,38 @@ void BgfxRenderer::renderGizmo()
     // Render arrowhead triangles (remaining verts) — no depth test so gizmo is always on top
     bgfx::setState(BGFX_STATE_WRITE_RGB | BGFX_STATE_WRITE_A | BGFX_STATE_WRITE_Z);
     bgfx::setVertexBuffer(0, &tvb, shaftVerts, coneVerts);
+    bgfx::submit(0, m_colorProgram);
+}
+
+// --- Trusses ---
+
+void BgfxRenderer::renderTrusses()
+{
+    if (m_trusses.empty() || !bgfx::isValid(m_colorProgram))
+        return;
+
+    uint32_t totalVerts = uint32_t(m_trusses.size()) * 2;
+    if (!bgfx::getAvailTransientVertexBuffer(totalVerts, PosColorVertex::layout))
+        return;
+
+    bgfx::TransientVertexBuffer tvb;
+    bgfx::allocTransientVertexBuffer(&tvb, totalVerts, PosColorVertex::layout);
+    auto *v = (PosColorVertex *)tvb.data;
+
+    for (size_t i = 0; i < m_trusses.size(); i++)
+    {
+        const auto &t = m_trusses[i];
+        // Yellow color in ABGR format
+        uint32_t col = 0xff00cccc;  // yellow-ish
+        v[i*2+0] = { t.start[0], t.start[1], t.start[2], col };
+        v[i*2+1] = { t.end[0],   t.end[1],   t.end[2],   col };
+    }
+
+    float identity[16];
+    bx::mtxIdentity(identity);
+    bgfx::setTransform(identity);
+    bgfx::setState(BGFX_STATE_WRITE_RGB | BGFX_STATE_PT_LINES);
+    bgfx::setVertexBuffer(0, &tvb);
     bgfx::submit(0, m_colorProgram);
 }
 

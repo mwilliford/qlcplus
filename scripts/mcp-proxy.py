@@ -143,6 +143,22 @@ TOOLS = [
         "inputSchema": {"type": "object", "properties": {}}
     },
     {
+        "name": "add_truss",
+        "description": "Add a truss/pipe to the 3D scene. Fixtures snap to trusses when dragged nearby.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "x1": {"type": "number", "default": -3.0, "description": "Start X (m)"},
+                "y1": {"type": "number", "default": 0.0, "description": "Start Y (m)"},
+                "z1": {"type": "number", "default": 3.0, "description": "Start Z (m)"},
+                "x2": {"type": "number", "default": 3.0, "description": "End X (m)"},
+                "y2": {"type": "number", "default": 0.0, "description": "End Y (m)"},
+                "z2": {"type": "number", "default": 3.0, "description": "End Z (m)"},
+                "name": {"type": "string", "description": "Truss name"}
+            }
+        }
+    },
+    {
         "name": "align_selection",
         "description": "Align all selected fixtures on an axis. Sets all to the primary fixture's coordinate.",
         "inputSchema": {

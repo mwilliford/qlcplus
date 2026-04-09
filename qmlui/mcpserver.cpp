@@ -486,6 +486,24 @@ void McpServer::registerBuiltinTools()
         },
         [this](const QJsonObject &args) { return toolAlignSelection(args); }
     });
+
+    registerTool({
+        "add_truss",
+        "Add a truss/pipe to the 3D scene. Fixtures snap to trusses when dragged nearby. Specify start and end points in meters.",
+        QJsonObject{
+            {"type", "object"},
+            {"properties", QJsonObject{
+                {"x1", QJsonObject{{"type", "number"}, {"default", -3.0}, {"description", "Start X (m)"}}},
+                {"y1", QJsonObject{{"type", "number"}, {"default", 0.0}, {"description", "Start Y (m)"}}},
+                {"z1", QJsonObject{{"type", "number"}, {"default", 3.0}, {"description", "Start Z (m)"}}},
+                {"x2", QJsonObject{{"type", "number"}, {"default", 3.0}, {"description", "End X (m)"}}},
+                {"y2", QJsonObject{{"type", "number"}, {"default", 0.0}, {"description", "End Y (m)"}}},
+                {"z2", QJsonObject{{"type", "number"}, {"default", 3.0}, {"description", "End Z (m)"}}},
+                {"name", QJsonObject{{"type", "string"}, {"description", "Truss name"}}},
+            }},
+        },
+        [this](const QJsonObject &args) { return toolAddTruss(args); }
+    });
 }
 
 // Find a window by title substring from the application's window list.
@@ -956,6 +974,24 @@ QJsonObject McpServer::toolAlignSelection(const QJsonObject &args)
     spatialViewAlignSelection(axis);
     return QJsonObject{
         {"content", QJsonArray{QJsonObject{{"type", "text"}, {"text", "Aligned selection on " + axis}}}}
+    };
+}
+
+QJsonObject McpServer::toolAddTruss(const QJsonObject &args)
+{
+    double x1 = args.value("x1").toDouble(-3.0);
+    double y1 = args.value("y1").toDouble(0.0);
+    double z1 = args.value("z1").toDouble(3.0);
+    double x2 = args.value("x2").toDouble(3.0);
+    double y2 = args.value("y2").toDouble(0.0);
+    double z2 = args.value("z2").toDouble(3.0);
+    QString name = args.value("name").toString();
+    spatialViewAddTruss(name, x1, y1, z1, x2, y2, z2);
+    return QJsonObject{
+        {"content", QJsonArray{QJsonObject{{"type", "text"},
+            {"text", QString("Added truss from (%1,%2,%3) to (%4,%5,%6)")
+                .arg(x1).arg(y1).arg(z1).arg(x2).arg(y2).arg(z2)}
+        }}}
     };
 }
 

@@ -111,6 +111,7 @@ private:
     QJsonObject toolDrag(const QJsonObject &args);
     QJsonObject toolSetGizmoMode(const QJsonObject &args);
     QJsonObject toolAlignSelection(const QJsonObject &args);
+    QJsonObject toolAddTruss(const QJsonObject &args);
 
     // Helpers
     QJsonObject makeResult(int id, const QJsonObject &result);
