@@ -34,6 +34,7 @@ class SpatialController : public QObject
     Q_PROPERTY(int selectedFixtureId READ selectedFixtureId WRITE setSelectedFixtureId NOTIFY selectionChanged)
     Q_PROPERTY(QString selectedFixtureName READ selectedFixtureName NOTIFY selectionChanged)
     Q_PROPERTY(bool hasSelection READ hasSelection NOTIFY selectionChanged)
+    Q_PROPERTY(int selectionCount READ selectionCount NOTIFY selectionChanged)
 
     // Position (meters, 2 decimal places in QML)
     Q_PROPERTY(double posX READ posX WRITE setPosX NOTIFY transformChanged)
@@ -55,6 +56,9 @@ class SpatialController : public QObject
     // Axis mode (0=World, 1=Local)
     Q_PROPERTY(int axisMode READ axisMode WRITE setAxisMode NOTIFY axisModeChanged)
 
+    // Gizmo mode (0=Translate, 1=Rotate)
+    Q_PROPERTY(int gizmoMode READ gizmoMode WRITE setGizmoMode NOTIFY gizmoModeChanged)
+
 public:
     explicit SpatialController(Doc *doc, SpatialView *view, QObject *parent = nullptr);
 
@@ -66,6 +70,7 @@ public:
     void setSelectedFixtureId(int id);
     QString selectedFixtureName() const;
     bool hasSelection() const { return m_selectedFixtureId >= 0; }
+    int selectionCount() const { return m_selectionCount; }
 
     // --- Position ---
     double posX() const;
@@ -97,11 +102,15 @@ public:
     int axisMode() const { return m_axisMode; }
     void setAxisMode(int m);
 
+    // --- Gizmo mode ---
+    int gizmoMode() const { return m_gizmoMode; }
+    void setGizmoMode(int m);
+
     // --- Camera (Q_INVOKABLE for QML button clicks) ---
     Q_INVOKABLE void setCameraPreset(const QString &preset);
 
     /** Called by SpatialView when selection changes via mouse click. */
-    void notifySelectionChanged(int fixtureId);
+    void notifySelectionChanged(int fixtureId, int count = 1);
 
 signals:
     void selectionChanged();
@@ -110,6 +119,7 @@ signals:
     void gridSnapChanged();
     void gridSizeChanged();
     void axisModeChanged();
+    void gizmoModeChanged();
 
 private:
     void updateTransformFromModel();
@@ -117,10 +127,12 @@ private:
     Doc *m_doc;
     SpatialView *m_view;
     int m_selectedFixtureId = -1;
+    int m_selectionCount = 0;
     int m_mode = Layout;
     bool m_gridSnap = true;
     double m_gridSize = 0.5;  // 0.5m grid
     int m_axisMode = 0;       // 0=World, 1=Local
+    int m_gizmoMode = 0;      // 0=Translate, 1=Rotate
 
     // Cached transform values (avoid querying model every frame)
     double m_posX = 0, m_posY = 0, m_posZ = 0;

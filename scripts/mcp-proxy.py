@@ -92,11 +92,12 @@ TOOLS = [
     },
     {
         "name": "select_fixture",
-        "description": "Select a fixture by ID in the Spatial View. id=-1 to deselect. No coordinates needed.",
+        "description": "Select a fixture by ID in the Spatial View. id=-1 to deselect all. add=true for multi-select.",
         "inputSchema": {
             "type": "object",
             "properties": {
-                "id": {"type": "integer", "description": "Fixture ID, or -1 to deselect"}
+                "id": {"type": "integer", "description": "Fixture ID, or -1 to deselect all"},
+                "add": {"type": "boolean", "default": False, "description": "Add to selection (multi-select) instead of replacing"}
             },
             "required": ["id"]
         }
@@ -140,6 +141,17 @@ TOOLS = [
         "name": "list_functions",
         "description": "List all functions (scenes, chasers) with id, name, type, running status.",
         "inputSchema": {"type": "object", "properties": {}}
+    },
+    {
+        "name": "set_gizmo_mode",
+        "description": "Switch gizmo tool: 0=Translate (Move), 1=Rotate. Keyboard shortcuts: W=Move, E=Rotate.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "mode": {"type": "integer", "enum": [0, 1], "description": "0=Translate, 1=Rotate"}
+            },
+            "required": ["mode"]
+        }
     },
 ]
 

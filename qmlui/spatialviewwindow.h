@@ -43,6 +43,9 @@ QImage grabSpatialViewWindow();
 /** Select a fixture by ID in the Spatial View (-1 to deselect). */
 void spatialViewSelectFixture(int32_t fixtureId);
 
+/** Add a fixture to the current selection (Shift+click equivalent). */
+void spatialViewAddSelectedFixture(int32_t fixtureId);
+
 /**
  * Get fixture screen positions projected through the current camera.
  * Returns JSON array: [{id, screenX, screenY, visible, worldX, worldY, worldZ}]
@@ -55,5 +58,8 @@ void spatialViewSetCamera(float yaw, float pitch, float distance);
 
 /** Simulate a mouse drag in the Spatial View viewport (logical pixels). */
 void spatialViewDrag(float x1, float y1, float x2, float y2, int steps = 10);
+
+/** Set gizmo mode: 0=Translate, 1=Rotate. */
+void spatialViewSetGizmoMode(int mode);
 
 #endif // SPATIALVIEWWINDOW_H

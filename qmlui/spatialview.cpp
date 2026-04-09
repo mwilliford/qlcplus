@@ -79,7 +79,7 @@ void SpatialView::selectFixture(int32_t fixtureId)
 
     // Notify the controller (QML panel) of selection change
     if (m_selectionCallback)
-        m_selectionCallback(fixtureId);
+        m_selectionCallback(fixtureId, int(m_renderer->selectedIds().size()));
 }
 
 void SpatialView::setCameraOrbit(float yaw, float pitch, float distance)
@@ -198,28 +198,54 @@ void SpatialView::mousePressEvent(QMouseEvent *event)
 
     if (event->button() == Qt::LeftButton && m_bgfxReady)
     {
-        // Check gizmo first (if a fixture is selected)
         float mx, my;
         uint32_t vw, vh;
         mouseToViewport(event->pos(), mx, my, vw, vh);
 
-        qlcrender::GizmoAxis axis = m_renderer->gizmoHitTest(mx, my, vw, vh);
-        if (axis != qlcrender::GizmoAxis::None)
-        {
-            // Start gizmo drag
-            m_draggingGizmo = true;
-            m_orbiting = false;
+        int gizmoMode = m_gizmoModeCallback ? m_gizmoModeCallback() : 0;
+        auto *bgfxR = dynamic_cast<qlcrender::BgfxRenderer *>(m_renderer.get());
 
-            // Store drag start position
-            // Get the selected fixture's current position from the gizmo
-            // (set during renderGizmo from the fixture transform)
-            auto *bgfxR = dynamic_cast<qlcrender::BgfxRenderer *>(m_renderer.get());
-            if (bgfxR)
+        if (gizmoMode == 0)
+        {
+            // Translate mode — check translate gizmo
+            qlcrender::GizmoAxis axis = m_renderer->gizmoHitTest(mx, my, vw, vh);
+            if (axis != qlcrender::GizmoAxis::None && bgfxR)
             {
+                m_draggingGizmo = true;
+                m_orbiting = false;
                 bgfxR->gizmo().setActiveAxis(axis);
                 bgfxR->gizmo().getPosition(m_dragStartPos);
+
+                m_dragStartPositions.clear();
+                SpatialModel *sm = m_doc->spatialModel();
+                for (int32_t id : m_renderer->selectedIds())
+                {
+                    QString sid = QString::number(id);
+                    rigmath::RigidTransform t = sm->fixtureTransform(sid);
+                    m_dragStartPositions[id][0] = t.pos[0];
+                    m_dragStartPositions[id][1] = t.pos[1];
+                    m_dragStartPositions[id][2] = t.pos[2];
+                }
+                return;
             }
-            return;
+        }
+        else if (gizmoMode == 1 && bgfxR)
+        {
+            // Rotate mode — check rotate gizmo
+            float view[16], proj[16];
+            bgfxR->camera().viewMatrix(view);
+            float aspect = float(vw) / float(vh);
+            bgfxR->camera().projMatrix(proj, aspect, true);
+            qlcrender::Ray ray = qlcrender::screenToRay(mx, my, vw, vh, view, proj);
+
+            qlcrender::GizmoAxis axis = bgfxR->rotateGizmo().hitTest(ray);
+            if (axis != qlcrender::GizmoAxis::None)
+            {
+                m_draggingRotate = true;
+                m_orbiting = false;
+                bgfxR->rotateGizmo().setActiveAxis(axis);
+                return;
+            }
         }
 
         m_orbiting = true;
@@ -234,6 +260,60 @@ void SpatialView::mouseMoveEvent(QMouseEvent *event)
 {
     QPoint delta = event->pos() - m_lastMousePos;
     m_lastMousePos = event->pos();
+
+    if (m_draggingRotate && m_bgfxReady)
+    {
+        auto *bgfxR = dynamic_cast<qlcrender::BgfxRenderer *>(m_renderer.get());
+        if (!bgfxR)
+            return;
+
+        float mx, my, mxStart, myStart;
+        uint32_t vw, vh;
+        mouseToViewport(event->pos(), mx, my, vw, vh);
+        mouseToViewport(m_pressPos, mxStart, myStart, vw, vh);
+
+        float view[16], proj[16];
+        bgfxR->camera().viewMatrix(view);
+        float aspect = float(vw) / float(vh);
+        bgfxR->camera().projMatrix(proj, aspect, true);
+
+        qlcrender::Ray currentRay = qlcrender::screenToRay(mx, my, vw, vh, view, proj);
+        qlcrender::Ray startRay = qlcrender::screenToRay(mxStart, myStart, vw, vh, view, proj);
+
+        float angle = bgfxR->rotateGizmo().projectRotation(currentRay, startRay);
+        if (std::abs(angle) > 1e-6f)
+        {
+            qlcrender::GizmoAxis activeAxis = bgfxR->rotateGizmo().activeAxis();
+            SpatialModel *sm = m_doc->spatialModel();
+
+            for (int32_t id : m_renderer->selectedIds())
+            {
+                QString sid = QString::number(id);
+                rigmath::RigidTransform t = sm->fixtureTransform(sid);
+
+                // Build axis-angle rotation
+                double ax = 0, ay = 0, az = 0;
+                if (activeAxis == qlcrender::GizmoAxis::X) ax = double(angle);
+                else if (activeAxis == qlcrender::GizmoAxis::Y) ay = double(angle);
+                else if (activeAxis == qlcrender::GizmoAxis::Z) az = double(angle);
+
+                auto deltaRot = rigmath::RigidTransform::from_axis_angle(ax, ay, az);
+                // Apply rotation: new_rot = deltaRot.rot * current.rot
+                double newRot[9];
+                for (int r = 0; r < 3; r++)
+                    for (int c = 0; c < 3; c++)
+                        newRot[r*3+c] = deltaRot.rot[r*3+0]*t.rot[0*3+c]
+                                      + deltaRot.rot[r*3+1]*t.rot[1*3+c]
+                                      + deltaRot.rot[r*3+2]*t.rot[2*3+c];
+                std::copy(std::begin(newRot), std::end(newRot), std::begin(t.rot));
+                sm->setFixtureTransform(sid, t, SpatialModel::Committed);
+            }
+
+            // Reset the start ray to current for incremental rotation
+            m_pressPos = event->pos();
+        }
+        return;
+    }
 
     if (m_draggingGizmo && m_bgfxReady)
     {
@@ -258,27 +338,34 @@ void SpatialView::mouseMoveEvent(QMouseEvent *event)
         float outDelta[3];
         if (bgfxR->gizmo().projectDrag(currentRay, startRay, m_dragStartPos, outDelta))
         {
-            double newX = m_dragStartPos[0] + outDelta[0];
-            double newY = m_dragStartPos[1] + outDelta[1];
-            double newZ = m_dragStartPos[2] + outDelta[2];
+            double dx = outDelta[0], dy = outDelta[1], dz = outDelta[2];
 
-            // Apply grid snap if configured
+            // Compute primary fixture's new position (for gizmo + snap)
+            double newX = m_dragStartPos[0] + dx;
+            double newY = m_dragStartPos[1] + dy;
+            double newZ = m_dragStartPos[2] + dz;
+
+            // Apply grid snap to primary fixture, then recompute delta
             if (m_snapCallback)
+            {
                 m_snapCallback(newX, newY, newZ);
+                dx = newX - m_dragStartPos[0];
+                dy = newY - m_dragStartPos[1];
+                dz = newZ - m_dragStartPos[2];
+            }
 
-            // Update gizmo position (visual feedback during drag)
+            // Update gizmo position
             bgfxR->gizmo().setPosition(float(newX), float(newY), float(newZ));
 
-            // Update the fixture's transform in the SpatialModel
-            int32_t selId = m_renderer->selectedFixture();
-            if (selId >= 0)
+            // Move all selected fixtures by the same delta
+            SpatialModel *sm = m_doc->spatialModel();
+            for (const auto &pair : m_dragStartPositions)
             {
-                SpatialModel *sm = m_doc->spatialModel();
-                QString id = QString::number(selId);
+                QString id = QString::number(pair.first);
                 rigmath::RigidTransform t = sm->fixtureTransform(id);
-                t.pos[0] = newX;
-                t.pos[1] = newY;
-                t.pos[2] = newZ;
+                t.pos[0] = pair.second[0] + dx;
+                t.pos[1] = pair.second[1] + dy;
+                t.pos[2] = pair.second[2] + dz;
                 sm->setFixtureTransform(id, t, SpatialModel::Committed);
             }
         }
@@ -303,12 +390,21 @@ void SpatialView::mouseReleaseEvent(QMouseEvent *event)
 {
     if (event->button() == Qt::LeftButton && m_draggingGizmo)
     {
-        // End gizmo drag
         auto *bgfxR = dynamic_cast<qlcrender::BgfxRenderer *>(m_renderer.get());
         if (bgfxR)
             bgfxR->gizmo().setActiveAxis(qlcrender::GizmoAxis::None);
         m_draggingGizmo = false;
-        qDebug() << "[SpatialView] Gizmo drag completed";
+        qDebug() << "[SpatialView] Translate drag completed";
+        return;
+    }
+
+    if (event->button() == Qt::LeftButton && m_draggingRotate)
+    {
+        auto *bgfxR = dynamic_cast<qlcrender::BgfxRenderer *>(m_renderer.get());
+        if (bgfxR)
+            bgfxR->rotateGizmo().setActiveAxis(qlcrender::GizmoAxis::None);
+        m_draggingRotate = false;
+        qDebug() << "[SpatialView] Rotate drag completed";
         return;
     }
 
@@ -329,14 +425,30 @@ void SpatialView::mouseReleaseEvent(QMouseEvent *event)
                  << "dpr:" << devicePixelRatio();
 
         int32_t hitId = m_renderer->hitTest(mx, my, vw, vh);
-        m_renderer->setSelectedFixture(hitId);
+        bool shiftHeld = event->modifiers() & Qt::ShiftModifier;
+
+        if (shiftHeld && hitId >= 0)
+        {
+            // Shift+click: toggle fixture in selection
+            if (m_renderer->isSelected(hitId))
+                m_renderer->removeSelectedFixture(hitId);
+            else
+                m_renderer->addSelectedFixture(hitId);
+        }
+        else
+        {
+            // Plain click: replace selection
+            m_renderer->setSelectedFixture(hitId);
+        }
 
         // Notify the controller (and QML panel) of selection change
         if (m_selectionCallback)
-            m_selectionCallback(hitId);
+            m_selectionCallback(m_renderer->selectedFixture(),
+                                int(m_renderer->selectedIds().size()));
 
         if (hitId >= 0)
-            qDebug() << "[SpatialView] Selected fixture:" << hitId;
+            qDebug() << "[SpatialView] Selected fixture:" << hitId
+                     << "total:" << m_renderer->selectedIds().size();
         else
             qDebug() << "[SpatialView] Deselected";
     }
@@ -344,6 +456,17 @@ void SpatialView::mouseReleaseEvent(QMouseEvent *event)
     m_orbiting = false;
     m_panning = false;
     m_draggingGizmo = false;
+    m_draggingRotate = false;
+}
+
+void SpatialView::keyPressEvent(QKeyEvent *event)
+{
+    if (event->key() == Qt::Key_W && m_gizmoModeSetCallback)
+        m_gizmoModeSetCallback(0);  // Translate
+    else if (event->key() == Qt::Key_E && m_gizmoModeSetCallback)
+        m_gizmoModeSetCallback(1);  // Rotate
+    else
+        QWindow::keyPressEvent(event);
 }
 
 void SpatialView::wheelEvent(QWheelEvent *event)

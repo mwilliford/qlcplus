@@ -86,6 +86,7 @@ public:
 
     OrbitCamera& camera() { return m_camera; }
     TranslateGizmo& gizmo() { return m_gizmo; }
+    RotateGizmo& rotateGizmo() { return m_rotateGizmo; }
     BgfxCallback& callback() { return m_callback; }
     const std::vector<RenderFixture>& fixtures() const { return m_fixtures; }
 
@@ -95,6 +96,7 @@ private:
     void renderGrid();
     void renderFixtures();
     void renderGizmo();
+    void renderRotateGizmo();
     void renderLabels();
     void renderSceneGraph(const SceneNode &node, const float parentTransform[16],
                           const float color[4]);
@@ -126,8 +128,9 @@ private:
     // Per-fixture local AABBs (indexed same as m_fixtures)
     std::vector<AABB> m_localAABBs;
 
-    // Translate gizmo
+    // Gizmos
     TranslateGizmo m_gizmo;
+    RotateGizmo m_rotateGizmo;
 
     // Screenshot callback
     BgfxCallback m_callback;

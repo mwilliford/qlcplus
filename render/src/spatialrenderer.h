@@ -1,6 +1,7 @@
 #pragma once
 
 #include <cstdint>
+#include <set>
 #include <vector>
 #include "rendertypes.h"
 #include "raypick.h"
@@ -35,9 +36,22 @@ public:
     virtual void setFixtures(const std::vector<RenderFixture>& fixtures) = 0;
     virtual void setMeshBasePath(const std::string& path) { (void)path; }
 
+    // --- Gizmo mode ---
+    void setGizmoMode(int mode) { m_gizmoMode = mode; }  // 0=Translate, 1=Rotate
+    int gizmoMode() const { return m_gizmoMode; }
+
     // --- Selection ---
-    virtual void setSelectedFixture(int32_t fixtureId) { m_selectedFixtureId = fixtureId; }
-    int32_t selectedFixture() const { return m_selectedFixtureId; }
+    virtual void setSelectedFixture(int32_t fixtureId) {
+        m_selectedIds.clear();
+        if (fixtureId >= 0) m_selectedIds.insert(fixtureId);
+    }
+    void addSelectedFixture(int32_t fixtureId) { if (fixtureId >= 0) m_selectedIds.insert(fixtureId); }
+    void removeSelectedFixture(int32_t fixtureId) { m_selectedIds.erase(fixtureId); }
+    void clearSelection() { m_selectedIds.clear(); }
+    bool isSelected(int32_t fixtureId) const { return m_selectedIds.count(fixtureId) > 0; }
+    const std::set<int32_t> &selectedIds() const { return m_selectedIds; }
+    /** Primary selected fixture (for gizmo placement). -1 if empty. */
+    int32_t selectedFixture() const { return m_selectedIds.empty() ? -1 : *m_selectedIds.begin(); }
 
     /** Pick fixture at screen coordinates. Returns fixture ID or -1. */
     virtual int32_t hitTest(float mouseX, float mouseY,
@@ -61,7 +75,8 @@ public:
     virtual void setNamedPlanes(const std::vector<RenderPlane>& planes) { (void)planes; }
 
 protected:
-    int32_t m_selectedFixtureId = -1;
+    std::set<int32_t> m_selectedIds;
+    int m_gizmoMode = 0;
 };
 
 /** Factory: create a bgfx-based SpatialRenderer. Caller owns the pointer. */

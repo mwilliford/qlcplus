@@ -49,9 +49,11 @@ class SpatialViewWindow : public QWidget
 
     friend QImage grabSpatialViewWindow();
     friend void spatialViewSelectFixture(int32_t);
+    friend void spatialViewAddSelectedFixture(int32_t);
     friend QJsonArray spatialViewGetFixtureScreenPositions();
     friend void spatialViewSetCamera(float, float, float);
     friend void spatialViewDrag(float, float, float, float, int);
+    friend void spatialViewSetGizmoMode(int);
 
 public:
     explicit SpatialViewWindow(Doc *doc)
@@ -71,8 +73,20 @@ public:
         m_controller = new SpatialController(doc, m_spatialView, this);
 
         // When the user clicks a fixture in the viewport, update the controller
-        m_spatialView->setSelectionCallback([this](int32_t fixtureId) {
-            m_controller->notifySelectionChanged(fixtureId);
+        m_spatialView->setSelectionCallback([this](int32_t fixtureId, int count) {
+            m_controller->notifySelectionChanged(fixtureId, count);
+        });
+
+        // Gizmo mode: translate (0) or rotate (1)
+        m_spatialView->setGizmoModeCallback(
+            [this]() { return m_controller->gizmoMode(); },
+            [this](int m) { m_controller->setGizmoMode(m); }
+        );
+
+        // Sync gizmo mode to renderer
+        connect(m_controller, &SpatialController::gizmoModeChanged, this, [this]() {
+            if (m_spatialView && m_spatialView->renderer())
+                m_spatialView->renderer()->setGizmoMode(m_controller->gizmoMode());
         });
 
         // Grid snap: round position to nearest grid increment
@@ -269,6 +283,25 @@ void spatialViewSelectFixture(int32_t fixtureId)
         inst->m_spatialView->selectFixture(fixtureId);
 }
 
+void spatialViewAddSelectedFixture(int32_t fixtureId)
+{
+    auto *inst = SpatialViewWindow::s_instance;
+    if (!inst || !inst->m_spatialView)
+        return;
+
+    if (fixtureId >= 0)
+    {
+        inst->m_spatialView->renderer()->addSelectedFixture(fixtureId);
+        // Notify controller with updated count
+        if (inst->m_controller)
+        {
+            int count = int(inst->m_spatialView->renderer()->selectedIds().size());
+            inst->m_controller->notifySelectionChanged(
+                inst->m_spatialView->renderer()->selectedFixture(), count);
+        }
+    }
+}
+
 QJsonArray spatialViewGetFixtureScreenPositions()
 {
     auto *inst = SpatialViewWindow::s_instance;
@@ -319,6 +352,13 @@ void spatialViewSetCamera(float yaw, float pitch, float distance)
     auto *inst = SpatialViewWindow::s_instance;
     if (inst && inst->m_spatialView)
         inst->m_spatialView->setCameraOrbit(yaw, pitch, distance);
+}
+
+void spatialViewSetGizmoMode(int mode)
+{
+    auto *inst = SpatialViewWindow::s_instance;
+    if (inst && inst->m_controller)
+        inst->m_controller->setGizmoMode(mode);
 }
 
 void spatialViewDrag(float x1, float y1, float x2, float y2, int steps)
