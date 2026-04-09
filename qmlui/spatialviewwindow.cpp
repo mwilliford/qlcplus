@@ -54,6 +54,7 @@ class SpatialViewWindow : public QWidget
     friend void spatialViewSetCamera(float, float, float);
     friend void spatialViewDrag(float, float, float, float, int);
     friend void spatialViewSetGizmoMode(int);
+    friend void spatialViewAlignSelection(const QString &);
 
 public:
     explicit SpatialViewWindow(Doc *doc)
@@ -75,6 +76,15 @@ public:
         // When the user clicks a fixture in the viewport, update the controller
         m_spatialView->setSelectionCallback([this](int32_t fixtureId, int count) {
             m_controller->notifySelectionChanged(fixtureId, count);
+        });
+
+        // Selected IDs callback for align
+        m_controller->setSelectedIdsCallback([this]() -> std::vector<int32_t> {
+            std::vector<int32_t> ids;
+            if (m_spatialView && m_spatialView->renderer())
+                for (int32_t id : m_spatialView->renderer()->selectedIds())
+                    ids.push_back(id);
+            return ids;
         });
 
         // Gizmo mode: translate (0) or rotate (1)
@@ -359,6 +369,13 @@ void spatialViewSetGizmoMode(int mode)
     auto *inst = SpatialViewWindow::s_instance;
     if (inst && inst->m_controller)
         inst->m_controller->setGizmoMode(mode);
+}
+
+void spatialViewAlignSelection(const QString &axis)
+{
+    auto *inst = SpatialViewWindow::s_instance;
+    if (inst && inst->m_controller)
+        inst->m_controller->alignSelection(axis);
 }
 
 void spatialViewDrag(float x1, float y1, float x2, float y2, int steps)

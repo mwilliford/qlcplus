@@ -230,6 +230,38 @@ void SpatialController::setAxisMode(int m)
     emit axisModeChanged();
 }
 
+// --- Align ---
+
+void SpatialController::alignSelection(const QString &axis)
+{
+    if (m_selectedFixtureId < 0 || !m_selectedIdsCallback)
+        return;
+
+    std::vector<int32_t> ids = m_selectedIdsCallback();
+    if (ids.size() < 2)
+        return;
+
+    SpatialModel *sm = m_doc->spatialModel();
+
+    // Get primary fixture's position as the alignment target
+    rigmath::RigidTransform primary = sm->fixtureTransform(QString::number(m_selectedFixtureId));
+
+    for (int32_t id : ids)
+    {
+        if (id == m_selectedFixtureId)
+            continue;
+        QString sid = QString::number(id);
+        rigmath::RigidTransform t = sm->fixtureTransform(sid);
+        if (axis == "X")
+            t.pos[0] = primary.pos[0];
+        else if (axis == "Y")
+            t.pos[1] = primary.pos[1];
+        else if (axis == "Z")
+            t.pos[2] = primary.pos[2];
+        sm->setFixtureTransform(sid, t, SpatialModel::Committed);
+    }
+}
+
 // --- Gizmo mode ---
 
 void SpatialController::setGizmoMode(int m)

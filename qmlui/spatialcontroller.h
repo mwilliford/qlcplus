@@ -15,6 +15,9 @@
 #define SPATIALCONTROLLER_H
 
 #include <QObject>
+#include <cstdint>
+#include <functional>
+#include <vector>
 
 class SpatialView;
 class SpatialModel;
@@ -106,11 +109,17 @@ public:
     int gizmoMode() const { return m_gizmoMode; }
     void setGizmoMode(int m);
 
+    // --- Align (Q_INVOKABLE for QML button clicks) ---
+    Q_INVOKABLE void alignSelection(const QString &axis);
+
     // --- Camera (Q_INVOKABLE for QML button clicks) ---
     Q_INVOKABLE void setCameraPreset(const QString &preset);
 
     /** Called by SpatialView when selection changes via mouse click. */
     void notifySelectionChanged(int fixtureId, int count = 1);
+
+    /** Set a callback to retrieve all selected fixture IDs. */
+    void setSelectedIdsCallback(std::function<std::vector<int32_t>()> cb) { m_selectedIdsCallback = std::move(cb); }
 
 signals:
     void selectionChanged();
@@ -132,6 +141,7 @@ private:
     bool m_gridSnap = true;
     double m_gridSize = 0.5;  // 0.5m grid
     int m_axisMode = 0;       // 0=World, 1=Local
+    std::function<std::vector<int32_t>()> m_selectedIdsCallback;
     int m_gizmoMode = 0;      // 0=Translate, 1=Rotate
 
     // Cached transform values (avoid querying model every frame)

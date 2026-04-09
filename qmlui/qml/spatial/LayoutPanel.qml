@@ -186,6 +186,42 @@ Rectangle
             Layout.fillWidth: true
         }
 
+        // --- Align tools (visible with multi-select) ---
+        RowLayout
+        {
+            visible: spatialController.selectionCount > 1
+            Layout.fillWidth: true
+            spacing: 4
+
+            Text { text: "Align:"; color: "#999"; font.pixelSize: 11;
+                   Layout.alignment: Qt.AlignVCenter }
+
+            Button
+            {
+                text: "X"; implicitWidth: 36; implicitHeight: 26
+                onClicked: spatialController.alignSelection("X")
+                background: Rectangle { color: parent.hovered ? "#e74c3c" : "#444"; radius: 3 }
+                contentItem: Text { text: parent.text; color: "#fff"; font.pixelSize: 11;
+                    horizontalAlignment: Text.AlignHCenter; verticalAlignment: Text.AlignVCenter }
+            }
+            Button
+            {
+                text: "Y"; implicitWidth: 36; implicitHeight: 26
+                onClicked: spatialController.alignSelection("Y")
+                background: Rectangle { color: parent.hovered ? "#2ecc71" : "#444"; radius: 3 }
+                contentItem: Text { text: parent.text; color: "#fff"; font.pixelSize: 11;
+                    horizontalAlignment: Text.AlignHCenter; verticalAlignment: Text.AlignVCenter }
+            }
+            Button
+            {
+                text: "Z"; implicitWidth: 36; implicitHeight: 26
+                onClicked: spatialController.alignSelection("Z")
+                background: Rectangle { color: parent.hovered ? "#3498db" : "#444"; radius: 3 }
+                contentItem: Text { text: parent.text; color: "#fff"; font.pixelSize: 11;
+                    horizontalAlignment: Text.AlignHCenter; verticalAlignment: Text.AlignVCenter }
+            }
+        }
+
         // --- Properties (visible only when a single fixture is selected) ---
         ColumnLayout
         {
