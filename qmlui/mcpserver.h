@@ -109,6 +109,7 @@ private:
     QJsonObject toolGetFixtureScreenPositions(const QJsonObject &args);
     QJsonObject toolSetCamera(const QJsonObject &args);
     QJsonObject toolDrag(const QJsonObject &args);
+    QJsonObject toolSetGizmoMode(const QJsonObject &args);
 
     // Helpers
     QJsonObject makeResult(int id, const QJsonObject &result);

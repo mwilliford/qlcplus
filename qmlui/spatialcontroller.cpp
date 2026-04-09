@@ -47,11 +47,10 @@ void SpatialController::setSelectedFixtureId(int id)
     emit transformChanged();
 }
 
-void SpatialController::notifySelectionChanged(int fixtureId)
+void SpatialController::notifySelectionChanged(int fixtureId, int count)
 {
-    if (m_selectedFixtureId == fixtureId)
-        return;
     m_selectedFixtureId = fixtureId;
+    m_selectionCount = count;
     updateTransformFromModel();
     emit selectionChanged();
     emit transformChanged();
@@ -197,6 +196,16 @@ void SpatialController::setAxisMode(int m)
         return;
     m_axisMode = m;
     emit axisModeChanged();
+}
+
+// --- Gizmo mode ---
+
+void SpatialController::setGizmoMode(int m)
+{
+    if (m_gizmoMode == m)
+        return;
+    m_gizmoMode = m;
+    emit gizmoModeChanged();
 }
 
 // --- Camera ---

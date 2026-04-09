@@ -403,11 +403,12 @@ void McpServer::registerBuiltinTools()
 
     registerTool({
         "select_fixture",
-        "Select a fixture by ID in the Spatial View. Pass id=-1 to deselect. No click coordinates needed.",
+        "Select a fixture by ID in the Spatial View. id=-1 to deselect all. add=true for Shift+click (multi-select).",
         QJsonObject{
             {"type", "object"},
             {"properties", QJsonObject{
-                {"id", QJsonObject{{"type", "integer"}, {"description", "Fixture ID to select, or -1 to deselect"}}},
+                {"id", QJsonObject{{"type", "integer"}, {"description", "Fixture ID to select, or -1 to deselect all"}}},
+                {"add", QJsonObject{{"type", "boolean"}, {"default", false}, {"description", "Add to selection (Shift+click) instead of replacing"}}},
             }},
             {"required", QJsonArray{"id"}}
         },
@@ -456,6 +457,20 @@ void McpServer::registerBuiltinTools()
             {"required", QJsonArray{"x1", "y1", "x2", "y2"}}
         },
         [this](const QJsonObject &args) { return toolDrag(args); }
+    });
+
+    registerTool({
+        "set_gizmo_mode",
+        "Switch gizmo tool: 0=Translate (Move), 1=Rotate. Keyboard shortcuts: W=Move, E=Rotate.",
+        QJsonObject{
+            {"type", "object"},
+            {"properties", QJsonObject{
+                {"mode", QJsonObject{{"type", "integer"}, {"enum", QJsonArray{0, 1}},
+                    {"description", "0=Translate, 1=Rotate"}}},
+            }},
+            {"required", QJsonArray{"mode"}}
+        },
+        [this](const QJsonObject &args) { return toolSetGizmoMode(args); }
     });
 }
 
@@ -846,8 +861,15 @@ QJsonObject McpServer::toolShowSpatialView(const QJsonObject &args)
 QJsonObject McpServer::toolSelectFixture(const QJsonObject &args)
 {
     int id = args.value("id").toInt(-1);
-    spatialViewSelectFixture(id);
-    QString msg = (id >= 0) ? QString("Selected fixture %1").arg(id) : "Deselected";
+    bool add = args.value("add").toBool(false);
+
+    if (add && id >= 0)
+        spatialViewAddSelectedFixture(id);
+    else
+        spatialViewSelectFixture(id);
+
+    QString msg = (id >= 0) ? QString("Selected fixture %1%2").arg(id).arg(add ? " (added)" : "")
+                            : "Deselected all";
     return QJsonObject{
         {"content", QJsonArray{QJsonObject{{"type", "text"}, {"text", msg}}}}
     };
@@ -901,6 +923,16 @@ QJsonObject McpServer::toolDrag(const QJsonObject &args)
             {"text", QString("Dragged from (%1,%2) to (%3,%4) in %5 steps")
                 .arg(x1).arg(y1).arg(x2).arg(y2).arg(steps)}
         }}}
+    };
+}
+
+QJsonObject McpServer::toolSetGizmoMode(const QJsonObject &args)
+{
+    int mode = args.value("mode").toInt(0);
+    spatialViewSetGizmoMode(mode);
+    QString name = (mode == 0) ? "Translate" : "Rotate";
+    return QJsonObject{
+        {"content", QJsonArray{QJsonObject{{"type", "text"}, {"text", "Gizmo mode: " + name}}}}
     };
 }
 

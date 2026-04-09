@@ -100,6 +100,57 @@ private:
     GizmoAxis m_hoveredAxis = GizmoAxis::None;
 };
 
+/**
+ * @brief Rotate gizmo — three circle handles for axis-constrained rotation.
+ *
+ * Renders at a given world position. Each circle is a ring around one axis.
+ * Colors: X=red (pitch), Y=green (yaw), Z=blue (roll).
+ * Highlighted when hovered.
+ */
+class RotateGizmo
+{
+public:
+    RotateGizmo() = default;
+
+    void setPosition(float x, float y, float z);
+    void getPosition(float out[3]) const;
+
+    void setCameraDistance(float dist) { m_cameraDistance = dist; }
+    float scale() const;
+
+    static constexpr float kRingRadius = 0.8f;
+    static constexpr float kRingThickness = 0.04f;
+    static constexpr float kHitPadding = 0.08f;
+    static constexpr int kRingSegments = 48;
+
+    /**
+     * @brief Hit-test the rotation rings against a screen-space ray.
+     * Tests proximity of ray to each ring torus (simplified as distance to ring plane + radius).
+     */
+    GizmoAxis hitTest(const Ray &ray) const;
+
+    void setActiveAxis(GizmoAxis axis) { m_activeAxis = axis; }
+    GizmoAxis activeAxis() const { return m_activeAxis; }
+
+    void setHoveredAxis(GizmoAxis axis) { m_hoveredAxis = axis; }
+    GizmoAxis hoveredAxis() const { return m_hoveredAxis; }
+
+    /**
+     * @brief Project mouse drag onto rotation around the active axis.
+     *
+     * @param ray Current mouse ray
+     * @param dragStartRay Ray at drag start
+     * @return Rotation angle in radians (positive = CCW when looking along axis)
+     */
+    float projectRotation(const Ray &ray, const Ray &dragStartRay) const;
+
+private:
+    float m_position[3] = {0, 0, 0};
+    float m_cameraDistance = 10.0f;
+    GizmoAxis m_activeAxis = GizmoAxis::None;
+    GizmoAxis m_hoveredAxis = GizmoAxis::None;
+};
+
 } // namespace qlcrender
 
 #endif // GIZMO_H

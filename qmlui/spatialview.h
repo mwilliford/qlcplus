@@ -71,11 +71,18 @@ public:
     /** Set camera orbit and update view. */
     void setCameraOrbit(float yaw, float pitch, float distance);
 
-    /** Set a callback that fires when the user clicks to select/deselect a fixture. */
-    void setSelectionCallback(std::function<void(int32_t)> cb) { m_selectionCallback = std::move(cb); }
+    /** Set a callback that fires when the user clicks to select/deselect a fixture.
+     *  Args: primaryFixtureId, selectionCount */
+    void setSelectionCallback(std::function<void(int32_t, int)> cb) { m_selectionCallback = std::move(cb); }
 
     /** Set snap callback: returns snapped position given raw position. */
     void setSnapCallback(std::function<void(double &x, double &y, double &z)> cb) { m_snapCallback = std::move(cb); }
+
+    /** Set gizmo mode callback: getter returns 0=Translate, 1=Rotate. */
+    void setGizmoModeCallback(std::function<int()> getter, std::function<void(int)> setter) {
+        m_gizmoModeCallback = std::move(getter);
+        m_gizmoModeSetCallback = std::move(setter);
+    }
 
     /** Get current camera state. */
     float cameraYaw() const { return m_cameraYaw; }
@@ -89,6 +96,7 @@ protected:
     void mouseMoveEvent(QMouseEvent *event) override;
     void mouseReleaseEvent(QMouseEvent *event) override;
     void wheelEvent(QWheelEvent *event) override;
+    void keyPressEvent(QKeyEvent *event) override;
 
 private:
     void initBgfx();
@@ -119,20 +127,26 @@ private:
     bool m_orbiting = false;
     bool m_panning = false;
     bool m_draggingGizmo = false;
+    bool m_draggingRotate = false;
 
     // Gizmo drag state
-    float m_dragStartPos[3] = {0, 0, 0};  // fixture position at drag start
+    float m_dragStartPos[3] = {0, 0, 0};  // primary fixture position at drag start
+    std::unordered_map<int32_t, double[3]> m_dragStartPositions;  // all selected fixtures' start positions
 
     // Default: front-of-house view (audience looking at stage)
     float m_cameraYaw = -90.0f;
     float m_cameraPitch = 30.0f;
     float m_cameraDistance = 10.0f;
 
-    // Selection callback (fired on click-select/deselect)
-    std::function<void(int32_t)> m_selectionCallback;
+    // Selection callback (fired on click-select/deselect): primaryId, count
+    std::function<void(int32_t, int)> m_selectionCallback;
 
     // Snap callback (applies grid snap to position)
     std::function<void(double &, double &, double &)> m_snapCallback;
+
+    // Gizmo mode callbacks (0=Translate, 1=Rotate)
+    std::function<int()> m_gizmoModeCallback;
+    std::function<void(int)> m_gizmoModeSetCallback;
 
     // GDTF scene graph cache: one per fixture def (manufacturer+model)
     std::unordered_map<std::string, qlcrender::FixtureSceneGraph> m_sceneGraphCache;

@@ -156,4 +156,126 @@ bool TranslateGizmo::projectDrag(const Ray &ray, const Ray &dragStartRay,
     return true;
 }
 
+// ==========================================================================
+// RotateGizmo
+// ==========================================================================
+
+void RotateGizmo::setPosition(float x, float y, float z)
+{
+    m_position[0] = x;
+    m_position[1] = y;
+    m_position[2] = z;
+}
+
+void RotateGizmo::getPosition(float out[3]) const
+{
+    out[0] = m_position[0];
+    out[1] = m_position[1];
+    out[2] = m_position[2];
+}
+
+float RotateGizmo::scale() const
+{
+    return m_cameraDistance * 0.12f;
+}
+
+GizmoAxis RotateGizmo::hitTest(const Ray &ray) const
+{
+    float s = scale();
+    float ringR = kRingRadius * s;
+    float hitR = (kRingThickness + kHitPadding) * s;
+    float bestDist = FLT_MAX;
+    GizmoAxis bestAxis = GizmoAxis::None;
+
+    // For each axis, the ring lies in the plane perpendicular to that axis
+    // passing through m_position. We intersect the ray with that plane,
+    // then check if the intersection point is near the ring radius.
+    GizmoAxis axes[] = { GizmoAxis::X, GizmoAxis::Y, GizmoAxis::Z };
+    for (GizmoAxis axis : axes)
+    {
+        float normal[3] = {0, 0, 0};
+        int ai = (axis == GizmoAxis::X) ? 0 : (axis == GizmoAxis::Y) ? 1 : 2;
+        normal[ai] = 1.0f;
+
+        // Ray-plane intersection: t = dot(normal, center - origin) / dot(normal, dir)
+        float denom = normal[0]*ray.direction[0] + normal[1]*ray.direction[1] + normal[2]*ray.direction[2];
+        if (std::abs(denom) < 1e-6f)
+            continue;  // ray parallel to plane
+
+        float diff[3] = {
+            m_position[0] - ray.origin[0],
+            m_position[1] - ray.origin[1],
+            m_position[2] - ray.origin[2]
+        };
+        float t = (diff[0]*normal[0] + diff[1]*normal[1] + diff[2]*normal[2]) / denom;
+        if (t < 0)
+            continue;  // behind camera
+
+        // Point on plane
+        float px = ray.origin[0] + ray.direction[0] * t - m_position[0];
+        float py = ray.origin[1] + ray.direction[1] * t - m_position[1];
+        float pz = ray.origin[2] + ray.direction[2] * t - m_position[2];
+
+        // Distance from center in the plane
+        float distFromCenter = std::sqrt(px*px + py*py + pz*pz);
+
+        // Check if near the ring
+        float distFromRing = std::abs(distFromCenter - ringR);
+        if (distFromRing < hitR && distFromRing < bestDist)
+        {
+            bestDist = distFromRing;
+            bestAxis = axis;
+        }
+    }
+
+    return bestAxis;
+}
+
+float RotateGizmo::projectRotation(const Ray &ray, const Ray &dragStartRay) const
+{
+    if (m_activeAxis == GizmoAxis::None)
+        return 0.0f;
+
+    float normal[3] = {0, 0, 0};
+    int ai = (m_activeAxis == GizmoAxis::X) ? 0 : (m_activeAxis == GizmoAxis::Y) ? 1 : 2;
+    normal[ai] = 1.0f;
+
+    // Intersect both rays with the rotation plane
+    auto intersectPlane = [&](const Ray &r, float &outX, float &outY, float &outZ) -> bool {
+        float denom = normal[0]*r.direction[0] + normal[1]*r.direction[1] + normal[2]*r.direction[2];
+        if (std::abs(denom) < 1e-6f)
+            return false;
+        float diff[3] = {
+            m_position[0] - r.origin[0],
+            m_position[1] - r.origin[1],
+            m_position[2] - r.origin[2]
+        };
+        float t = (diff[0]*normal[0] + diff[1]*normal[1] + diff[2]*normal[2]) / denom;
+        outX = r.origin[0] + r.direction[0] * t - m_position[0];
+        outY = r.origin[1] + r.direction[1] * t - m_position[1];
+        outZ = r.origin[2] + r.direction[2] * t - m_position[2];
+        return true;
+    };
+
+    float sx, sy, sz, cx, cy, cz;
+    if (!intersectPlane(dragStartRay, sx, sy, sz) || !intersectPlane(ray, cx, cy, cz))
+        return 0.0f;
+
+    // Project onto the 2D plane perpendicular to the axis
+    // For X axis: use (Y, Z). For Y: (X, Z). For Z: (X, Y).
+    float startAngle, currentAngle;
+    if (ai == 0) {  // X axis — rotate in YZ plane
+        startAngle = std::atan2(sz, sy);
+        currentAngle = std::atan2(cz, cy);
+    } else if (ai == 1) {  // Y axis — rotate in XZ plane
+        startAngle = std::atan2(sx, sz);
+        currentAngle = std::atan2(cx, cz);
+    } else {  // Z axis — rotate in XY plane
+        startAngle = std::atan2(sy, sx);
+        currentAngle = std::atan2(cy, cx);
+    }
+
+    return currentAngle - startAngle;
+}
+
 } // namespace qlcrender

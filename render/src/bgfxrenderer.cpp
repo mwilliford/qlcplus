@@ -238,7 +238,10 @@ void BgfxRenderer::frame()
     renderGrid();
     renderFixtures();
     renderEllipsoids();
-    renderGizmo();
+    if (m_gizmoMode == 0)
+        renderGizmo();
+    else
+        renderRotateGizmo();
     renderLabels();
 
     // Handle screenshot request (fires callback during bgfx::frame)
@@ -358,7 +361,7 @@ int32_t BgfxRenderer::hitTest(float mouseX, float mouseY,
 GizmoAxis BgfxRenderer::gizmoHitTest(float mouseX, float mouseY,
                                       uint32_t viewportW, uint32_t viewportH)
 {
-    if (m_selectedFixtureId < 0)
+    if (m_selectedIds.empty())
         return GizmoAxis::None;
 
     float view[16], proj[16];
@@ -455,9 +458,7 @@ void BgfxRenderer::renderFixtures()
     {
         // Determine color: highlight if selected (and solid, not ghost)
         const float *color = fixture.color;
-        if (m_selectedFixtureId >= 0
-            && fixture.id == uint32_t(m_selectedFixtureId)
-            && fixture.color[3] >= 0.99f)
+        if (isSelected(fixture.id) && fixture.color[3] >= 0.99f)
         {
             color = selectColor;
         }
@@ -628,13 +629,14 @@ void BgfxRenderer::renderEllipsoids()
 
 void BgfxRenderer::renderGizmo()
 {
-    if (m_selectedFixtureId < 0 || !bgfx::isValid(m_colorProgram))
+    int32_t primaryId = selectedFixture();
+    if (primaryId < 0 || !bgfx::isValid(m_colorProgram))
         return;
 
-    // Find the selected fixture's position for gizmo placement
+    // Place gizmo at primary selected fixture's position
     for (const auto &f : m_fixtures)
     {
-        if (f.id == uint32_t(m_selectedFixtureId) && f.color[3] >= 0.99f)
+        if (f.id == uint32_t(primaryId) && f.color[3] >= 0.99f)
         {
             m_gizmo.setPosition(f.transform[12], f.transform[13], f.transform[14]);
             m_gizmo.setCameraDistance(m_camera.distance());
@@ -764,6 +766,98 @@ void BgfxRenderer::renderGizmo()
     bgfx::submit(0, m_colorProgram);
 }
 
+// --- Rotate Gizmo ---
+
+void BgfxRenderer::renderRotateGizmo()
+{
+    int32_t primaryId = selectedFixture();
+    if (primaryId < 0 || !bgfx::isValid(m_colorProgram))
+        return;
+
+    // Place rotate gizmo at primary selected fixture
+    for (const auto &f : m_fixtures)
+    {
+        if (f.id == uint32_t(primaryId) && f.color[3] >= 0.99f)
+        {
+            m_rotateGizmo.setPosition(f.transform[12], f.transform[13], f.transform[14]);
+            m_rotateGizmo.setCameraDistance(m_camera.distance());
+            break;
+        }
+    }
+
+    float pos[3];
+    m_rotateGizmo.getPosition(pos);
+    float s = m_rotateGizmo.scale();
+    float ringR = qlcrender::RotateGizmo::kRingRadius * s;
+    int segments = qlcrender::RotateGizmo::kRingSegments;
+
+    // 3 rings × (segments * 2) verts (line list, each segment = 2 verts)
+    const uint32_t totalVerts = 3 * segments * 2;
+    if (!bgfx::getAvailTransientVertexBuffer(totalVerts, PosColorVertex::layout))
+        return;
+
+    bgfx::TransientVertexBuffer tvb;
+    bgfx::allocTransientVertexBuffer(&tvb, totalVerts, PosColorVertex::layout);
+    auto *v = (PosColorVertex *)tvb.data;
+    uint32_t idx = 0;
+
+    qlcrender::GizmoAxis active = m_rotateGizmo.activeAxis();
+    qlcrender::GizmoAxis hovered = m_rotateGizmo.hoveredAxis();
+
+    struct RingInfo {
+        qlcrender::GizmoAxis axis;
+        uint32_t color;
+        uint32_t highlightColor;
+    };
+
+    RingInfo rings[3] = {
+        { qlcrender::GizmoAxis::X, 0xff0000cc, 0xff0000ff },  // red (ABGR)
+        { qlcrender::GizmoAxis::Y, 0xff00cc00, 0xff00ff00 },  // green
+        { qlcrender::GizmoAxis::Z, 0xffcc0000, 0xffff0000 },  // blue
+    };
+
+    const float pi = 3.14159265358979323846f;
+
+    for (const auto &ring : rings)
+    {
+        bool highlight = (ring.axis == active || ring.axis == hovered);
+        uint32_t col = highlight ? ring.highlightColor : ring.color;
+
+        for (int i = 0; i < segments; i++)
+        {
+            float a0 = 2.0f * pi * float(i) / float(segments);
+            float a1 = 2.0f * pi * float(i + 1) / float(segments);
+            float c0 = std::cos(a0) * ringR, s0 = std::sin(a0) * ringR;
+            float c1 = std::cos(a1) * ringR, s1 = std::sin(a1) * ringR;
+
+            float x0, y0, z0, x1, y1, z1;
+            if (ring.axis == qlcrender::GizmoAxis::X) {
+                // Ring in YZ plane
+                x0 = pos[0]; y0 = pos[1] + c0; z0 = pos[2] + s0;
+                x1 = pos[0]; y1 = pos[1] + c1; z1 = pos[2] + s1;
+            } else if (ring.axis == qlcrender::GizmoAxis::Y) {
+                // Ring in XZ plane
+                x0 = pos[0] + s0; y0 = pos[1]; z0 = pos[2] + c0;
+                x1 = pos[0] + s1; y1 = pos[1]; z1 = pos[2] + c1;
+            } else {
+                // Ring in XY plane
+                x0 = pos[0] + c0; y0 = pos[1] + s0; z0 = pos[2];
+                x1 = pos[0] + c1; y1 = pos[1] + s1; z1 = pos[2];
+            }
+
+            v[idx++] = { x0, y0, z0, col };
+            v[idx++] = { x1, y1, z1, col };
+        }
+    }
+
+    float identity[16];
+    bx::mtxIdentity(identity);
+    bgfx::setTransform(identity);
+    bgfx::setState(BGFX_STATE_WRITE_RGB | BGFX_STATE_PT_LINES);
+    bgfx::setVertexBuffer(0, &tvb);
+    bgfx::submit(0, m_colorProgram);
+}
+
 // --- Labels ---
 
 void BgfxRenderer::renderLabels()
@@ -823,9 +917,7 @@ void BgfxRenderer::renderLabels()
             continue;
 
         // Color: white for selected, dim gray for others
-        uint8_t attr = (m_selectedFixtureId >= 0 && f.id == uint32_t(m_selectedFixtureId))
-                       ? 0x0f  // bright white
-                       : 0x07; // gray
+        uint8_t attr = isSelected(f.id) ? 0x0f : 0x07;
 
         bgfx::dbgTextPrintf(uint16_t(col), uint16_t(row), attr, "%s", f.name.c_str());
     }
