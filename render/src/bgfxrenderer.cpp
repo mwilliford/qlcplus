@@ -237,6 +237,7 @@ void BgfxRenderer::frame()
 
     renderGrid();
     renderTrusses();
+    renderObservationLines();
     renderFixtures();
     renderEllipsoids();
     if (m_gizmoMode == 0)
@@ -576,6 +577,46 @@ void BgfxRenderer::renderSceneGraph(const SceneNode &node,
 void BgfxRenderer::setCalibrationOverlays(const std::vector<RenderEllipsoid>& ellipsoids)
 {
     m_ellipsoids = ellipsoids;
+}
+
+void BgfxRenderer::setObservationLines(const std::vector<RenderLine>& lines)
+{
+    m_observationLines = lines;
+}
+
+void BgfxRenderer::renderObservationLines()
+{
+    if (m_observationLines.empty() || !bgfx::isValid(m_colorProgram))
+        return;
+
+    uint32_t totalVerts = uint32_t(m_observationLines.size()) * 2;
+    if (!bgfx::getAvailTransientVertexBuffer(totalVerts, PosColorVertex::layout))
+        return;
+
+    bgfx::TransientVertexBuffer tvb;
+    bgfx::allocTransientVertexBuffer(&tvb, totalVerts, PosColorVertex::layout);
+    auto *v = (PosColorVertex *)tvb.data;
+
+    for (size_t i = 0; i < m_observationLines.size(); i++)
+    {
+        const auto &line = m_observationLines[i];
+        // Convert RGBA float [0,1] to packed ABGR uint32
+        uint32_t r = uint32_t(line.color[0] * 255) & 0xFF;
+        uint32_t g = uint32_t(line.color[1] * 255) & 0xFF;
+        uint32_t b = uint32_t(line.color[2] * 255) & 0xFF;
+        uint32_t a = uint32_t(line.color[3] * 255) & 0xFF;
+        uint32_t col = (a << 24) | (b << 16) | (g << 8) | r;
+
+        v[i*2+0] = { line.start[0], line.start[1], line.start[2], col };
+        v[i*2+1] = { line.end[0],   line.end[1],   line.end[2],   col };
+    }
+
+    float identity[16];
+    bx::mtxIdentity(identity);
+    bgfx::setTransform(identity);
+    bgfx::setState(BGFX_STATE_WRITE_RGB | BGFX_STATE_PT_LINES);
+    bgfx::setVertexBuffer(0, &tvb);
+    bgfx::submit(0, m_colorProgram);
 }
 
 void BgfxRenderer::renderEllipsoids()

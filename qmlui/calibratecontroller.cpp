@@ -130,6 +130,38 @@ void CalibrateController::dismissSolverResults()
     emit changed();
 }
 
+void CalibrateController::acceptFixtureResult(int fixtureId)
+{
+    SpatialModel *sm = m_doc->spatialModel();
+    QString id = QString::number(fixtureId);
+    if (sm->solverDerivedTransform(id).has_value())
+    {
+        sm->promoteTransform(id, SpatialModel::SolverDerived);
+        emit changed();
+    }
+}
+
+void CalibrateController::dismissFixtureResult(int fixtureId)
+{
+    SpatialModel *sm = m_doc->spatialModel();
+    QString id = QString::number(fixtureId);
+    sm->clearTransformLayer(id, SpatialModel::SolverDerived);
+    SpatialModel::FixtureViz emptyViz;
+    sm->setFixtureViz(id, emptyViz);
+    emit changed();
+}
+
+int CalibrateController::addAimObs(int fixtureId, double targetX, double targetY,
+                                    double targetZ, double certainty)
+{
+    CalibrationModel *cm = m_doc->calibrationModel();
+    std::vector<double> emptyDmx;
+    int id = cm->addAimObservation(QString::number(fixtureId), emptyDmx,
+                                    targetX, targetY, targetZ, certainty);
+    emit changed();
+    return id;
+}
+
 // ---------------------------------------------------------------------------
 // Constraints
 // ---------------------------------------------------------------------------

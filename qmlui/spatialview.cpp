@@ -25,6 +25,7 @@
 #include "gltfloader.h"
 #include "primitivegen.h"
 #include "spatialmodel.h"
+#include "calibrationmodel.h"
 #include "doc.h"
 #include "fixture.h"
 #include "qlcfixturedef.h"
@@ -54,6 +55,12 @@ SpatialView::SpatialView(Doc *doc, QWindow *parent)
             this, &SpatialView::onSolverVizChanged);
     connect(sm, &SpatialModel::trussesChanged,
             this, [this]() { rebuildTrusses(); });
+
+    CalibrationModel *cm = m_doc->calibrationModel();
+    connect(cm, &CalibrationModel::observationsChanged,
+            this, [this]() { rebuildObservationLines(); });
+    connect(cm, &CalibrationModel::solveCompleted,
+            this, [this](bool) { rebuildObservationLines(); });
 }
 
 SpatialView::~SpatialView()
@@ -152,6 +159,7 @@ void SpatialView::initBgfx()
         rebuildFixtures();
         rebuildEllipsoids();
         rebuildTrusses();
+        rebuildObservationLines();
         m_frameTimer.start(16);
         qDebug() << "[SpatialView] bgfx initialized" << w << "x" << h;
     }
@@ -493,12 +501,14 @@ void SpatialView::onSpatialTransformChanged(const QString &id)
     Q_UNUSED(id);
     rebuildFixtures();
     rebuildEllipsoids();
+    rebuildObservationLines();
 }
 
 void SpatialView::onSolverVizChanged()
 {
     rebuildFixtures();
     rebuildEllipsoids();
+    rebuildObservationLines();
 }
 
 static void addFixtureEntry(std::vector<qlcrender::RenderFixture> &out,
@@ -665,6 +675,60 @@ void SpatialView::rebuildTrusses()
     }
 
     m_renderer->setTrusses(trusses);
+}
+
+void SpatialView::rebuildObservationLines()
+{
+    if (!m_bgfxReady)
+        return;
+
+    CalibrationModel *cm = m_doc->calibrationModel();
+    SpatialModel *sm = m_doc->spatialModel();
+    std::vector<qlcrender::RenderLine> lines;
+
+    for (const CalibrationModel::Observation &obs : cm->observations())
+    {
+        std::visit([&](const auto &o) {
+            using T = std::decay_t<decltype(o)>;
+
+            if constexpr (std::is_same_v<T, CalibrationModel::DistanceObs>)
+            {
+                rigmath::RigidTransform tA = sm->fixtureTransform(o.fixtureA);
+                rigmath::RigidTransform tB = sm->fixtureTransform(o.fixtureB);
+
+                qlcrender::RenderLine line;
+                line.start[0] = float(tA.pos[0]);
+                line.start[1] = float(tA.pos[1]);
+                line.start[2] = float(tA.pos[2]);
+                line.end[0] = float(tB.pos[0]);
+                line.end[1] = float(tB.pos[1]);
+                line.end[2] = float(tB.pos[2]);
+                // Orange-yellow for distance
+                line.color[0] = 1.0f; line.color[1] = 0.8f;
+                line.color[2] = 0.2f; line.color[3] = 0.9f;
+                lines.push_back(line);
+            }
+            else if constexpr (std::is_same_v<T, CalibrationModel::AimObs>)
+            {
+                rigmath::RigidTransform t = sm->fixtureTransform(o.fixture);
+
+                qlcrender::RenderLine line;
+                line.start[0] = float(t.pos[0]);
+                line.start[1] = float(t.pos[1]);
+                line.start[2] = float(t.pos[2]);
+                line.end[0] = float(o.target[0]);
+                line.end[1] = float(o.target[1]);
+                line.end[2] = float(o.target[2]);
+                // Cyan for aim
+                line.color[0] = 0.3f; line.color[1] = 0.9f;
+                line.color[2] = 0.9f; line.color[3] = 0.9f;
+                lines.push_back(line);
+            }
+            // Position, Rotation, Crossing, BeamDirection: no line viz for v1
+        }, obs);
+    }
+
+    m_renderer->setObservationLines(lines);
 }
 
 // ---------------------------------------------------------------------------

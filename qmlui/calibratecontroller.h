@@ -55,6 +55,9 @@ public:
     Q_INVOKABLE bool runSolve();
     Q_INVOKABLE void acceptSolverResults();
     Q_INVOKABLE void dismissSolverResults();
+    Q_INVOKABLE void acceptFixtureResult(int fixtureId);
+    Q_INVOKABLE void dismissFixtureResult(int fixtureId);
+    Q_INVOKABLE int addAimObs(int fixtureId, double targetX, double targetY, double targetZ, double certainty);
 
     // --- Constraints ---
     Q_INVOKABLE void lockFixtureInSolver(int fixtureId);
