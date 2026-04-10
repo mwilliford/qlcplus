@@ -337,24 +337,16 @@ bool CalibrationModel::buildFixtureSpec(quint32 fixtureId,
 // Solver
 // ---------------------------------------------------------------------------
 
-// Map a user tolerance to a solver certainty weight.
-// Tighter tolerance → higher certainty → stronger prior.
-static double certaintyFromTolerance(double tolerance, bool isRotation)
+// Convert a legacy "certainty" [0..1] to a physical sigma (meters).
+// Linear mapping: c=1.0→1cm, c=0.95→7cm, c=0.90→12cm, c=0.50→52cm, c=0.10→92cm.
+// Used for observation sigmas when callers haven't been updated to pass sigma
+// directly. Returned value is in meters for position/distance/aim observations;
+// rotations convert degrees → radians separately.
+static double sigmaFromCertainty(double certainty)
 {
-    if (tolerance <= 0.0)
-        return 0.0;  // no constraint
-
-    // Position: 1 / (1 + 2*tol_m) — 0.5m → 0.50, 0.05m → 0.91, 5m → 0.09
-    // Rotation: 1 / (1 + deg/15) — 15° → 0.50, 5° → 0.75, 90° → 0.14
-    double c;
-    if (isRotation)
-        c = 1.0 / (1.0 + tolerance / 15.0);
-    else
-        c = 1.0 / (1.0 + 2.0 * tolerance);
-
-    if (c < 0.05) c = 0.05;
-    if (c > 0.99) c = 0.99;
-    return c;
+    if (certainty >= 1.0) return 0.01;   // 1cm for "hard" observations
+    if (certainty <= 0.0) return 10.0;   // very loose
+    return (1.0 - certainty) + 0.02;
 }
 
 bool CalibrationModel::solve()
@@ -426,6 +418,9 @@ bool CalibrationModel::solve()
 
     // Auto-add layout priors (soft constraints from committed positions + tolerances)
     // These anchor the solver so it doesn't drift from user-placed positions.
+    // User tolerance → sigma directly: tolerance 0.5m means σ=0.5m.
+    // Rotation tolerances are degrees and must be converted to radians for the solver.
+    static constexpr double kDegToRad = M_PI / 180.0;
     for (const QString &fid : referencedFixtures)
     {
         auto committed = m_spatialModel->committedTransform(fid);
@@ -443,21 +438,23 @@ bool CalibrationModel::solve()
         for (int dof = 0; dof < 6; dof++)
         {
             double tol = getTolerance(fid, dof);
-            bool isRot = (dof >= 3);
+            if (tol <= 0.0)
+                continue;  // no prior for this DOF
 
-            // For rotation tolerances, the user value is degrees but solver uses radians
-            double certainty = certaintyFromTolerance(tol, isRot);
-            if (certainty <= 0.0)
-                continue;
+            // Position DOFs (0-2) use tolerance in meters directly.
+            // Rotation DOFs (3-5) store tolerance in degrees → convert to radians.
+            double sigma = (dof < 3) ? tol : (tol * kDegToRad);
 
             DOFConstraint dc;
             dc.value = poseVals[dof];
-            dc.certainty = certainty;
+            dc.sigma = sigma;
             prob.setConstraint(sid, dof, dc);
         }
     }
 
     // Explicit constraints override auto-priors for the same DOF
+    // Legacy FixtureConstraint still uses certainty → pass through to DOFConstraint
+    // which in v0.8.0 treats certainty as inv_sigma directly.
     for (auto it = m_constraints.constBegin(); it != m_constraints.constEnd(); ++it)
     {
         std::string sid = it.key().toStdString();
@@ -466,7 +463,7 @@ bool CalibrationModel::solve()
         {
             DOFConstraint dc;
             dc.value = c.value;
-            dc.certainty = c.certainty;
+            dc.certainty = c.certainty;  // legacy path
             prob.setConstraint(sid, c.dof, dc);
             if (c.certainty < 1.0)
                 allLocked = false;
@@ -476,7 +473,7 @@ bool CalibrationModel::solve()
             prob.lockFixture(sid);
     }
 
-    // Add observations to the solver
+    // Add observations to the solver using sigma-based API
     for (const Observation &obs : m_observations)
     {
         std::visit([&prob](const auto &o) {
@@ -484,11 +481,14 @@ bool CalibrationModel::solve()
 
             if constexpr (std::is_same_v<T, AimObs>)
             {
-                prob.addAimObservation(o.fixture.toStdString(),
-                                       o.dmxNormalized, o.target, o.certainty);
+                double sigma = sigmaFromCertainty(o.certainty);
+                prob.addAimObservationSigma(o.fixture.toStdString(),
+                                            o.dmxNormalized, o.target, sigma);
             }
             else if constexpr (std::is_same_v<T, CrossingObs>)
             {
+                // CrossingObservation doesn't have a Sigma variant in v0.8.0;
+                // pass certainty through legacy path (rigmath treats it as inv_sigma).
                 std::vector<std::string> fids;
                 for (const auto &f : o.fixtures) fids.push_back(f.toStdString());
                 prob.addCrossingObservation(fids, o.dmxValues,
@@ -496,16 +496,22 @@ bool CalibrationModel::solve()
             }
             else if constexpr (std::is_same_v<T, PositionObs>)
             {
-                prob.addPositionObservation(o.fixture.toStdString(),
-                                            o.axis, o.value, o.certainty);
+                double sigma = sigmaFromCertainty(o.certainty);
+                prob.addPositionObservationSigma(o.fixture.toStdString(),
+                                                  o.axis, o.value, sigma);
             }
             else if constexpr (std::is_same_v<T, RotationObs>)
             {
-                prob.addRotationObservation(o.fixture.toStdString(),
-                                            o.axis, o.valueDeg, o.certainty);
+                // Rotation sigma is in radians; our certainty maps to meters-ish,
+                // so reuse sigmaFromCertainty and treat the result as radians
+                // (c=0.95 → ~0.07 rad ≈ 4°, which matches "tight estimate").
+                double sigma_rad = sigmaFromCertainty(o.certainty);
+                prob.addRotationObservationSigma(o.fixture.toStdString(),
+                                                  o.axis, o.valueDeg, sigma_rad);
             }
             else if constexpr (std::is_same_v<T, BeamDirectionObs>)
             {
+                // Legacy path — no Sigma variant in v0.8.0 for beam direction
                 prob.addBeamDirectionObservation(
                     o.fixture.toStdString(), o.dmxNormalized,
                     o.elevationDeg, o.azimuthDeg,
@@ -513,9 +519,10 @@ bool CalibrationModel::solve()
             }
             else if constexpr (std::is_same_v<T, DistanceObs>)
             {
-                prob.addDistanceObservation(o.fixtureA.toStdString(),
-                                            o.fixtureB.toStdString(),
-                                            o.distance, o.certainty);
+                double sigma = sigmaFromCertainty(o.certainty);
+                prob.addDistanceObservationSigma(o.fixtureA.toStdString(),
+                                                  o.fixtureB.toStdString(),
+                                                  o.distance, sigma);
             }
         }, obs);
     }
