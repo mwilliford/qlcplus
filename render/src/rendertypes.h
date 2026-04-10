@@ -49,4 +49,14 @@ struct RenderTruss
     float color[4] = {0.8f, 0.8f, 0.2f, 1.0f};  // yellow
 };
 
+struct RenderBeamCone
+{
+    uint32_t fixtureId;
+    float origin[3];         // world-space beam origin
+    float direction[3];      // world-space unit direction
+    float halfAngleDeg;      // cone half-angle
+    float length;            // meters
+    float color[4];          // RGBA
+};
+
 } // namespace qlcrender
