@@ -150,77 +150,83 @@ Rectangle
                 Layout.fillWidth: true
             }
 
-            // --- Tool + Frame rows (visible only with selection) ---
+            // --- Tool + Frame combined row (visible only with selection) ---
             RowLayout
             {
                 visible: spatialController.hasSelection
                 Layout.fillWidth: true
                 spacing: 4
 
-                Text { text: "Tool"; color: "#999"; font.pixelSize: 11;
-                       Layout.preferredWidth: 36; Layout.alignment: Qt.AlignVCenter }
-
+                // Tool: Move / Rotate
                 Button
                 {
-                    text: "Move"
+                    text: "\u2194"  // ↔ horizontal arrows = move
                     checkable: true
                     checked: spatialController.gizmoMode === 0
                     autoExclusive: true
-                    implicitHeight: 24; Layout.fillWidth: true
+                    implicitWidth: 26; implicitHeight: 22
                     onClicked: spatialController.gizmoMode = 0
+                    ToolTip.visible: hovered
+                    ToolTip.delay: 500
+                    ToolTip.text: "Move (W) — translate gizmo"
                     background: Rectangle { color: parent.checked ? "#4a9eff" : (parent.hovered ? "#444" : "#333"); radius: 3 }
                     contentItem: Text { text: parent.text; color: parent.checked ? "#fff" : "#aaa";
-                        font.pixelSize: 10; horizontalAlignment: Text.AlignHCenter; verticalAlignment: Text.AlignVCenter }
+                        font.pixelSize: 14; horizontalAlignment: Text.AlignHCenter; verticalAlignment: Text.AlignVCenter }
                 }
 
                 Button
                 {
-                    text: "Rotate"
+                    text: "\u21BB"  // ↻ clockwise arrow = rotate
                     checkable: true
                     checked: spatialController.gizmoMode === 1
                     autoExclusive: true
-                    implicitHeight: 24; Layout.fillWidth: true
+                    implicitWidth: 26; implicitHeight: 22
                     onClicked: spatialController.gizmoMode = 1
+                    ToolTip.visible: hovered
+                    ToolTip.delay: 500
+                    ToolTip.text: "Rotate (E) — rotate gizmo"
                     background: Rectangle { color: parent.checked ? "#4a9eff" : (parent.hovered ? "#444" : "#333"); radius: 3 }
                     contentItem: Text { text: parent.text; color: parent.checked ? "#fff" : "#aaa";
-                        font.pixelSize: 10; horizontalAlignment: Text.AlignHCenter; verticalAlignment: Text.AlignVCenter }
+                        font.pixelSize: 14; horizontalAlignment: Text.AlignHCenter; verticalAlignment: Text.AlignVCenter }
                 }
-            }
 
-            RowLayout
-            {
-                visible: spatialController.hasSelection
-                Layout.fillWidth: true
-                spacing: 4
+                // Separator
+                Rectangle { Layout.preferredWidth: 1; Layout.fillHeight: true; color: "#444" }
 
-                Text { text: "Frame"; color: "#999"; font.pixelSize: 11;
-                       Layout.preferredWidth: 36; Layout.alignment: Qt.AlignVCenter }
-
+                // Frame: World / Local
                 Button
                 {
-                    text: "World"
+                    text: "W"
                     checkable: true
                     checked: spatialController.axisMode === 0
                     autoExclusive: true
-                    implicitHeight: 24; Layout.fillWidth: true
+                    implicitWidth: 26; implicitHeight: 22
                     onClicked: spatialController.axisMode = 0
+                    ToolTip.visible: hovered
+                    ToolTip.delay: 500
+                    ToolTip.text: "World frame — gizmo aligns to world axes"
                     background: Rectangle { color: parent.checked ? "#4a9eff" : (parent.hovered ? "#444" : "#333"); radius: 3 }
                     contentItem: Text { text: parent.text; color: parent.checked ? "#fff" : "#aaa";
-                        font.pixelSize: 10; horizontalAlignment: Text.AlignHCenter; verticalAlignment: Text.AlignVCenter }
+                        font.pixelSize: 11; font.bold: true; horizontalAlignment: Text.AlignHCenter; verticalAlignment: Text.AlignVCenter }
                 }
 
                 Button
                 {
-                    text: "Local"
+                    text: "L"
                     checkable: true
                     checked: spatialController.axisMode === 1
                     autoExclusive: true
-                    implicitHeight: 24; Layout.fillWidth: true
+                    implicitWidth: 26; implicitHeight: 22
                     onClicked: spatialController.axisMode = 1
+                    ToolTip.visible: hovered
+                    ToolTip.delay: 500
+                    ToolTip.text: "Local frame — gizmo aligns to fixture orientation"
                     background: Rectangle { color: parent.checked ? "#4a9eff" : (parent.hovered ? "#444" : "#333"); radius: 3 }
                     contentItem: Text { text: parent.text; color: parent.checked ? "#fff" : "#aaa";
-                        font.pixelSize: 10; horizontalAlignment: Text.AlignHCenter; verticalAlignment: Text.AlignVCenter }
+                        font.pixelSize: 11; font.bold: true; horizontalAlignment: Text.AlignHCenter; verticalAlignment: Text.AlignVCenter }
                 }
+
+                Item { Layout.fillWidth: true }  // spacer
             }
 
             // ===== NO SELECTION: Workspace tools =====
@@ -237,9 +243,11 @@ Rectangle
                 Button
                 {
                     text: "+ Add Truss"
-                    implicitHeight: 28
+                    implicitHeight: 24
                     Layout.fillWidth: true
                     onClicked: spatialController.addDefaultTruss()
+                    ToolTip.visible: hovered; ToolTip.delay: 500
+                    ToolTip.text: "Add a default truss (3m pipe at Z=3m)"
                     background: Rectangle { color: parent.hovered ? "#444" : "#333"; radius: 3 }
                     contentItem: Text { text: parent.text; color: "#aaa"; font.pixelSize: 11;
                         horizontalAlignment: Text.AlignHCenter; verticalAlignment: Text.AlignVCenter }
@@ -265,28 +273,36 @@ Rectangle
 
                     Button
                     {
-                        text: "X"; implicitWidth: 36; implicitHeight: 26
+                        text: "X"; implicitWidth: 30; implicitHeight: 22
                         onClicked: spatialController.alignSelection("X")
+                        ToolTip.visible: hovered; ToolTip.delay: 500
+                        ToolTip.text: "Align selected fixtures on X axis"
                         background: Rectangle { color: parent.hovered ? "#e74c3c" : "#444"; radius: 3 }
-                        contentItem: Text { text: parent.text; color: "#fff"; font.pixelSize: 11;
+                        contentItem: Text { text: parent.text; color: "#fff"; font.pixelSize: 11; font.bold: true;
                             horizontalAlignment: Text.AlignHCenter; verticalAlignment: Text.AlignVCenter }
                     }
                     Button
                     {
-                        text: "Y"; implicitWidth: 36; implicitHeight: 26
+                        text: "Y"; implicitWidth: 30; implicitHeight: 22
                         onClicked: spatialController.alignSelection("Y")
+                        ToolTip.visible: hovered; ToolTip.delay: 500
+                        ToolTip.text: "Align selected fixtures on Y axis"
                         background: Rectangle { color: parent.hovered ? "#2ecc71" : "#444"; radius: 3 }
-                        contentItem: Text { text: parent.text; color: "#fff"; font.pixelSize: 11;
+                        contentItem: Text { text: parent.text; color: "#fff"; font.pixelSize: 11; font.bold: true;
                             horizontalAlignment: Text.AlignHCenter; verticalAlignment: Text.AlignVCenter }
                     }
                     Button
                     {
-                        text: "Z"; implicitWidth: 36; implicitHeight: 26
+                        text: "Z"; implicitWidth: 30; implicitHeight: 22
                         onClicked: spatialController.alignSelection("Z")
+                        ToolTip.visible: hovered; ToolTip.delay: 500
+                        ToolTip.text: "Align selected fixtures on Z axis"
                         background: Rectangle { color: parent.hovered ? "#3498db" : "#444"; radius: 3 }
-                        contentItem: Text { text: parent.text; color: "#fff"; font.pixelSize: 11;
+                        contentItem: Text { text: parent.text; color: "#fff"; font.pixelSize: 11; font.bold: true;
                             horizontalAlignment: Text.AlignHCenter; verticalAlignment: Text.AlignVCenter }
                     }
+
+                    Item { Layout.fillWidth: true }  // spacer
                 }
             }
 
@@ -1078,25 +1094,25 @@ Rectangle
         // ===============================================================
         Rectangle { Layout.fillWidth: true; height: 1; color: "#444" }
 
-        // Snap
+        // Snap + Camera combined (compact footer row)
         RowLayout
         {
             Layout.fillWidth: true
-            spacing: 6
-
-            Text { text: "Snap"; color: "#999"; font.pixelSize: 11;
-                   Layout.preferredWidth: 36; Layout.alignment: Qt.AlignVCenter }
+            spacing: 4
 
             Button
             {
-                text: "Grid"
+                text: "\u229E"  // ⊞ grid symbol
                 checkable: true
                 checked: spatialController.gridSnap
-                implicitWidth: 44; implicitHeight: 24
+                implicitWidth: 26; implicitHeight: 22
                 onClicked: spatialController.gridSnap = checked
+                ToolTip.visible: hovered
+                ToolTip.delay: 500
+                ToolTip.text: "Grid snap (" + (spatialController.gridSnap ? "ON" : "OFF") + ")"
                 background: Rectangle { color: parent.checked ? "#4a9eff" : (parent.hovered ? "#444" : "#333"); radius: 3 }
                 contentItem: Text { text: parent.text; color: parent.checked ? "#fff" : "#aaa";
-                    font.pixelSize: 10; horizontalAlignment: Text.AlignHCenter; verticalAlignment: Text.AlignVCenter }
+                    font.pixelSize: 13; horizontalAlignment: Text.AlignHCenter; verticalAlignment: Text.AlignVCenter }
             }
 
             CompactSpin
@@ -1105,12 +1121,16 @@ Rectangle
                 from: 1; to: 500
                 value: Math.round(spatialController.gridSize * 100)
                 stepSize: 5
-                Layout.fillWidth: true
+                Layout.preferredWidth: 80
+                implicitHeight: 22
                 editable: true
                 enabled: spatialController.gridSnap
                 onValueModified: spatialController.gridSize = value / 100.0
-                textFromValue: function(v) { return (v / 100.0).toFixed(2) + " m" }
+                textFromValue: function(v) { return (v / 100.0).toFixed(2) + "m" }
                 valueFromText: function(t) { return Math.round(parseFloat(t) * 100) }
+                ToolTip.visible: hovered
+                ToolTip.delay: 500
+                ToolTip.text: "Grid size (meters)"
 
                 Connections
                 {
@@ -1121,41 +1141,37 @@ Rectangle
                     }
                 }
             }
-        }
 
-        // Camera presets
-        RowLayout
-        {
-            Layout.fillWidth: true
-            spacing: 4
+            // Separator
+            Rectangle { Layout.preferredWidth: 1; Layout.fillHeight: true; color: "#444" }
 
-            Text { text: "View"; color: "#999"; font.pixelSize: 11;
-                   Layout.preferredWidth: 36; Layout.alignment: Qt.AlignVCenter }
-
+            // Camera presets
             Repeater
             {
-                model: ["FOH", "Top", "Front", "Side"]
+                model: [
+                    {"label": "FOH", "tip": "Front of House camera"},
+                    {"label": "Top", "tip": "Top-down camera"},
+                    {"label": "Frt", "tip": "Front camera"},
+                    {"label": "Sid", "tip": "Side camera"}
+                ]
 
                 Button
                 {
                     Layout.fillWidth: true
-                    implicitHeight: 24
-                    text: modelData
-                    onClicked: spatialController.setCameraPreset(modelData)
+                    implicitHeight: 22
+                    text: modelData.label
+                    onClicked: spatialController.setCameraPreset(
+                        modelData.label === "Frt" ? "Front"
+                        : modelData.label === "Sid" ? "Side"
+                        : modelData.label)
+                    ToolTip.visible: hovered
+                    ToolTip.delay: 500
+                    ToolTip.text: modelData.tip
                     background: Rectangle { color: parent.hovered ? "#444" : "#333"; radius: 3 }
                     contentItem: Text { text: parent.text; color: "#aaa"; font.pixelSize: 10;
                         horizontalAlignment: Text.AlignHCenter; verticalAlignment: Text.AlignVCenter }
                 }
             }
-        }
-
-        // --- Status ---
-        Text
-        {
-            text: "Spatial View"
-            color: "#666"
-            font.pixelSize: 10
-            Layout.alignment: Qt.AlignHCenter
         }
     }
 }
