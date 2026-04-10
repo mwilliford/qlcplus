@@ -31,6 +31,7 @@
 using namespace rigmath::solver;
 
 #define KXMLQLCCalibration          "Calibration"
+#define KXMLQLCAttrSigma            "Sigma"
 #define KXMLQLCCalibrationTolerance "Tolerance"
 #define KXMLQLCAttrTx               "Tx"
 #define KXMLQLCAttrTy               "Ty"
@@ -109,7 +110,7 @@ void CalibrationModel::clearObservations()
 int CalibrationModel::addAimObservation(const QString &fixture,
                                          const std::vector<double> &dmxNormalized,
                                          double targetX, double targetY, double targetZ,
-                                         double certainty)
+                                         double sigma)
 {
     AimObs obs;
     obs.fixture = fixture;
@@ -117,31 +118,31 @@ int CalibrationModel::addAimObservation(const QString &fixture,
     obs.target[0] = targetX;
     obs.target[1] = targetY;
     obs.target[2] = targetZ;
-    obs.certainty = certainty;
+    obs.sigma = sigma;
     return addObservation(obs);
 }
 
 int CalibrationModel::addPositionObservation(const QString &fixture,
                                               int axis, double value,
-                                              double certainty)
+                                              double sigma)
 {
     PositionObs obs;
     obs.fixture = fixture;
     obs.axis = axis;
     obs.value = value;
-    obs.certainty = certainty;
+    obs.sigma = sigma;
     return addObservation(obs);
 }
 
 int CalibrationModel::addRotationObservation(const QString &fixture,
                                               int axis, double valueDeg,
-                                              double certainty)
+                                              double sigma)
 {
     RotationObs obs;
     obs.fixture = fixture;
     obs.axis = axis;
     obs.valueDeg = valueDeg;
-    obs.certainty = certainty;
+    obs.sigma = sigma;
     return addObservation(obs);
 }
 
@@ -149,7 +150,7 @@ int CalibrationModel::addBeamDirectionObservation(const QString &fixture,
                                                     const std::vector<double> &dmxNormalized,
                                                     double elevationDeg, double azimuthDeg,
                                                     bool hasElevation, bool hasAzimuth,
-                                                    double certainty)
+                                                    double sigma)
 {
     BeamDirectionObs obs;
     obs.fixture = fixture;
@@ -158,34 +159,34 @@ int CalibrationModel::addBeamDirectionObservation(const QString &fixture,
     obs.hasAzimuth = hasAzimuth;
     obs.elevationDeg = elevationDeg;
     obs.azimuthDeg = azimuthDeg;
-    obs.certainty = certainty;
+    obs.sigma = sigma;
     return addObservation(obs);
 }
 
 int CalibrationModel::addCrossingObservation(const QStringList &fixtures,
                                               const std::vector<std::vector<double>> &dmxValues,
                                               int axis, double value,
-                                              double certainty)
+                                              double sigma)
 {
     CrossingObs obs;
     obs.fixtures = fixtures;
     obs.dmxValues = dmxValues;
     obs.axis = axis;
     obs.value = value;
-    obs.certainty = certainty;
+    obs.sigma = sigma;
     return addObservation(obs);
 }
 
 int CalibrationModel::addDistanceObservation(const QString &fixtureA,
                                               const QString &fixtureB,
                                               double distance,
-                                              double certainty)
+                                              double sigma)
 {
     DistanceObs obs;
     obs.fixtureA = fixtureA;
     obs.fixtureB = fixtureB;
     obs.distance = distance;
-    obs.certainty = certainty;
+    obs.sigma = sigma;
     return addObservation(obs);
 }
 
@@ -337,17 +338,9 @@ bool CalibrationModel::buildFixtureSpec(quint32 fixtureId,
 // Solver
 // ---------------------------------------------------------------------------
 
-// Convert a legacy "certainty" [0..1] to a physical sigma (meters).
-// Linear mapping: c=1.0→1cm, c=0.95→7cm, c=0.90→12cm, c=0.50→52cm, c=0.10→92cm.
-// Used for observation sigmas when callers haven't been updated to pass sigma
-// directly. Returned value is in meters for position/distance/aim observations;
-// rotations convert degrees → radians separately.
-static double sigmaFromCertainty(double certainty)
-{
-    if (certainty >= 1.0) return 0.01;   // 1cm for "hard" observations
-    if (certainty <= 0.0) return 10.0;   // very loose
-    return (1.0 - certainty) + 0.02;
-}
+// Sigma storage conventions for observation types:
+// - Position, Distance, Aim, Crossing: meters
+// - Rotation, BeamDirection: degrees (converted to radians for the solver)
 
 bool CalibrationModel::solve()
 {
@@ -473,7 +466,10 @@ bool CalibrationModel::solve()
             prob.lockFixture(sid);
     }
 
-    // Add observations to the solver using sigma-based API
+    // Add observations to the solver using sigma-based API.
+    // Observation sigmas are stored in meters (position/distance/aim/crossing)
+    // or degrees (rotation/beam direction). Rotation degrees are converted to
+    // radians for the solver.
     for (const Observation &obs : m_observations)
     {
         std::visit([&prob](const auto &o) {
@@ -481,48 +477,47 @@ bool CalibrationModel::solve()
 
             if constexpr (std::is_same_v<T, AimObs>)
             {
-                double sigma = sigmaFromCertainty(o.certainty);
                 prob.addAimObservationSigma(o.fixture.toStdString(),
-                                            o.dmxNormalized, o.target, sigma);
+                                            o.dmxNormalized, o.target, o.sigma);
             }
             else if constexpr (std::is_same_v<T, CrossingObs>)
             {
-                // CrossingObservation doesn't have a Sigma variant in v0.8.0;
-                // pass certainty through legacy path (rigmath treats it as inv_sigma).
+                // CrossingObservation has no Sigma variant in v0.8.0;
+                // pass certainty through legacy path (v0.8.0 treats it as inv_sigma).
                 std::vector<std::string> fids;
                 for (const auto &f : o.fixtures) fids.push_back(f.toStdString());
+                double legacy_certainty = (o.sigma > 0) ? 1.0 / o.sigma : 0.01;
                 prob.addCrossingObservation(fids, o.dmxValues,
-                                            o.axis, o.value, o.certainty);
+                                            o.axis, o.value, legacy_certainty);
             }
             else if constexpr (std::is_same_v<T, PositionObs>)
             {
-                double sigma = sigmaFromCertainty(o.certainty);
                 prob.addPositionObservationSigma(o.fixture.toStdString(),
-                                                  o.axis, o.value, sigma);
+                                                  o.axis, o.value, o.sigma);
             }
             else if constexpr (std::is_same_v<T, RotationObs>)
             {
-                // Rotation sigma is in radians; our certainty maps to meters-ish,
-                // so reuse sigmaFromCertainty and treat the result as radians
-                // (c=0.95 → ~0.07 rad ≈ 4°, which matches "tight estimate").
-                double sigma_rad = sigmaFromCertainty(o.certainty);
+                // Rotation sigma is stored in degrees, solver wants radians
+                double sigma_rad = o.sigma * (M_PI / 180.0);
                 prob.addRotationObservationSigma(o.fixture.toStdString(),
                                                   o.axis, o.valueDeg, sigma_rad);
             }
             else if constexpr (std::is_same_v<T, BeamDirectionObs>)
             {
-                // Legacy path — no Sigma variant in v0.8.0 for beam direction
+                // Legacy path — no Sigma variant in v0.8.0 for beam direction.
+                // BeamDirection sigma is degrees; legacy certainty = 1/sigma_rad.
+                double sigma_rad = o.sigma * (M_PI / 180.0);
+                double legacy_certainty = (sigma_rad > 0) ? 1.0 / sigma_rad : 0.01;
                 prob.addBeamDirectionObservation(
                     o.fixture.toStdString(), o.dmxNormalized,
                     o.elevationDeg, o.azimuthDeg,
-                    o.hasElevation, o.hasAzimuth, o.certainty);
+                    o.hasElevation, o.hasAzimuth, legacy_certainty);
             }
             else if constexpr (std::is_same_v<T, DistanceObs>)
             {
-                double sigma = sigmaFromCertainty(o.certainty);
                 prob.addDistanceObservationSigma(o.fixtureA.toStdString(),
                                                   o.fixtureB.toStdString(),
-                                                  o.distance, sigma);
+                                                  o.distance, o.sigma);
             }
         }, obs);
     }
@@ -691,7 +686,7 @@ void CalibrationModel::saveXML(QXmlStreamWriter &writer) const
                 writer.writeAttribute(KXMLQLCAttrTargetX, QString::number(o.target[0], 'g', 10));
                 writer.writeAttribute(KXMLQLCAttrTargetY, QString::number(o.target[1], 'g', 10));
                 writer.writeAttribute(KXMLQLCAttrTargetZ, QString::number(o.target[2], 'g', 10));
-                writer.writeAttribute(KXMLQLCAttrCertainty, QString::number(o.certainty, 'g', 10));
+                writer.writeAttribute(KXMLQLCAttrSigma, QString::number(o.sigma, 'g', 10));
             }
             else if constexpr (std::is_same_v<T, CrossingObs>)
             {
@@ -703,21 +698,21 @@ void CalibrationModel::saveXML(QXmlStreamWriter &writer) const
                 writer.writeAttribute(KXMLQLCAttrDMX, dmxParts.join(";"));
                 writer.writeAttribute(KXMLQLCAttrAxis, QString::number(o.axis));
                 writer.writeAttribute(KXMLQLCAttrValue, QString::number(o.value, 'g', 10));
-                writer.writeAttribute(KXMLQLCAttrCertainty, QString::number(o.certainty, 'g', 10));
+                writer.writeAttribute(KXMLQLCAttrSigma, QString::number(o.sigma, 'g', 10));
             }
             else if constexpr (std::is_same_v<T, PositionObs>)
             {
                 writer.writeAttribute(KXMLQLCAttrFixture, o.fixture);
                 writer.writeAttribute(KXMLQLCAttrAxis, QString::number(o.axis));
                 writer.writeAttribute(KXMLQLCAttrValue, QString::number(o.value, 'g', 10));
-                writer.writeAttribute(KXMLQLCAttrCertainty, QString::number(o.certainty, 'g', 10));
+                writer.writeAttribute(KXMLQLCAttrSigma, QString::number(o.sigma, 'g', 10));
             }
             else if constexpr (std::is_same_v<T, RotationObs>)
             {
                 writer.writeAttribute(KXMLQLCAttrFixture, o.fixture);
                 writer.writeAttribute(KXMLQLCAttrAxis, QString::number(o.axis));
                 writer.writeAttribute(KXMLQLCAttrValue, QString::number(o.valueDeg, 'g', 10));
-                writer.writeAttribute(KXMLQLCAttrCertainty, QString::number(o.certainty, 'g', 10));
+                writer.writeAttribute(KXMLQLCAttrSigma, QString::number(o.sigma, 'g', 10));
             }
             else if constexpr (std::is_same_v<T, BeamDirectionObs>)
             {
@@ -727,14 +722,14 @@ void CalibrationModel::saveXML(QXmlStreamWriter &writer) const
                 writer.writeAttribute(KXMLQLCAttrHasAzimuth, o.hasAzimuth ? "1" : "0");
                 writer.writeAttribute(KXMLQLCAttrElevation, QString::number(o.elevationDeg, 'g', 10));
                 writer.writeAttribute(KXMLQLCAttrAzimuth, QString::number(o.azimuthDeg, 'g', 10));
-                writer.writeAttribute(KXMLQLCAttrCertainty, QString::number(o.certainty, 'g', 10));
+                writer.writeAttribute(KXMLQLCAttrSigma, QString::number(o.sigma, 'g', 10));
             }
             else if constexpr (std::is_same_v<T, DistanceObs>)
             {
                 writer.writeAttribute(KXMLQLCAttrFixtureA, o.fixtureA);
                 writer.writeAttribute(KXMLQLCAttrFixtureB, o.fixtureB);
                 writer.writeAttribute(KXMLQLCAttrDistance, QString::number(o.distance, 'g', 10));
-                writer.writeAttribute(KXMLQLCAttrCertainty, QString::number(o.certainty, 'g', 10));
+                writer.writeAttribute(KXMLQLCAttrSigma, QString::number(o.sigma, 'g', 10));
             }
         }, obs);
 
@@ -772,6 +767,24 @@ void CalibrationModel::saveXML(QXmlStreamWriter &writer) const
     writer.writeEndElement();
 }
 
+// Read sigma from XML with backwards-compat fallback to legacy certainty field.
+// Old files stored Certainty = 0.90/0.95; new files store Sigma in meters.
+static double readObsSigma(const QXmlStreamAttributes &attrs,
+                            double defaultSigma)
+{
+    if (attrs.hasAttribute(KXMLQLCAttrSigma))
+        return attrs.value(KXMLQLCAttrSigma).toDouble();
+    if (attrs.hasAttribute(KXMLQLCAttrCertainty))
+    {
+        // Legacy: certainty ∈ [0,1] is reinterpreted as inv_sigma in v0.8.0,
+        // so an old "certainty=0.95" value implies σ ≈ 1/0.95 ≈ 1.05m.
+        double c = attrs.value(KXMLQLCAttrCertainty).toDouble();
+        if (c > 0)
+            return 1.0 / c;
+    }
+    return defaultSigma;
+}
+
 bool CalibrationModel::loadXML(QXmlStreamReader &reader)
 {
     if (reader.name() != QLatin1String(KXMLQLCCalibration))
@@ -794,7 +807,7 @@ bool CalibrationModel::loadXML(QXmlStreamReader &reader)
                 obs.target[0] = attrs.value(KXMLQLCAttrTargetX).toDouble();
                 obs.target[1] = attrs.value(KXMLQLCAttrTargetY).toDouble();
                 obs.target[2] = attrs.value(KXMLQLCAttrTargetZ).toDouble();
-                obs.certainty = attrs.value(KXMLQLCAttrCertainty).toDouble();
+                obs.sigma = readObsSigma(attrs, kDefaultAimSigma);
                 m_observations[id] = obs;
             }
             else if (type == "Crossing")
@@ -807,7 +820,7 @@ bool CalibrationModel::loadXML(QXmlStreamReader &reader)
                     obs.dmxValues.push_back(stringToDmx(part));
                 obs.axis = attrs.value(KXMLQLCAttrAxis).toInt();
                 obs.value = attrs.value(KXMLQLCAttrValue).toDouble();
-                obs.certainty = attrs.value(KXMLQLCAttrCertainty).toDouble();
+                obs.sigma = readObsSigma(attrs, kDefaultCrossingSigma);
                 m_observations[id] = obs;
             }
             else if (type == "Position")
@@ -817,7 +830,7 @@ bool CalibrationModel::loadXML(QXmlStreamReader &reader)
                 obs.fixture = attrs.value(KXMLQLCAttrFixture).toString();
                 obs.axis = attrs.value(KXMLQLCAttrAxis).toInt();
                 obs.value = attrs.value(KXMLQLCAttrValue).toDouble();
-                obs.certainty = attrs.value(KXMLQLCAttrCertainty).toDouble();
+                obs.sigma = readObsSigma(attrs, kDefaultHeightSigma);
                 m_observations[id] = obs;
             }
             else if (type == "Rotation")
@@ -827,7 +840,7 @@ bool CalibrationModel::loadXML(QXmlStreamReader &reader)
                 obs.fixture = attrs.value(KXMLQLCAttrFixture).toString();
                 obs.axis = attrs.value(KXMLQLCAttrAxis).toInt();
                 obs.valueDeg = attrs.value(KXMLQLCAttrValue).toDouble();
-                obs.certainty = attrs.value(KXMLQLCAttrCertainty).toDouble();
+                obs.sigma = readObsSigma(attrs, kDefaultRotationSigma);
                 m_observations[id] = obs;
             }
             else if (type == "BeamDirection")
@@ -840,7 +853,7 @@ bool CalibrationModel::loadXML(QXmlStreamReader &reader)
                 obs.hasAzimuth = attrs.value(KXMLQLCAttrHasAzimuth).toString() == "1";
                 obs.elevationDeg = attrs.value(KXMLQLCAttrElevation).toDouble();
                 obs.azimuthDeg = attrs.value(KXMLQLCAttrAzimuth).toDouble();
-                obs.certainty = attrs.value(KXMLQLCAttrCertainty).toDouble();
+                obs.sigma = readObsSigma(attrs, kDefaultBeamDirSigma);
                 m_observations[id] = obs;
             }
             else if (type == "Distance")
@@ -850,7 +863,7 @@ bool CalibrationModel::loadXML(QXmlStreamReader &reader)
                 obs.fixtureA = attrs.value(KXMLQLCAttrFixtureA).toString();
                 obs.fixtureB = attrs.value(KXMLQLCAttrFixtureB).toString();
                 obs.distance = attrs.value(KXMLQLCAttrDistance).toDouble();
-                obs.certainty = attrs.value(KXMLQLCAttrCertainty).toDouble();
+                obs.sigma = readObsSigma(attrs, kDefaultDistanceSigma);
                 m_observations[id] = obs;
             }
 

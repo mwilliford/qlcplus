@@ -62,12 +62,23 @@ public:
     // Observation types (mirrors rigmath::solver observation records)
     // -----------------------------------------------------------------------
 
+    // Default sigmas (meters for position/distance/aim, degrees for rotation).
+    // These reflect realistic measurement precision including beam-origin
+    // uncertainty — the user measures the fixture body, but what matters is
+    // where the beam actually emerges from the optics.
+    static constexpr double kDefaultHeightSigma = 0.15;    // 15 cm
+    static constexpr double kDefaultDistanceSigma = 0.20;  // 20 cm
+    static constexpr double kDefaultAimSigma = 0.20;       // 20 cm
+    static constexpr double kDefaultRotationSigma = 5.0;   // 5 degrees
+    static constexpr double kDefaultCrossingSigma = 0.20;  // 20 cm
+    static constexpr double kDefaultBeamDirSigma = 5.0;    // 5 degrees
+
     struct AimObs {
         int id = -1;
         QString fixture;
         std::vector<double> dmxNormalized;
         double target[3] = {0, 0, 0};
-        double certainty = 0.95;
+        double sigma = kDefaultAimSigma;  // meters
     };
 
     struct CrossingObs {
@@ -76,7 +87,7 @@ public:
         std::vector<std::vector<double>> dmxValues;
         int axis = 2;        // 0=x, 1=y, 2=z
         double value = 0.0;
-        double certainty = 0.85;
+        double sigma = kDefaultCrossingSigma;  // meters
     };
 
     struct PositionObs {
@@ -84,7 +95,7 @@ public:
         QString fixture;
         int axis = 2;  // 0=x, 1=y, 2=z
         double value = 0.0;
-        double certainty = 0.95;
+        double sigma = kDefaultHeightSigma;  // meters
     };
 
     struct RotationObs {
@@ -92,7 +103,7 @@ public:
         QString fixture;
         int axis = 5;  // 0=rx, 1=ry, 2=rz (maps to pose index 3,4,5)
         double valueDeg = 0.0;
-        double certainty = 0.95;
+        double sigma = kDefaultRotationSigma;  // degrees
     };
 
     struct BeamDirectionObs {
@@ -103,7 +114,7 @@ public:
         bool hasAzimuth = false;
         double elevationDeg = 0.0;
         double azimuthDeg = 0.0;
-        double certainty = 0.85;
+        double sigma = kDefaultBeamDirSigma;  // degrees
     };
 
     struct DistanceObs {
@@ -111,7 +122,7 @@ public:
         QString fixtureA;
         QString fixtureB;
         double distance = 0.0;
-        double certainty = 0.90;
+        double sigma = kDefaultDistanceSigma;  // meters
     };
 
     using Observation = std::variant<AimObs, CrossingObs, PositionObs,
@@ -143,31 +154,31 @@ public:
     int addAimObservation(const QString &fixture,
                           const std::vector<double> &dmxNormalized,
                           double targetX, double targetY, double targetZ,
-                          double certainty = 0.95);
+                          double sigma = kDefaultAimSigma);
 
     int addPositionObservation(const QString &fixture,
                                int axis, double value,
-                               double certainty = 0.95);
+                               double sigma = kDefaultHeightSigma);
 
     int addRotationObservation(const QString &fixture,
                                 int axis, double valueDeg,
-                                double certainty = 0.95);
+                                double sigma = kDefaultRotationSigma);
 
     int addBeamDirectionObservation(const QString &fixture,
                                      const std::vector<double> &dmxNormalized,
                                      double elevationDeg, double azimuthDeg,
                                      bool hasElevation, bool hasAzimuth,
-                                     double certainty = 0.85);
+                                     double sigma = kDefaultBeamDirSigma);
 
     int addCrossingObservation(const QStringList &fixtures,
                                 const std::vector<std::vector<double>> &dmxValues,
                                 int axis, double value,
-                                double certainty = 0.85);
+                                double sigma = kDefaultCrossingSigma);
 
     int addDistanceObservation(const QString &fixtureA,
                                 const QString &fixtureB,
                                 double distance,
-                                double certainty = 0.90);
+                                double sigma = kDefaultDistanceSigma);
 
     // -----------------------------------------------------------------------
     // Per-fixture constraints

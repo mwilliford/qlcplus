@@ -804,10 +804,12 @@ Rectangle
             Text { text: "Add Observation"; color: "#ccc"; font.pixelSize: 13; font.bold: true }
 
             // Height observation (Position Z)
-            RowLayout
+            GridLayout
             {
                 Layout.fillWidth: true
-                spacing: 4
+                columns: 4
+                rowSpacing: 2
+                columnSpacing: 4
                 enabled: spatialController.hasSelection
 
                 Text { text: "Height"; color: "#999"; font.pixelSize: 11; Layout.preferredWidth: 46 }
@@ -820,8 +822,24 @@ Rectangle
                     stepSize: 5
                     Layout.fillWidth: true
                     editable: true
+                    ToolTip.visible: hovered; ToolTip.delay: 500
+                    ToolTip.text: "Measured height in meters"
                     textFromValue: function(v) { return (v / 100.0).toFixed(2) + "m" }
                     valueFromText: function(t) { return Math.round(parseFloat(t) * 100) }
+                }
+
+                CompactSpin
+                {
+                    id: heightSigmaSpin
+                    from: 1; to: 500
+                    value: 15  // default ±15cm
+                    stepSize: 5
+                    implicitWidth: 68
+                    editable: true
+                    ToolTip.visible: hovered; ToolTip.delay: 500
+                    ToolTip.text: "Measurement uncertainty (±σ)"
+                    textFromValue: function(v) { return "±" + v + "cm" }
+                    valueFromText: function(t) { return Math.round(parseFloat(t.replace("±","").replace("cm",""))) }
                 }
 
                 Button
@@ -831,7 +849,8 @@ Rectangle
                     enabled: spatialController.hasSelection
                     onClicked: calibrateController.addPositionObs(
                         spatialController.selectedFixtureId, 2,
-                        heightSpin.value / 100.0, 0.95)
+                        heightSpin.value / 100.0,
+                        heightSigmaSpin.value / 100.0)
                     background: Rectangle { color: parent.enabled ? (parent.hovered ? "#4a9eff" : "#3a7fcc") : "#444"; radius: 3 }
                     contentItem: Text { text: parent.text; color: parent.enabled ? "#fff" : "#666"; font.pixelSize: 10;
                         horizontalAlignment: Text.AlignHCenter; verticalAlignment: Text.AlignVCenter }
@@ -839,19 +858,21 @@ Rectangle
             }
 
             // Distance observation (uses current multi-selection)
-            RowLayout
+            GridLayout
             {
                 Layout.fillWidth: true
-                spacing: 4
+                columns: 4
+                rowSpacing: 2
+                columnSpacing: 4
                 enabled: spatialController.selectionCount === 2
 
                 Text {
                     text: spatialController.selectionCount === 2
                           ? "Dist A\u2194B"
-                          : "Dist (select 2)"
+                          : "Dist (sel 2)"
                     color: spatialController.selectionCount === 2 ? "#999" : "#666"
                     font.pixelSize: 11
-                    Layout.preferredWidth: 92
+                    Layout.preferredWidth: 72
                 }
 
                 CompactSpin
@@ -862,8 +883,24 @@ Rectangle
                     stepSize: 10
                     Layout.fillWidth: true
                     editable: true
+                    ToolTip.visible: hovered; ToolTip.delay: 500
+                    ToolTip.text: "Measured distance between fixtures (meters)"
                     textFromValue: function(v) { return (v / 100.0).toFixed(2) + "m" }
                     valueFromText: function(t) { return Math.round(parseFloat(t) * 100) }
+                }
+
+                CompactSpin
+                {
+                    id: distSigmaSpin
+                    from: 1; to: 500
+                    value: 20  // default ±20cm
+                    stepSize: 5
+                    implicitWidth: 68
+                    editable: true
+                    ToolTip.visible: hovered; ToolTip.delay: 500
+                    ToolTip.text: "Measurement uncertainty (±σ)"
+                    textFromValue: function(v) { return "±" + v + "cm" }
+                    valueFromText: function(t) { return Math.round(parseFloat(t.replace("±","").replace("cm",""))) }
                 }
 
                 Button
@@ -876,7 +913,8 @@ Rectangle
                         if (ids.length >= 2) {
                             calibrateController.addDistanceObs(
                                 ids[0], ids[1],
-                                distValueSpin.value / 100.0, 0.90)
+                                distValueSpin.value / 100.0,
+                                distSigmaSpin.value / 100.0)
                         }
                     }
                     background: Rectangle { color: parent.enabled ? (parent.hovered ? "#4a9eff" : "#3a7fcc") : "#444"; radius: 3 }
@@ -886,69 +924,104 @@ Rectangle
             }
 
             // Aim observation — beam aimed at a known point
-            RowLayout
+            // Two rows: XYZ target spinners, then ± sigma + Add button
+            ColumnLayout
             {
                 Layout.fillWidth: true
-                spacing: 4
+                spacing: 2
                 enabled: spatialController.hasSelection && spatialController.selectionCount === 1
 
-                Text {
-                    text: "Aim \u2192"
-                    color: (spatialController.hasSelection && spatialController.selectionCount === 1) ? "#999" : "#666"
-                    font.pixelSize: 11
-                    Layout.preferredWidth: 46
+                RowLayout
+                {
+                    Layout.fillWidth: true
+                    spacing: 4
+
+                    Text {
+                        text: "Aim \u2192"
+                        color: (spatialController.hasSelection && spatialController.selectionCount === 1) ? "#999" : "#666"
+                        font.pixelSize: 11
+                        Layout.preferredWidth: 46
+                    }
+
+                    CompactSpin
+                    {
+                        id: aimX
+                        from: -10000; to: 10000
+                        value: 0
+                        stepSize: 10
+                        Layout.fillWidth: true
+                        editable: true
+                        ToolTip.visible: hovered; ToolTip.delay: 500
+                        ToolTip.text: "Target X (m)"
+                        textFromValue: function(v) { return (v / 100.0).toFixed(1) }
+                        valueFromText: function(t) { return Math.round(parseFloat(t) * 100) }
+                    }
+
+                    CompactSpin
+                    {
+                        id: aimY
+                        from: -10000; to: 10000
+                        value: 0
+                        stepSize: 10
+                        Layout.fillWidth: true
+                        editable: true
+                        ToolTip.visible: hovered; ToolTip.delay: 500
+                        ToolTip.text: "Target Y (m)"
+                        textFromValue: function(v) { return (v / 100.0).toFixed(1) }
+                        valueFromText: function(t) { return Math.round(parseFloat(t) * 100) }
+                    }
+
+                    CompactSpin
+                    {
+                        id: aimZ
+                        from: -10000; to: 10000
+                        value: 0
+                        stepSize: 10
+                        Layout.fillWidth: true
+                        editable: true
+                        ToolTip.visible: hovered; ToolTip.delay: 500
+                        ToolTip.text: "Target Z (m)"
+                        textFromValue: function(v) { return (v / 100.0).toFixed(1) }
+                        valueFromText: function(t) { return Math.round(parseFloat(t) * 100) }
+                    }
                 }
 
-                CompactSpin
+                RowLayout
                 {
-                    id: aimX
-                    from: -10000; to: 10000
-                    value: 0
-                    stepSize: 10
-                    implicitWidth: 56
-                    editable: true
-                    textFromValue: function(v) { return (v / 100.0).toFixed(1) }
-                    valueFromText: function(t) { return Math.round(parseFloat(t) * 100) }
-                }
+                    Layout.fillWidth: true
+                    spacing: 4
 
-                CompactSpin
-                {
-                    id: aimY
-                    from: -10000; to: 10000
-                    value: 0
-                    stepSize: 10
-                    implicitWidth: 56
-                    editable: true
-                    textFromValue: function(v) { return (v / 100.0).toFixed(1) }
-                    valueFromText: function(t) { return Math.round(parseFloat(t) * 100) }
-                }
+                    Item { Layout.preferredWidth: 46 }  // label column spacer
 
-                CompactSpin
-                {
-                    id: aimZ
-                    from: -10000; to: 10000
-                    value: 0
-                    stepSize: 10
-                    implicitWidth: 56
-                    editable: true
-                    textFromValue: function(v) { return (v / 100.0).toFixed(1) }
-                    valueFromText: function(t) { return Math.round(parseFloat(t) * 100) }
-                }
+                    CompactSpin
+                    {
+                        id: aimSigmaSpin
+                        from: 1; to: 1000
+                        value: 20  // default ±20cm
+                        stepSize: 5
+                        Layout.fillWidth: true
+                        editable: true
+                        ToolTip.visible: hovered; ToolTip.delay: 500
+                        ToolTip.text: "Aim uncertainty (±σ)"
+                        textFromValue: function(v) { return "±" + v + "cm" }
+                        valueFromText: function(t) { return Math.round(parseFloat(t.replace("±","").replace("cm",""))) }
+                    }
 
-                Button
-                {
-                    text: "+ Add"
-                    implicitWidth: 50; implicitHeight: 28
-                    enabled: spatialController.hasSelection && spatialController.selectionCount === 1
-                    onClicked: calibrateController.addAimObs(
-                        spatialController.selectedFixtureId,
-                        aimX.value / 100.0,
-                        aimY.value / 100.0,
-                        aimZ.value / 100.0,
-                        0.95)
-                    background: Rectangle { color: parent.enabled ? (parent.hovered ? "#4a9eff" : "#3a7fcc") : "#444"; radius: 3 }
-                    contentItem: Text { text: parent.text; color: parent.enabled ? "#fff" : "#666"; font.pixelSize: 10;
-                        horizontalAlignment: Text.AlignHCenter; verticalAlignment: Text.AlignVCenter }
+                    Button
+                    {
+                        text: "+ Add"
+                        implicitWidth: 50; implicitHeight: 28
+                        enabled: spatialController.hasSelection && spatialController.selectionCount === 1
+                        onClicked: calibrateController.addAimObs(
+                            spatialController.selectedFixtureId,
+                            aimX.value / 100.0,
+                            aimY.value / 100.0,
+                            aimZ.value / 100.0,
+                            aimSigmaSpin.value / 100.0)
+                        background: Rectangle { color: parent.enabled ? (parent.hovered ? "#4a9eff" : "#3a7fcc") : "#444"; radius: 3 }
+                        contentItem: Text { text: parent.text; color: parent.enabled ? "#fff" : "#666"; font.pixelSize: 10;
+                            horizontalAlignment: Text.AlignHCenter; verticalAlignment: Text.AlignVCenter }
+                    }
                 }
             }
 
