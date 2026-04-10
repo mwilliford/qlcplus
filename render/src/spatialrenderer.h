@@ -77,6 +77,9 @@ public:
     virtual void setObservationLines(const std::vector<RenderLine>& lines) { (void)lines; }
     virtual void setNamedPlanes(const std::vector<RenderPlane>& planes) { (void)planes; }
 
+    // --- Beam cones (one per selected fixture, optional) ---
+    virtual void setBeamCones(const std::vector<RenderBeamCone>& cones) { (void)cones; }
+
 protected:
     std::set<int32_t> m_selectedIds;
     int m_gizmoMode = 0;

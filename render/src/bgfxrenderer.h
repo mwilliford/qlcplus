@@ -92,6 +92,7 @@ public:
 
     void setMeshBasePath(const std::string &path) override { m_meshBasePath = path; }
     void setObservationLines(const std::vector<RenderLine>& lines) override;
+    void setBeamCones(const std::vector<RenderBeamCone>& cones) override;
 
 private:
     void renderGrid();
@@ -100,6 +101,7 @@ private:
     void renderRotateGizmo();
     void renderTrusses();
     void renderObservationLines();
+    void renderBeamCones();
     void renderLabels();
     void renderSceneGraph(const SceneNode &node, const float parentTransform[16],
                           const float color[4]);
@@ -141,6 +143,9 @@ private:
     // Calibration overlays
     std::vector<RenderEllipsoid> m_ellipsoids;
     std::vector<RenderLine> m_observationLines;
+
+    // Beam cones (one per selected fixture)
+    std::vector<RenderBeamCone> m_beamCones;
 
     // Shader programs
     bgfx::ProgramHandle m_colorProgram = BGFX_INVALID_HANDLE;  // vertex-color (grid/lines)

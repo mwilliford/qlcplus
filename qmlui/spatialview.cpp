@@ -30,9 +30,16 @@
 #include "fixture.h"
 #include "qlcfixturedef.h"
 #include "qlcfixturedefcache.h"
+#include "qlcfixturemode.h"
+#include "qlcphysical.h"
+#include "qlcchannel.h"
 #include "gdtfgeometrydata.h"
 #include "qlcfile.h"
 #include "qlcconfig.h"
+
+#include <rigmath/moving_head.hpp>
+#include <rigmath/pan_only.hpp>
+#include <rigmath/fixed.hpp>
 
 #ifdef Q_OS_MACOS
 extern void *setupMetalLayerForView(void *nativeHandle);
@@ -85,6 +92,8 @@ void SpatialView::selectFixture(int32_t fixtureId)
 {
     if (m_bgfxReady)
         m_renderer->setSelectedFixture(fixtureId);
+
+    rebuildBeamCones();
 
     // Notify the controller (QML panel) of selection change
     if (m_selectionCallback)
@@ -160,6 +169,7 @@ void SpatialView::initBgfx()
         rebuildEllipsoids();
         rebuildTrusses();
         rebuildObservationLines();
+        rebuildBeamCones();
         m_frameTimer.start(16);
         qDebug() << "[SpatialView] bgfx initialized" << w << "x" << h;
     }
@@ -452,6 +462,8 @@ void SpatialView::mouseReleaseEvent(QMouseEvent *event)
             m_renderer->setSelectedFixture(hitId);
         }
 
+        rebuildBeamCones();
+
         // Notify the controller (and QML panel) of selection change
         if (m_selectionCallback)
             m_selectionCallback(m_renderer->selectedFixture(),
@@ -502,6 +514,7 @@ void SpatialView::onSpatialTransformChanged(const QString &id)
     rebuildFixtures();
     rebuildEllipsoids();
     rebuildObservationLines();
+    rebuildBeamCones();
 }
 
 void SpatialView::onSolverVizChanged()
@@ -509,6 +522,7 @@ void SpatialView::onSolverVizChanged()
     rebuildFixtures();
     rebuildEllipsoids();
     rebuildObservationLines();
+    rebuildBeamCones();
 }
 
 static void addFixtureEntry(std::vector<qlcrender::RenderFixture> &out,
@@ -729,6 +743,89 @@ void SpatialView::rebuildObservationLines()
     }
 
     m_renderer->setObservationLines(lines);
+}
+
+void SpatialView::rebuildBeamCones()
+{
+    if (!m_bgfxReady)
+        return;
+
+    std::vector<qlcrender::RenderBeamCone> cones;
+    SpatialModel *sm = m_doc->spatialModel();
+    auto selectedIds = m_renderer->selectedIds();
+
+    for (int32_t fid : selectedIds)
+    {
+        Fixture *fxi = m_doc->fixture(quint32(fid));
+        if (!fxi)
+            continue;
+
+        const QLCFixtureMode *mode = fxi->fixtureMode();
+        if (!mode)
+            continue;
+
+        // Detect kinematics: pan + tilt MSB channels
+        bool hasPan = false, hasTilt = false;
+        for (int i = 0; i < (int)mode->channels().size(); i++)
+        {
+            const QLCChannel *ch = mode->channel(i);
+            if (!ch)
+                continue;
+            if (ch->group() == QLCChannel::Pan && ch->controlByte() == QLCChannel::MSB)
+                hasPan = true;
+            if (ch->group() == QLCChannel::Tilt && ch->controlByte() == QLCChannel::MSB)
+                hasTilt = true;
+        }
+
+        QLCPhysical phy = mode->physical();
+        double panRange = phy.focusPanMax() > 0 ? phy.focusPanMax() : 540.0;
+        double tiltRange = phy.focusTiltMax() > 0 ? phy.focusTiltMax() : 270.0;
+
+        // Compute local beam ray at default (centered) angles
+        rigmath::Ray localRay;
+        if (hasPan && hasTilt)
+        {
+            rigmath::MovingHeadKinematics kin(panRange, tiltRange);
+            localRay = kin.forward_local({0.0, 0.0});
+        }
+        else if (hasPan)
+        {
+            rigmath::PanOnlyKinematics kin(panRange);
+            localRay = kin.forward_local({0.0});
+        }
+        else
+        {
+            rigmath::FixedKinematics kin;
+            localRay = kin.forward_local({});
+        }
+
+        // Transform to world space
+        rigmath::RigidTransform t = sm->fixtureTransform(QString::number(fid));
+        rigmath::Ray worldRay = t.transform_ray(localRay);
+
+        // Beam half-angle (use widest end of zoom range, default 5°)
+        double halfAngle = phy.lensDegreesMax() > 0
+                             ? phy.lensDegreesMax() / 2.0
+                             : 5.0;
+
+        qlcrender::RenderBeamCone cone;
+        cone.fixtureId = uint32_t(fid);
+        cone.origin[0] = float(worldRay.ox);
+        cone.origin[1] = float(worldRay.oy);
+        cone.origin[2] = float(worldRay.oz);
+        cone.direction[0] = float(worldRay.dx);
+        cone.direction[1] = float(worldRay.dy);
+        cone.direction[2] = float(worldRay.dz);
+        cone.halfAngleDeg = float(halfAngle);
+        cone.length = 10.0f;  // 10m default
+        cone.color[0] = 0.3f;
+        cone.color[1] = 0.9f;
+        cone.color[2] = 1.0f;
+        cone.color[3] = 0.7f;  // cyan translucent
+        cones.push_back(cone);
+    }
+
+    m_renderer->setBeamCones(cones);
 }
 
 // ---------------------------------------------------------------------------

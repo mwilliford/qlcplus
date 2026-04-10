@@ -240,6 +240,7 @@ void BgfxRenderer::frame()
     renderObservationLines();
     renderFixtures();
     renderEllipsoids();
+    renderBeamCones();
     if (m_gizmoMode == 0)
         renderGizmo();
     else
@@ -616,6 +617,113 @@ void BgfxRenderer::renderObservationLines()
     bgfx::setTransform(identity);
     bgfx::setState(BGFX_STATE_WRITE_RGB | BGFX_STATE_PT_LINES);
     bgfx::setVertexBuffer(0, &tvb);
+    bgfx::submit(0, m_colorProgram);
+}
+
+void BgfxRenderer::setBeamCones(const std::vector<RenderBeamCone>& cones)
+{
+    m_beamCones = cones;
+}
+
+void BgfxRenderer::renderBeamCones()
+{
+    if (m_beamCones.empty() || !bgfx::isValid(m_colorProgram))
+        return;
+
+    // 12 segments per cone: N radial spokes + N base circle edges = 2N line segments
+    constexpr int N = 12;
+    constexpr int linesPerCone = 2 * N;
+    constexpr int vertsPerCone = 2 * linesPerCone;
+
+    uint32_t totalVerts = uint32_t(m_beamCones.size()) * vertsPerCone;
+    if (!bgfx::getAvailTransientVertexBuffer(totalVerts, PosColorVertex::layout))
+        return;
+
+    bgfx::TransientVertexBuffer tvb;
+    bgfx::allocTransientVertexBuffer(&tvb, totalVerts, PosColorVertex::layout);
+    auto *v = (PosColorVertex *)tvb.data;
+
+    size_t writeIdx = 0;
+    for (const auto &cone : m_beamCones)
+    {
+        // Color: RGBA float → packed ABGR
+        uint32_t r = uint32_t(cone.color[0] * 255) & 0xFF;
+        uint32_t g = uint32_t(cone.color[1] * 255) & 0xFF;
+        uint32_t b = uint32_t(cone.color[2] * 255) & 0xFF;
+        uint32_t a = uint32_t(cone.color[3] * 255) & 0xFF;
+        uint32_t col = (a << 24) | (b << 16) | (g << 8) | r;
+
+        // Normalize direction (should already be, but be safe)
+        float dx = cone.direction[0];
+        float dy = cone.direction[1];
+        float dz = cone.direction[2];
+        float dlen = std::sqrt(dx*dx + dy*dy + dz*dz);
+        if (dlen < 1e-6f) continue;
+        dx /= dlen; dy /= dlen; dz /= dlen;
+
+        // Build orthonormal basis {u, v} perpendicular to direction.
+        // Pick a helper axis that isn't parallel to direction.
+        float helper[3];
+        if (std::fabs(dy) < 0.9f) {
+            helper[0] = 0; helper[1] = 1; helper[2] = 0;
+        } else {
+            helper[0] = 1; helper[1] = 0; helper[2] = 0;
+        }
+
+        // u = normalize(direction × helper)
+        float ux = dy * helper[2] - dz * helper[1];
+        float uy = dz * helper[0] - dx * helper[2];
+        float uz = dx * helper[1] - dy * helper[0];
+        float ulen = std::sqrt(ux*ux + uy*uy + uz*uz);
+        if (ulen < 1e-6f) continue;
+        ux /= ulen; uy /= ulen; uz /= ulen;
+
+        // v = direction × u
+        float vx = dy * uz - dz * uy;
+        float vy = dz * ux - dx * uz;
+        float vz = dx * uy - dy * ux;
+
+        // Base circle center and radius
+        float bcx = cone.origin[0] + dx * cone.length;
+        float bcy = cone.origin[1] + dy * cone.length;
+        float bcz = cone.origin[2] + dz * cone.length;
+        float halfRad = cone.halfAngleDeg * float(M_PI) / 180.0f;
+        float radius = cone.length * std::tan(halfRad);
+
+        // Precompute base circle vertices
+        float bx[N], by[N], bz[N];
+        for (int i = 0; i < N; i++) {
+            float angle = (2.0f * float(M_PI) * i) / N;
+            float c = std::cos(angle);
+            float s = std::sin(angle);
+            bx[i] = bcx + (ux * c + vx * s) * radius;
+            by[i] = bcy + (uy * c + vy * s) * radius;
+            bz[i] = bcz + (uz * c + vz * s) * radius;
+        }
+
+        // N radial spokes from origin to base circle points
+        for (int i = 0; i < N; i++) {
+            v[writeIdx++] = { cone.origin[0], cone.origin[1], cone.origin[2], col };
+            v[writeIdx++] = { bx[i], by[i], bz[i], col };
+        }
+
+        // N base circle edges connecting adjacent vertices
+        for (int i = 0; i < N; i++) {
+            int j = (i + 1) % N;
+            v[writeIdx++] = { bx[i], by[i], bz[i], col };
+            v[writeIdx++] = { bx[j], by[j], bz[j], col };
+        }
+    }
+
+    // writeIdx may be less than totalVerts if any cones were skipped; only submit what we used
+    if (writeIdx == 0)
+        return;
+
+    float identity[16];
+    bx::mtxIdentity(identity);
+    bgfx::setTransform(identity);
+    bgfx::setState(BGFX_STATE_WRITE_RGB | BGFX_STATE_PT_LINES);
+    bgfx::setVertexBuffer(0, &tvb, 0, uint32_t(writeIdx));
     bgfx::submit(0, m_colorProgram);
 }
 
