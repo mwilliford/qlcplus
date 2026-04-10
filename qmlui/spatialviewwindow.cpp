@@ -27,6 +27,7 @@
 #include "spatialviewwindow.h"
 #include "spatialview.h"
 #include "spatialcontroller.h"
+#include "calibratecontroller.h"
 #include "spatialmodel.h"
 #include "doc.h"
 #include <cmath>
@@ -129,8 +130,12 @@ public:
         m_sidePanel->setClearColor(QColor(0x2a, 0x2a, 0x2a));
         m_sidePanel->setFixedWidth(280);
 
-        // Expose controller to QML before loading source
+        // Calibrate controller (owns observation/solver QML API)
+        m_calibrateController = new CalibrateController(doc, this);
+
+        // Expose controllers to QML before loading source
         m_sidePanel->rootContext()->setContextProperty("spatialController", m_controller);
+        m_sidePanel->rootContext()->setContextProperty("calibrateController", m_calibrateController);
 
         // Load QML — try paths relative to the app binary.
         // Binary is at: build-v5/qmlui/qlcplus-qml.app/Contents/MacOS/qlcplus-qml
@@ -241,6 +246,7 @@ private:
     Doc *m_doc;
     SpatialView *m_spatialView = nullptr;
     SpatialController *m_controller = nullptr;
+    CalibrateController *m_calibrateController = nullptr;
     QQuickWidget *m_sidePanel = nullptr;
 };
 

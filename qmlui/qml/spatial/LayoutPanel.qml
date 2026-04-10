@@ -590,11 +590,11 @@ Rectangle
 
             Connections
             {
-                target: spatialController
-                function onCalibrationChanged()
+                target: calibrateController
+                function onChanged()
                 {
-                    calibratePanel.obsModel = spatialController.observationsList()
-                    calibratePanel.solverResults = spatialController.solverFixtureResults()
+                    calibratePanel.obsModel = calibrateController.observationsList()
+                    calibratePanel.solverResults = calibrateController.solverFixtureResults()
                 }
             }
 
@@ -605,7 +605,7 @@ Rectangle
 
                 Text
                 {
-                    text: "Observations (" + spatialController.obsCount + ")"
+                    text: "Observations (" + calibrateController.obsCount + ")"
                     color: "#ccc"; font.pixelSize: 13; font.bold: true
                     Layout.fillWidth: true
                 }
@@ -614,8 +614,8 @@ Rectangle
                 {
                     text: "Clear"
                     implicitWidth: 45; implicitHeight: 24
-                    visible: spatialController.obsCount > 0
-                    onClicked: spatialController.clearAllObs()
+                    visible: calibrateController.obsCount > 0
+                    onClicked: calibrateController.clearAllObs()
                     background: Rectangle { color: parent.hovered ? "#644" : "#433"; radius: 3 }
                     contentItem: Text { text: parent.text; color: "#c99"; font.pixelSize: 10;
                         horizontalAlignment: Text.AlignHCenter; verticalAlignment: Text.AlignVCenter }
@@ -658,7 +658,7 @@ Rectangle
                         {
                             text: "\u00d7"
                             implicitWidth: 22; implicitHeight: 22
-                            onClicked: spatialController.removeObs(modelData.id)
+                            onClicked: calibrateController.removeObs(modelData.id)
                             background: Rectangle { color: parent.hovered ? "#a33" : "transparent"; radius: 3 }
                             contentItem: Text { text: parent.text; color: "#c66"; font.pixelSize: 13;
                                 horizontalAlignment: Text.AlignHCenter; verticalAlignment: Text.AlignVCenter }
@@ -707,7 +707,7 @@ Rectangle
                     text: "+ Add"
                     implicitWidth: 50; implicitHeight: 28
                     enabled: spatialController.hasSelection
-                    onClicked: spatialController.addPositionObs(
+                    onClicked: calibrateController.addPositionObs(
                         spatialController.selectedFixtureId, 2,
                         heightSpin.value / 100.0, 0.95)
                     background: Rectangle { color: parent.enabled ? (parent.hovered ? "#4a9eff" : "#3a7fcc") : "#444"; radius: 3 }
@@ -766,7 +766,7 @@ Rectangle
                 {
                     text: "+"
                     implicitWidth: 28; implicitHeight: 28
-                    onClicked: spatialController.addDistanceObs(
+                    onClicked: calibrateController.addDistanceObs(
                         distFixA.value, distFixB.value,
                         distValueSpin.value / 100.0, 0.90)
                     background: Rectangle { color: parent.hovered ? "#4a9eff" : "#3a7fcc"; radius: 3 }
@@ -783,15 +783,15 @@ Rectangle
 
             ColumnLayout
             {
-                visible: spatialController.hasSolverResult
+                visible: calibrateController.hasSolverResult
                 Layout.fillWidth: true
                 spacing: 2
 
                 Text
                 {
-                    text: (spatialController.solverConverged ? "\u2714 Converged" : "\u2718 Not converged")
-                          + " (RMS " + spatialController.solverRms.toFixed(3) + "m)"
-                    color: spatialController.solverConverged ? "#2ecc71" : "#e74c3c"
+                    text: (calibrateController.solverConverged ? "\u2714 Converged" : "\u2718 Not converged")
+                          + " (RMS " + calibrateController.solverRms.toFixed(3) + "m)"
+                    color: calibrateController.solverConverged ? "#2ecc71" : "#e74c3c"
                     font.pixelSize: 11
                 }
 
@@ -812,8 +812,8 @@ Rectangle
 
             Text
             {
-                visible: !spatialController.hasSolverResult
-                text: spatialController.obsCount > 0 ? "Ready to solve" : "Add observations first"
+                visible: !calibrateController.hasSolverResult
+                text: calibrateController.obsCount > 0 ? "Ready to solve" : "Add observations first"
                 color: "#666"; font.pixelSize: 11
             }
 
@@ -828,8 +828,8 @@ Rectangle
                     text: "Solve"
                     implicitHeight: 30
                     Layout.fillWidth: true
-                    enabled: spatialController.obsCount > 0
-                    onClicked: spatialController.runSolve()
+                    enabled: calibrateController.obsCount > 0
+                    onClicked: calibrateController.runSolve()
                     background: Rectangle { color: parent.enabled ? (parent.hovered ? "#4a9eff" : "#3a7fcc") : "#444"; radius: 3 }
                     contentItem: Text { text: parent.text; color: parent.enabled ? "#fff" : "#666"; font.pixelSize: 12; font.bold: true;
                         horizontalAlignment: Text.AlignHCenter; verticalAlignment: Text.AlignVCenter }
@@ -840,8 +840,8 @@ Rectangle
                     text: "Accept"
                     implicitHeight: 30
                     Layout.fillWidth: true
-                    visible: spatialController.hasSolverResult && spatialController.solverConverged
-                    onClicked: spatialController.acceptSolverResults()
+                    visible: calibrateController.hasSolverResult && calibrateController.solverConverged
+                    onClicked: calibrateController.acceptSolverResults()
                     background: Rectangle { color: parent.hovered ? "#2ecc71" : "#27ae60"; radius: 3 }
                     contentItem: Text { text: parent.text; color: "#fff"; font.pixelSize: 12; font.bold: true;
                         horizontalAlignment: Text.AlignHCenter; verticalAlignment: Text.AlignVCenter }
@@ -851,8 +851,8 @@ Rectangle
                 {
                     text: "Dismiss"
                     implicitHeight: 30
-                    visible: spatialController.hasSolverResult
-                    onClicked: spatialController.dismissSolverResults()
+                    visible: calibrateController.hasSolverResult
+                    onClicked: calibrateController.dismissSolverResults()
                     background: Rectangle { color: parent.hovered ? "#644" : "#433"; radius: 3 }
                     contentItem: Text { text: parent.text; color: "#c99"; font.pixelSize: 11;
                         horizontalAlignment: Text.AlignHCenter; verticalAlignment: Text.AlignVCenter }
