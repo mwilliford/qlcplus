@@ -15,6 +15,7 @@
 #define SPATIALCONTROLLER_H
 
 #include <QObject>
+#include <QVariantList>
 #include <cstdint>
 #include <functional>
 #include <vector>
@@ -61,6 +62,12 @@ class SpatialController : public QObject
 
     // Gizmo mode (0=Translate, 1=Rotate)
     Q_PROPERTY(int gizmoMode READ gizmoMode WRITE setGizmoMode NOTIFY gizmoModeChanged)
+
+    // Calibration state
+    Q_PROPERTY(int obsCount READ observationCount NOTIFY calibrationChanged)
+    Q_PROPERTY(bool hasSolverResult READ hasSolverResult NOTIFY calibrationChanged)
+    Q_PROPERTY(bool solverConverged READ solverConverged NOTIFY calibrationChanged)
+    Q_PROPERTY(double solverRms READ solverRms NOTIFY calibrationChanged)
 
 public:
     explicit SpatialController(Doc *doc, SpatialView *view, QObject *parent = nullptr);
@@ -119,11 +126,57 @@ public:
     // --- Camera (Q_INVOKABLE for QML button clicks) ---
     Q_INVOKABLE void setCameraPreset(const QString &preset);
 
+    // --- Calibration (Q_INVOKABLE for QML in Calibrate mode) ---
+
+    /** Run the Ceres solver on current observations. Returns true if converged. */
+    Q_INVOKABLE bool runSolve();
+
+    /** Accept solver-derived transforms for all fixtures (promote to committed). */
+    Q_INVOKABLE void acceptSolverResults();
+
+    /** Dismiss solver-derived transforms (clear solverDerived layer). */
+    Q_INVOKABLE void dismissSolverResults();
+
+    /** Add a position observation for a fixture. axis: 0=X, 1=Y, 2=Z */
+    Q_INVOKABLE int addPositionObs(int fixtureId, int axis, double value, double certainty);
+
+    /** Add a rotation observation for a fixture. axis: 3=RX, 4=RY, 5=RZ */
+    Q_INVOKABLE int addRotationObs(int fixtureId, int axis, double valueDeg, double certainty);
+
+    /** Add a distance observation between two fixtures. */
+    Q_INVOKABLE int addDistanceObs(int fixtureIdA, int fixtureIdB, double distance, double certainty);
+
+    /** Remove an observation by ID. */
+    Q_INVOKABLE void removeObs(int obsId);
+
+    /** Clear all observations. */
+    Q_INVOKABLE void clearAllObs();
+
+    /** Get observation count. */
+    Q_INVOKABLE int observationCount() const;
+
+    /** Lock a fixture in the solver (exclude from optimization). */
+    Q_INVOKABLE void lockFixtureInSolver(int fixtureId);
+
+    /** Set a height constraint for a fixture (Z axis). */
+    Q_INVOKABLE void setHeightConstraint(int fixtureId, double heightM, double certainty);
+
+    /** Get all observations as a QML-friendly list of maps. */
+    Q_INVOKABLE QVariantList observationsList() const;
+
+    /** Get per-fixture solver results (uncertainty, quality). */
+    Q_INVOKABLE QVariantList solverFixtureResults() const;
+
     /** Called by SpatialView when selection changes via mouse click. */
     void notifySelectionChanged(int fixtureId, int count = 1);
 
     /** Set a callback to retrieve all selected fixture IDs. */
     void setSelectedIdsCallback(std::function<std::vector<int32_t>()> cb) { m_selectedIdsCallback = std::move(cb); }
+
+    // --- Calibration read-only properties ---
+    bool hasSolverResult() const;
+    bool solverConverged() const;
+    double solverRms() const;
 
 signals:
     void selectionChanged();
@@ -133,9 +186,11 @@ signals:
     void gridSizeChanged();
     void axisModeChanged();
     void gizmoModeChanged();
+    void calibrationChanged();
 
 private:
     void updateTransformFromModel();
+    QString fixtureName(const QString &fixtureId) const;
 
     Doc *m_doc;
     SpatialView *m_view;

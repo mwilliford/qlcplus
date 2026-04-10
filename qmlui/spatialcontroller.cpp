@@ -14,8 +14,11 @@
 #include "spatialcontroller.h"
 #include "spatialview.h"
 #include "spatialmodel.h"
+#include "calibrationmodel.h"
 #include "doc.h"
 #include "fixture.h"
+
+#include <QVariantMap>
 
 #include <cmath>
 
@@ -76,6 +79,11 @@ SpatialController::SpatialController(Doc *doc, SpatialView *view, QObject *paren
             emit transformChanged();
         }
     });
+
+    // Relay CalibrationModel observation changes to QML
+    CalibrationModel *cm = m_doc->calibrationModel();
+    connect(cm, &CalibrationModel::observationsChanged, this, &SpatialController::calibrationChanged);
+    connect(cm, &CalibrationModel::solveCompleted, this, &SpatialController::calibrationChanged);
 }
 
 void SpatialController::setSelectedFixtureId(int id)
@@ -304,6 +312,243 @@ void SpatialController::setCameraPreset(const QString &preset)
         m_view->setCameraOrbit(-90.0f, 0.0f, 10.0f);
     else if (preset == "side" || preset == "Side")
         m_view->setCameraOrbit(0.0f, 0.0f, 10.0f);
+}
+
+// --- Calibration ---
+
+bool SpatialController::hasSolverResult() const
+{
+    return m_doc->calibrationModel()->hasSolveResult();
+}
+
+bool SpatialController::solverConverged() const
+{
+    if (!m_doc->calibrationModel()->hasSolveResult())
+        return false;
+    return m_doc->calibrationModel()->lastResult().converged;
+}
+
+double SpatialController::solverRms() const
+{
+    if (!m_doc->calibrationModel()->hasSolveResult())
+        return 0.0;
+    return m_doc->calibrationModel()->lastResult().rms_residual;
+}
+
+bool SpatialController::runSolve()
+{
+    CalibrationModel *cm = m_doc->calibrationModel();
+    bool result = cm->solve();
+    emit calibrationChanged();
+    return result;
+}
+
+void SpatialController::acceptSolverResults()
+{
+    SpatialModel *sm = m_doc->spatialModel();
+    for (const QString &id : sm->fixtureIds())
+    {
+        if (sm->solverDerivedTransform(id).has_value())
+            sm->promoteTransform(id, SpatialModel::SolverDerived);
+    }
+    emit calibrationChanged();
+}
+
+void SpatialController::dismissSolverResults()
+{
+    m_doc->spatialModel()->clearSolverViz();
+    // Clear solver result (but keep observations and constraints)
+    m_doc->calibrationModel()->clearSolverResult();
+    emit calibrationChanged();
+}
+
+int SpatialController::addPositionObs(int fixtureId, int axis, double value, double certainty)
+{
+    CalibrationModel *cm = m_doc->calibrationModel();
+    int id = cm->addPositionObservation(QString::number(fixtureId), axis, value, certainty);
+    emit calibrationChanged();
+    return id;
+}
+
+int SpatialController::addRotationObs(int fixtureId, int axis, double valueDeg, double certainty)
+{
+    CalibrationModel *cm = m_doc->calibrationModel();
+    int id = cm->addRotationObservation(QString::number(fixtureId), axis, valueDeg, certainty);
+    emit calibrationChanged();
+    return id;
+}
+
+int SpatialController::addDistanceObs(int fixtureIdA, int fixtureIdB, double distance, double certainty)
+{
+    CalibrationModel *cm = m_doc->calibrationModel();
+    int id = cm->addDistanceObservation(QString::number(fixtureIdA),
+                                         QString::number(fixtureIdB),
+                                         distance, certainty);
+    emit calibrationChanged();
+    return id;
+}
+
+void SpatialController::removeObs(int obsId)
+{
+    m_doc->calibrationModel()->removeObservation(obsId);
+    emit calibrationChanged();
+}
+
+void SpatialController::clearAllObs()
+{
+    m_doc->calibrationModel()->clearObservations();
+    emit calibrationChanged();
+}
+
+int SpatialController::observationCount() const
+{
+    return m_doc->calibrationModel()->observationCount();
+}
+
+void SpatialController::lockFixtureInSolver(int fixtureId)
+{
+    m_doc->calibrationModel()->lockFixture(QString::number(fixtureId));
+}
+
+void SpatialController::setHeightConstraint(int fixtureId, double heightM, double certainty)
+{
+    m_doc->calibrationModel()->setConstraint(
+        QString::number(fixtureId), 2 /* tz */, heightM, certainty);
+}
+
+// --- Observation/solver data for QML ---
+
+QString SpatialController::fixtureName(const QString &fixtureId) const
+{
+    Fixture *fxi = m_doc->fixture(fixtureId.toUInt());
+    return fxi ? fxi->name() : QString("Fixture %1").arg(fixtureId);
+}
+
+QVariantList SpatialController::observationsList() const
+{
+    static const char *axisLabels[] = {"X", "Y", "Height"};
+    static const char *rotLabels[] = {"Pitch", "Yaw", "Roll"};
+
+    QVariantList list;
+    CalibrationModel *cm = m_doc->calibrationModel();
+
+    for (const CalibrationModel::Observation &obs : cm->observations())
+    {
+        QVariantMap map;
+        std::visit([&](const auto &o) {
+            using T = std::decay_t<decltype(o)>;
+
+            map["id"] = o.id;
+
+            if constexpr (std::is_same_v<T, CalibrationModel::AimObs>)
+            {
+                map["type"] = "Aim";
+                map["fixture"] = o.fixture;
+                map["fixtureName"] = fixtureName(o.fixture);
+                map["certainty"] = o.certainty;
+                map["description"] = QString("[%1] aim -> (%2, %3, %4)")
+                    .arg(fixtureName(o.fixture))
+                    .arg(o.target[0], 0, 'f', 2)
+                    .arg(o.target[1], 0, 'f', 2)
+                    .arg(o.target[2], 0, 'f', 2);
+            }
+            else if constexpr (std::is_same_v<T, CalibrationModel::CrossingObs>)
+            {
+                map["type"] = "Crossing";
+                QStringList names;
+                for (const auto &f : o.fixtures)
+                    names.append(fixtureName(f));
+                map["fixtures"] = o.fixtures;
+                map["certainty"] = o.certainty;
+                map["description"] = QString("%1 crossing @ %2=%3")
+                    .arg(names.join(" x "))
+                    .arg(o.axis < 3 ? axisLabels[o.axis] : "?")
+                    .arg(o.value, 0, 'f', 2);
+            }
+            else if constexpr (std::is_same_v<T, CalibrationModel::PositionObs>)
+            {
+                map["type"] = "Position";
+                map["fixture"] = o.fixture;
+                map["fixtureName"] = fixtureName(o.fixture);
+                map["axis"] = o.axis;
+                map["value"] = o.value;
+                map["certainty"] = o.certainty;
+                map["description"] = QString("[%1] %2 = %3m")
+                    .arg(fixtureName(o.fixture))
+                    .arg(o.axis >= 0 && o.axis < 3 ? axisLabels[o.axis] : "?")
+                    .arg(o.value, 0, 'f', 2);
+            }
+            else if constexpr (std::is_same_v<T, CalibrationModel::RotationObs>)
+            {
+                map["type"] = "Rotation";
+                map["fixture"] = o.fixture;
+                map["fixtureName"] = fixtureName(o.fixture);
+                map["axis"] = o.axis;
+                map["value"] = o.valueDeg;
+                map["certainty"] = o.certainty;
+                int ri = o.axis >= 3 ? o.axis - 3 : o.axis;
+                map["description"] = QString("[%1] %2 = %3 deg")
+                    .arg(fixtureName(o.fixture))
+                    .arg(ri >= 0 && ri < 3 ? rotLabels[ri] : "?")
+                    .arg(o.valueDeg, 0, 'f', 1);
+            }
+            else if constexpr (std::is_same_v<T, CalibrationModel::BeamDirectionObs>)
+            {
+                map["type"] = "BeamDirection";
+                map["fixture"] = o.fixture;
+                map["fixtureName"] = fixtureName(o.fixture);
+                map["certainty"] = o.certainty;
+                QStringList parts;
+                if (o.hasElevation)
+                    parts.append(QString("el=%1").arg(o.elevationDeg, 0, 'f', 0));
+                if (o.hasAzimuth)
+                    parts.append(QString("az=%1").arg(o.azimuthDeg, 0, 'f', 0));
+                map["description"] = QString("[%1] beam %2 deg")
+                    .arg(fixtureName(o.fixture))
+                    .arg(parts.join(", "));
+            }
+            else if constexpr (std::is_same_v<T, CalibrationModel::DistanceObs>)
+            {
+                map["type"] = "Distance";
+                map["fixtureA"] = o.fixtureA;
+                map["fixtureB"] = o.fixtureB;
+                map["distance"] = o.distance;
+                map["certainty"] = o.certainty;
+                map["description"] = QString("[%1] <-> [%2] = %3m")
+                    .arg(fixtureName(o.fixtureA))
+                    .arg(fixtureName(o.fixtureB))
+                    .arg(o.distance, 0, 'f', 2);
+            }
+        }, obs);
+
+        list.append(map);
+    }
+    return list;
+}
+
+QVariantList SpatialController::solverFixtureResults() const
+{
+    QVariantList list;
+    CalibrationModel *cm = m_doc->calibrationModel();
+    if (!cm->hasSolveResult())
+        return list;
+
+    const auto &result = cm->lastResult();
+    for (const auto &[sid, pose] : result.poses)
+    {
+        QString fid = QString::fromStdString(sid);
+        auto unc = cm->fixtureUncertainty(fid);
+
+        QVariantMap map;
+        map["fixtureId"] = fid;
+        map["fixtureName"] = fixtureName(fid);
+        map["quality"] = QString::fromStdString(unc.quality());
+        map["xCm"] = unc.x_cm;
+        map["yCm"] = unc.y_cm;
+        map["zCm"] = unc.z_cm;
+        list.append(map);
+    }
+    return list;
 }
 
 // --- Internal ---

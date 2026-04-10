@@ -23,17 +23,29 @@
 #include <QObject>
 #include <QJsonObject>
 #include <QMap>
+#include <QList>
 #include <QString>
+#include <QXmlStreamReader>
+#include <QXmlStreamWriter>
+#include <variant>
+#include <vector>
 
 #include <rigmath/covariance.hpp>
 #include <rigmath/rigid_transform.hpp>
+#include <rigmath/solver/CalibrationProblem.h>
+
+class Doc;
+class SpatialModel;
 
 /**
- * @brief Engine-layer model holding the current calibration solve state.
+ * @brief Engine-layer model for calibration: observations, constraints, and local solver.
  *
- * Receives calibration_state_update messages from the server, deserializes
- * the SolveState, and provides query access via rigmath C++ functions.
- * Emits stateChanged() so the 3D renderer can update error ellipsoids.
+ * Owns the calibration observation data and runs the Ceres-based solver client-side
+ * via rigmath::solver::CalibrationProblem. Results feed into SpatialModel's solverDerived
+ * layer and uncertainty visualization.
+ *
+ * Observations are persisted in XML within the workspace file.
+ * The solver runs on-demand (not automatically) via solve().
  */
 class CalibrationModel : public QObject
 {
@@ -42,47 +54,193 @@ class CalibrationModel : public QObject
 public:
     explicit CalibrationModel(QObject *parent = nullptr);
 
-    /** @return true if a valid SolveState has been received */
-    bool hasSolveState() const { return m_hasState; }
+    void setDoc(Doc *doc) { m_doc = doc; }
+    void setSpatialModel(SpatialModel *sm) { m_spatialModel = sm; }
 
-    /** @return the current SolveState (check hasSolveState() first) */
-    const rigmath::SolveState &solveState() const { return m_state; }
+    // -----------------------------------------------------------------------
+    // Observation types (mirrors rigmath::solver observation records)
+    // -----------------------------------------------------------------------
 
-    /** Update the solve state from a calibration_state_update JSON message.
-     *  Parses the solveState object and emits stateChanged(). */
-    void updateFromJson(const QJsonObject &solveStateObj);
+    struct AimObs {
+        int id = -1;
+        QString fixture;
+        std::vector<double> dmxNormalized;
+        double target[3] = {0, 0, 0};
+        double certainty = 0.95;
+    };
 
-    /** Clear the solve state (e.g., on disconnect or workspace change) */
-    void clear();
+    struct CrossingObs {
+        int id = -1;
+        QStringList fixtures;
+        std::vector<std::vector<double>> dmxValues;
+        int axis = 2;        // 0=x, 1=y, 2=z
+        double value = 0.0;
+        double certainty = 0.85;
+    };
+
+    struct PositionObs {
+        int id = -1;
+        QString fixture;
+        int axis = 2;  // 0=x, 1=y, 2=z
+        double value = 0.0;
+        double certainty = 0.95;
+    };
+
+    struct RotationObs {
+        int id = -1;
+        QString fixture;
+        int axis = 5;  // 0=rx, 1=ry, 2=rz (maps to pose index 3,4,5)
+        double valueDeg = 0.0;
+        double certainty = 0.95;
+    };
+
+    struct BeamDirectionObs {
+        int id = -1;
+        QString fixture;
+        std::vector<double> dmxNormalized;
+        bool hasElevation = false;
+        bool hasAzimuth = false;
+        double elevationDeg = 0.0;
+        double azimuthDeg = 0.0;
+        double certainty = 0.85;
+    };
+
+    struct DistanceObs {
+        int id = -1;
+        QString fixtureA;
+        QString fixtureB;
+        double distance = 0.0;
+        double certainty = 0.90;
+    };
+
+    using Observation = std::variant<AimObs, CrossingObs, PositionObs,
+                                     RotationObs, BeamDirectionObs, DistanceObs>;
+
+    // -----------------------------------------------------------------------
+    // Observation management
+    // -----------------------------------------------------------------------
+
+    /** Add an observation. Returns the assigned ID. */
+    int addObservation(const Observation &obs);
+
+    /** Remove an observation by ID. */
+    void removeObservation(int id);
+
+    /** Get all observations. */
+    QList<Observation> observations() const { return m_observations.values(); }
+
+    /** Get observation count. */
+    int observationCount() const { return m_observations.size(); }
+
+    /** Clear all observations. */
+    void clearObservations();
+
+    // -----------------------------------------------------------------------
+    // Convenience builders (return the new observation's ID)
+    // -----------------------------------------------------------------------
+
+    int addAimObservation(const QString &fixture,
+                          const std::vector<double> &dmxNormalized,
+                          double targetX, double targetY, double targetZ,
+                          double certainty = 0.95);
+
+    int addPositionObservation(const QString &fixture,
+                               int axis, double value,
+                               double certainty = 0.95);
+
+    int addRotationObservation(const QString &fixture,
+                                int axis, double valueDeg,
+                                double certainty = 0.95);
+
+    int addBeamDirectionObservation(const QString &fixture,
+                                     const std::vector<double> &dmxNormalized,
+                                     double elevationDeg, double azimuthDeg,
+                                     bool hasElevation, bool hasAzimuth,
+                                     double certainty = 0.85);
+
+    int addCrossingObservation(const QStringList &fixtures,
+                                const std::vector<std::vector<double>> &dmxValues,
+                                int axis, double value,
+                                double certainty = 0.85);
+
+    int addDistanceObservation(const QString &fixtureA,
+                                const QString &fixtureB,
+                                double distance,
+                                double certainty = 0.90);
+
+    // -----------------------------------------------------------------------
+    // Per-fixture constraints
+    // -----------------------------------------------------------------------
+
+    struct FixtureConstraint {
+        int dof = 0;  // 0=tx, 1=ty, 2=tz, 3=rx, 4=ry, 5=rz
+        double value = 0.0;
+        double certainty = 1.0;
+    };
+
+    void setConstraint(const QString &fixture, int dof,
+                       double value, double certainty = 1.0);
+    void lockFixture(const QString &fixture);
+    void clearConstraints(const QString &fixture);
+
+    // -----------------------------------------------------------------------
+    // Solver
+    // -----------------------------------------------------------------------
+
+    /** Run the solver using current observations + fixture data from Doc.
+     *  Results are written to SpatialModel's solverDerived layer.
+     *  Returns true if solver converged. */
+    bool solve();
+
+    /** @return true if a valid solve result exists */
+    bool hasSolveResult() const { return m_hasResult; }
+
+    /** @return the last SolveResult */
+    const rigmath::solver::SolveResult &lastResult() const { return m_lastResult; }
+
+    /** Clear just the solver result (keeps observations and constraints). */
+    void clearSolverResult();
 
     // --- Convenience wrappers around rigmath C++ analysis ---
 
-    /** Per-fixture uncertainty. Returns zero uncertainty if fixture not in state. */
     rigmath::PositionUncertainty fixtureUncertainty(const QString &fixtureId) const;
-
-    /** Error ellipsoid for 3D rendering. Returns zero axes if fixture not in state. */
     rigmath::EllipsoidAxes errorEllipsoid(const QString &fixtureId) const;
-
-    /** Differential uncertainty between two fixtures. */
     rigmath::PositionUncertainty differentialUncertainty(
         const QString &fixtureA, const QString &fixtureB) const;
-
-    /** Parameters exceeding uncertainty threshold. */
     QStringList poorlyConstrained(double thresholdCm = 50.0) const;
 
-    /** Get the solved RigidTransform for a fixture. Returns identity if not solved. */
-    rigmath::RigidTransform fixtureTransform(const QString &fixtureId) const;
+    // -----------------------------------------------------------------------
+    // Persistence
+    // -----------------------------------------------------------------------
 
-    /** Get the 4x4 column-major matrix for a fixture (OpenGL/bgfx ready). */
-    void fixtureMatrix4x4(const QString &fixtureId, double out[16]) const;
+    bool loadXML(QXmlStreamReader &reader);
+    void saveXML(QXmlStreamWriter &writer) const;
+
+    /** Clear all state (observations, constraints, results). */
+    void clear();
 
 signals:
-    /** Emitted after updateFromJson() successfully parses a new state. */
-    void stateChanged();
+    void observationsChanged();
+    void solveCompleted(bool converged);
 
 private:
-    bool m_hasState;
-    rigmath::SolveState m_state;
+    /** Build ChannelSpec + KinematicsType for a QLC+ fixture ID. */
+    bool buildFixtureSpec(quint32 fixtureId,
+                          std::vector<rigmath::solver::ChannelSpec> &channels,
+                          rigmath::solver::KinematicsType &kinType) const;
+
+    Doc *m_doc = nullptr;
+    SpatialModel *m_spatialModel = nullptr;
+
+    QMap<int, Observation> m_observations;
+    int m_nextObsId = 0;
+
+    // Per-fixture constraints: fixture_id → list of DOF constraints
+    QMap<QString, QList<FixtureConstraint>> m_constraints;
+
+    // Last solve result
+    bool m_hasResult = false;
+    rigmath::solver::SolveResult m_lastResult;
 };
 
 #endif // CALIBRATIONMODEL_H

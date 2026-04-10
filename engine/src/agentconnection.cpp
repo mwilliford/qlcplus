@@ -586,10 +586,7 @@ void AgentConnection::onWsTextMessage(const QString &message)
     {
         handleClearTransformLayer(msg);
     }
-    else if (type == "calibration_state_update")
-    {
-        handleCalibrationStateUpdate(msg);
-    }
+    // calibration_state_update removed — solver runs client-side
     else if (type == "compacting")
     {
         emit compactingStarted();
@@ -3081,40 +3078,6 @@ void AgentConnection::sendDelta(const QJsonArray &changes)
     msg["type"] = "workspace_delta";
     msg["changes"] = changes;
 
-    sendJson(msg);
-}
-
-void AgentConnection::handleCalibrationStateUpdate(const QJsonObject &msg)
-{
-    // New format: transforms + ellipsoids (no raw covariance)
-    if (msg.contains("transforms"))
-    {
-        m_suppressLayoutDelta = true;
-        m_doc->spatialModel()->applySolverVisualization(msg);
-        m_suppressLayoutDelta = false;
-
-        qDebug() << "[AgentConnection] Calibration state updated (SpatialModel):"
-                 << (m_doc->spatialModel()->converged() ? "converged" : "in progress")
-                 << "rms=" << m_doc->spatialModel()->rmsResidual();
-        return;
-    }
-
-    // Legacy format: solveState with raw covariance (backward compat)
-    CalibrationModel *model = m_doc->calibrationModel();
-    QJsonObject solveState = msg["solveState"].toObject();
-    model->updateFromJson(solveState);
-    qDebug() << "[AgentConnection] Calibration state updated (legacy):"
-             << (model->hasSolveState() ? "converged" : "null");
-}
-
-void AgentConnection::sendObservation(const QJsonObject &observation)
-{
-    if (m_state != Connected)
-        return;
-
-    QJsonObject msg;
-    msg["type"] = "add_observation";
-    msg["observation"] = observation;
     sendJson(msg);
 }
 

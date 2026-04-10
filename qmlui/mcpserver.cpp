@@ -504,6 +504,19 @@ void McpServer::registerBuiltinTools()
         },
         [this](const QJsonObject &args) { return toolAddTruss(args); }
     });
+
+    registerTool({
+        "set_spatial_mode",
+        "Set the Spatial View panel mode. 0=Layout, 1=Calibrate, 2=Focus, 3=Live.",
+        QJsonObject{
+            {"type", "object"},
+            {"properties", QJsonObject{
+                {"mode", QJsonObject{{"type", "integer"}, {"description", "Mode index: 0=Layout 1=Calibrate 2=Focus 3=Live"}}},
+            }},
+            {"required", QJsonArray{"mode"}}
+        },
+        [this](const QJsonObject &args) { return toolSetSpatialMode(args); }
+    });
 }
 
 // Find a window by title substring from the application's window list.
@@ -991,6 +1004,19 @@ QJsonObject McpServer::toolAddTruss(const QJsonObject &args)
         {"content", QJsonArray{QJsonObject{{"type", "text"},
             {"text", QString("Added truss from (%1,%2,%3) to (%4,%5,%6)")
                 .arg(x1).arg(y1).arg(z1).arg(x2).arg(y2).arg(z2)}
+        }}}
+    };
+}
+
+QJsonObject McpServer::toolSetSpatialMode(const QJsonObject &args)
+{
+    int mode = args.value("mode").toInt(0);
+    spatialViewSetMode(mode);
+    QStringList modeNames = {"Layout", "Calibrate", "Focus", "Live"};
+    QString name = (mode >= 0 && mode < modeNames.size()) ? modeNames[mode] : "Unknown";
+    return QJsonObject{
+        {"content", QJsonArray{QJsonObject{{"type", "text"},
+            {"text", QString("Spatial View mode set to %1 (%2)").arg(mode).arg(name)}
         }}}
     };
 }

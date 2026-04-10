@@ -111,6 +111,16 @@ Rectangle
             }
         }
 
+        // ===============================================================
+        // LAYOUT MODE (mode === 0)
+        // ===============================================================
+        ColumnLayout
+        {
+            visible: spatialController.mode === 0
+            Layout.fillWidth: true
+            Layout.fillHeight: true
+            spacing: 6
+
         // --- Gizmo mode (W/E shortcuts) ---
         RowLayout
         {
@@ -560,6 +570,295 @@ Rectangle
                 verticalAlignment: Text.AlignVCenter
             }
         }
+
+        } // end Layout mode ColumnLayout
+
+        // ===============================================================
+        // CALIBRATE MODE (mode === 1)
+        // ===============================================================
+        ColumnLayout
+        {
+            id: calibratePanel
+            visible: spatialController.mode === 1
+            Layout.fillWidth: true
+            Layout.fillHeight: true
+            spacing: 6
+
+            // Observation data (refreshed on calibrationChanged)
+            property var obsModel: []
+            property var solverResults: []
+
+            Connections
+            {
+                target: spatialController
+                function onCalibrationChanged()
+                {
+                    calibratePanel.obsModel = spatialController.observationsList()
+                    calibratePanel.solverResults = spatialController.solverFixtureResults()
+                }
+            }
+
+            // --- Observation list ---
+            RowLayout
+            {
+                Layout.fillWidth: true
+
+                Text
+                {
+                    text: "Observations (" + spatialController.obsCount + ")"
+                    color: "#ccc"; font.pixelSize: 13; font.bold: true
+                    Layout.fillWidth: true
+                }
+
+                Button
+                {
+                    text: "Clear"
+                    implicitWidth: 45; implicitHeight: 24
+                    visible: spatialController.obsCount > 0
+                    onClicked: spatialController.clearAllObs()
+                    background: Rectangle { color: parent.hovered ? "#644" : "#433"; radius: 3 }
+                    contentItem: Text { text: parent.text; color: "#c99"; font.pixelSize: 10;
+                        horizontalAlignment: Text.AlignHCenter; verticalAlignment: Text.AlignVCenter }
+                }
+            }
+
+            ListView
+            {
+                id: obsListView
+                Layout.fillWidth: true
+                Layout.preferredHeight: Math.min(contentHeight, 200)
+                clip: true
+                spacing: 2
+                model: calibratePanel.obsModel
+
+                delegate: Rectangle
+                {
+                    width: obsListView.width
+                    height: 36
+                    color: index % 2 ? "#383838" : "#333"
+                    radius: 3
+
+                    RowLayout
+                    {
+                        anchors.fill: parent
+                        anchors.leftMargin: 6
+                        anchors.rightMargin: 4
+                        spacing: 4
+
+                        Text
+                        {
+                            text: modelData.description || ""
+                            color: "#ccc"
+                            font.pixelSize: 10
+                            elide: Text.ElideRight
+                            Layout.fillWidth: true
+                        }
+
+                        Button
+                        {
+                            text: "\u00d7"
+                            implicitWidth: 22; implicitHeight: 22
+                            onClicked: spatialController.removeObs(modelData.id)
+                            background: Rectangle { color: parent.hovered ? "#a33" : "transparent"; radius: 3 }
+                            contentItem: Text { text: parent.text; color: "#c66"; font.pixelSize: 13;
+                                horizontalAlignment: Text.AlignHCenter; verticalAlignment: Text.AlignVCenter }
+                        }
+                    }
+                }
+
+                Text
+                {
+                    visible: parent.count === 0
+                    anchors.centerIn: parent
+                    text: "No observations yet"
+                    color: "#666"; font.pixelSize: 11
+                }
+            }
+
+            // --- Separator ---
+            Rectangle { Layout.fillWidth: true; height: 1; color: "#444" }
+
+            // --- Add observation ---
+            Text { text: "Add Observation"; color: "#ccc"; font.pixelSize: 13; font.bold: true }
+
+            // Height observation (Position Z)
+            RowLayout
+            {
+                Layout.fillWidth: true
+                spacing: 4
+                enabled: spatialController.hasSelection
+
+                Text { text: "Height"; color: "#999"; font.pixelSize: 11; Layout.preferredWidth: 46 }
+
+                CompactSpin
+                {
+                    id: heightSpin
+                    from: 0; to: 2000
+                    value: 300  // default 3.00m
+                    stepSize: 5
+                    Layout.fillWidth: true
+                    editable: true
+                    textFromValue: function(v) { return (v / 100.0).toFixed(2) + "m" }
+                    valueFromText: function(t) { return Math.round(parseFloat(t) * 100) }
+                }
+
+                Button
+                {
+                    text: "+ Add"
+                    implicitWidth: 50; implicitHeight: 28
+                    enabled: spatialController.hasSelection
+                    onClicked: spatialController.addPositionObs(
+                        spatialController.selectedFixtureId, 2,
+                        heightSpin.value / 100.0, 0.95)
+                    background: Rectangle { color: parent.enabled ? (parent.hovered ? "#4a9eff" : "#3a7fcc") : "#444"; radius: 3 }
+                    contentItem: Text { text: parent.text; color: parent.enabled ? "#fff" : "#666"; font.pixelSize: 10;
+                        horizontalAlignment: Text.AlignHCenter; verticalAlignment: Text.AlignVCenter }
+                }
+            }
+
+            // Distance observation
+            RowLayout
+            {
+                Layout.fillWidth: true
+                spacing: 4
+
+                Text { text: "Dist"; color: "#999"; font.pixelSize: 11; Layout.preferredWidth: 30 }
+
+                CompactSpin
+                {
+                    id: distFixA
+                    from: 0; to: 999
+                    value: 0
+                    stepSize: 1
+                    implicitWidth: 36
+                    editable: true
+                    textFromValue: function(v) { return v.toString() }
+                    valueFromText: function(t) { return parseInt(t) || 0 }
+                }
+
+                Text { text: "\u2194"; color: "#999"; font.pixelSize: 11 }
+
+                CompactSpin
+                {
+                    id: distFixB
+                    from: 0; to: 999
+                    value: 1
+                    stepSize: 1
+                    implicitWidth: 36
+                    editable: true
+                    textFromValue: function(v) { return v.toString() }
+                    valueFromText: function(t) { return parseInt(t) || 0 }
+                }
+
+                CompactSpin
+                {
+                    id: distValueSpin
+                    from: 1; to: 5000
+                    value: 300  // 3.00m
+                    stepSize: 10
+                    Layout.fillWidth: true
+                    editable: true
+                    textFromValue: function(v) { return (v / 100.0).toFixed(2) + "m" }
+                    valueFromText: function(t) { return Math.round(parseFloat(t) * 100) }
+                }
+
+                Button
+                {
+                    text: "+"
+                    implicitWidth: 28; implicitHeight: 28
+                    onClicked: spatialController.addDistanceObs(
+                        distFixA.value, distFixB.value,
+                        distValueSpin.value / 100.0, 0.90)
+                    background: Rectangle { color: parent.hovered ? "#4a9eff" : "#3a7fcc"; radius: 3 }
+                    contentItem: Text { text: parent.text; color: "#fff"; font.pixelSize: 11;
+                        horizontalAlignment: Text.AlignHCenter; verticalAlignment: Text.AlignVCenter }
+                }
+            }
+
+            // --- Separator ---
+            Rectangle { Layout.fillWidth: true; height: 1; color: "#444" }
+
+            // --- Solver status ---
+            Text { text: "Solver"; color: "#ccc"; font.pixelSize: 13; font.bold: true }
+
+            ColumnLayout
+            {
+                visible: spatialController.hasSolverResult
+                Layout.fillWidth: true
+                spacing: 2
+
+                Text
+                {
+                    text: (spatialController.solverConverged ? "\u2714 Converged" : "\u2718 Not converged")
+                          + " (RMS " + spatialController.solverRms.toFixed(3) + "m)"
+                    color: spatialController.solverConverged ? "#2ecc71" : "#e74c3c"
+                    font.pixelSize: 11
+                }
+
+                Repeater
+                {
+                    model: calibratePanel.solverResults
+
+                    Text
+                    {
+                        text: modelData.fixtureName + ": \u00b1"
+                              + Math.max(modelData.xCm, modelData.yCm, modelData.zCm).toFixed(0) + "cm"
+                        color: modelData.quality === "good" ? "#2ecc71" :
+                               modelData.quality === "moderate" ? "#f39c12" : "#e74c3c"
+                        font.pixelSize: 11
+                    }
+                }
+            }
+
+            Text
+            {
+                visible: !spatialController.hasSolverResult
+                text: spatialController.obsCount > 0 ? "Ready to solve" : "Add observations first"
+                color: "#666"; font.pixelSize: 11
+            }
+
+            // --- Action buttons ---
+            RowLayout
+            {
+                Layout.fillWidth: true
+                spacing: 4
+
+                Button
+                {
+                    text: "Solve"
+                    implicitHeight: 30
+                    Layout.fillWidth: true
+                    enabled: spatialController.obsCount > 0
+                    onClicked: spatialController.runSolve()
+                    background: Rectangle { color: parent.enabled ? (parent.hovered ? "#4a9eff" : "#3a7fcc") : "#444"; radius: 3 }
+                    contentItem: Text { text: parent.text; color: parent.enabled ? "#fff" : "#666"; font.pixelSize: 12; font.bold: true;
+                        horizontalAlignment: Text.AlignHCenter; verticalAlignment: Text.AlignVCenter }
+                }
+
+                Button
+                {
+                    text: "Accept"
+                    implicitHeight: 30
+                    Layout.fillWidth: true
+                    visible: spatialController.hasSolverResult && spatialController.solverConverged
+                    onClicked: spatialController.acceptSolverResults()
+                    background: Rectangle { color: parent.hovered ? "#2ecc71" : "#27ae60"; radius: 3 }
+                    contentItem: Text { text: parent.text; color: "#fff"; font.pixelSize: 12; font.bold: true;
+                        horizontalAlignment: Text.AlignHCenter; verticalAlignment: Text.AlignVCenter }
+                }
+
+                Button
+                {
+                    text: "Dismiss"
+                    implicitHeight: 30
+                    visible: spatialController.hasSolverResult
+                    onClicked: spatialController.dismissSolverResults()
+                    background: Rectangle { color: parent.hovered ? "#644" : "#433"; radius: 3 }
+                    contentItem: Text { text: parent.text; color: "#c99"; font.pixelSize: 11;
+                        horizontalAlignment: Text.AlignHCenter; verticalAlignment: Text.AlignVCenter }
+                }
+            }
+        } // end Calibrate mode ColumnLayout
 
         // --- Spacer ---
         Item { Layout.fillHeight: true }

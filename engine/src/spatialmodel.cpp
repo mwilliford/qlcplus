@@ -447,6 +447,31 @@ SpatialModel::FixtureViz SpatialModel::fixtureViz(const QString &id) const
     return it->viz;
 }
 
+void SpatialModel::setFixtureViz(const QString &id, const FixtureViz &viz)
+{
+    auto it = m_fixtures.find(id);
+    if (it == m_fixtures.end())
+        return;
+    it->viz = viz;
+}
+
+void SpatialModel::setSolverState(double rmsResidual, bool converged)
+{
+    m_rmsResidual = rmsResidual;
+    m_converged = converged;
+    m_hasSolverViz = true;
+
+    // Update poorly constrained list from viz quality
+    m_poorlyConstrained.clear();
+    for (auto it = m_fixtures.constBegin(); it != m_fixtures.constEnd(); ++it)
+    {
+        if (it->viz.quality == "poor" || it->viz.quality == "unconstrained")
+            m_poorlyConstrained.append(it.key());
+    }
+
+    emit solverVizChanged();
+}
+
 void SpatialModel::clearSolverViz()
 {
     for (auto it = m_fixtures.begin(); it != m_fixtures.end(); ++it)

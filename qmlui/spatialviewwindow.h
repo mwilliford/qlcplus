@@ -69,4 +69,7 @@ void spatialViewAlignSelection(const QString &axis);
 void spatialViewAddTruss(const QString &name, double x1, double y1, double z1,
                           double x2, double y2, double z2);
 
+/** Set the Spatial View panel mode: 0=Layout, 1=Calibrate, 2=Focus, 3=Live. */
+void spatialViewSetMode(int mode);
+
 #endif // SPATIALVIEWWINDOW_H

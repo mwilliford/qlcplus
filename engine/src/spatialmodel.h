@@ -155,10 +155,12 @@ public:
     void applySolverVisualization(const QJsonObject &msg);
 
     FixtureViz fixtureViz(const QString &id) const;
+    void setFixtureViz(const QString &id, const FixtureViz &viz);
     bool hasSolverViz() const { return m_hasSolverViz; }
     double rmsResidual() const { return m_rmsResidual; }
     bool converged() const { return m_converged; }
     QStringList poorlyConstrained() const { return m_poorlyConstrained; }
+    void setSolverState(double rmsResidual, bool converged);
     void clearSolverViz();
 
     // --- Persistence ---
