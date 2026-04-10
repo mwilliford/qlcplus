@@ -194,6 +194,13 @@ void Doc::clearContents()
     m_latestPaletteId = 0;
     m_addresses.clear();
     m_agentContext = AgentContext();
+
+    if (m_spatialModel != NULL)
+        m_spatialModel->clear();
+
+    if (m_calibrationModel != NULL)
+        m_calibrationModel->clear();
+
     m_loadStatus = Cleared;
 
     emit cleared();
@@ -1255,7 +1262,11 @@ MonitorProperties *Doc::monitorProperties()
 CalibrationModel *Doc::calibrationModel()
 {
     if (m_calibrationModel == NULL)
+    {
         m_calibrationModel = new CalibrationModel(this);
+        m_calibrationModel->setDoc(this);
+        m_calibrationModel->setSpatialModel(spatialModel());
+    }
 
     return m_calibrationModel;
 }
@@ -1337,6 +1348,10 @@ bool Doc::loadXML(QXmlStreamReader &doc, bool loadIO)
         else if (doc.name() == QLatin1String("SpatialModel"))
         {
             spatialModel()->loadXML(doc);
+        }
+        else if (doc.name() == QLatin1String("Calibration"))
+        {
+            calibrationModel()->loadXML(doc);
         }
         else if (doc.name() == KXMLAgentContext)
         {
@@ -1484,6 +1499,9 @@ bool Doc::saveXML(QXmlStreamWriter *doc) const
 
     if (m_spatialModel != NULL)
         m_spatialModel->saveXML(*doc);
+
+    if (m_calibrationModel != NULL)
+        m_calibrationModel->saveXML(*doc);
 
     /* End the <Engine> tag */
     doc->writeEndElement();

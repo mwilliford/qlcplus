@@ -2,12 +2,13 @@ set(module_name "qlcplusengine")
 
 include(../../variables.cmake)
 
-# rigmath — spatial math library for calibration and IK
+# rigmath — spatial math library for calibration, IK, and solver
 include(FetchContent)
+set(RIGMATH_BUILD_SOLVER ON CACHE BOOL "" FORCE)
 FetchContent_Declare(
     rigmath
-    GIT_REPOSITORY https://github.com/mwilliford/rigmath-core.git
-    GIT_TAG        v0.6.0
+    GIT_REPOSITORY git@github.com:mwilliford/rigmath-core.git
+    GIT_TAG        v0.7.0
 )
 FetchContent_MakeAvailable(rigmath)
 
@@ -117,7 +118,7 @@ target_link_libraries(${module_name} PUBLIC
 )
 
 target_link_libraries(${module_name} PRIVATE qlcplusaudio)
-target_link_libraries(${module_name} PUBLIC rigmath)
+target_link_libraries(${module_name} PUBLIC rigmath rigmath_solver)
 target_link_libraries(${module_name} PRIVATE MvrGdtf)
 target_include_directories(${module_name} PRIVATE ${libmvrgdtf_SOURCE_DIR}/src)
 

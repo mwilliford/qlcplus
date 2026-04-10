@@ -2,6 +2,7 @@ project(test)
 
 add_subdirectory(agentcontext)
 add_subdirectory(agentintegration)
+add_subdirectory(calibrationmodel)
 add_subdirectory(spatialmodel)
 add_subdirectory(bus)
 add_subdirectory(channelsgroup)

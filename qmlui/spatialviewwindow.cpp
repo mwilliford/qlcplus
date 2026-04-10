@@ -58,6 +58,7 @@ class SpatialViewWindow : public QWidget
     friend void spatialViewSetGizmoMode(int);
     friend void spatialViewAlignSelection(const QString &);
     friend void spatialViewAddTruss(const QString &, double, double, double, double, double, double);
+    friend void spatialViewSetMode(int);
 
 public:
     explicit SpatialViewWindow(Doc *doc)
@@ -431,4 +432,11 @@ void spatialViewDrag(float x1, float y1, float x2, float y2, int steps)
     // Release at end
     QPoint endPos(qRound(x2), qRound(y2));
     QTest::mouseRelease(w, Qt::LeftButton, Qt::NoModifier, endPos);
+}
+
+void spatialViewSetMode(int mode)
+{
+    auto *inst = SpatialViewWindow::s_instance;
+    if (inst && inst->m_controller)
+        inst->m_controller->setMode(mode);
 }
