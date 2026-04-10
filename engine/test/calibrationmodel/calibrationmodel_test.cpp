@@ -73,6 +73,9 @@ static quint32 addMovingHead(Doc *doc, const QString &name, double panRange, dou
     Fixture *fxi = new Fixture(doc);
     fxi->setFixtureDefinition(def, mode);
     fxi->setName(name);
+    // Auto-assign address to avoid overlap with previous fixtures
+    fxi->setUniverse(0);
+    fxi->setAddress(doc->fixtures().size() * 16);
     doc->addFixture(fxi);
 
     return fxi->id();
@@ -235,6 +238,10 @@ void CalibrationModel_Test::solveWithAimObservations()
         rigmath::RigidTransform::translation(trueX + 0.5, trueY - 0.2, trueZ + 0.3),
         SpatialModel::Committed);
 
+    // Disable auto-layout priors for this test — we want pure observation solving
+    for (int dof = 0; dof < 6; dof++)
+        cm->setTolerance(sid, dof, 0.0);
+
     // Add aim observations from ground truth
     double targets[][3] = {{0, 0, 0}, {4, 3, 0}, {-1, 4, 0}};
     for (auto &t : targets)
@@ -308,6 +315,101 @@ void CalibrationModel_Test::solveUpdatesCovariance()
     QVERIFY(cm->lastResult().rms_residual < 0.5);
 
     delete doc;
+}
+
+void CalibrationModel_Test::solveUsesLayoutPriors()
+{
+    // Verify that committed positions act as soft priors: with only a weak
+    // observation, the solver should stay near the committed position.
+    Doc *doc = createDoc();
+    SpatialModel *sm = doc->spatialModel();
+    CalibrationModel *cm = doc->calibrationModel();
+
+    double placedX = 2.0, placedY = 1.5, placedZ = 3.0;
+
+    quint32 fid1 = addMovingHead(doc, "Spot 1", 540.0, 270.0);
+    quint32 fid2 = addMovingHead(doc, "Spot 2", 540.0, 270.0);
+    QString sid1 = QString::number(fid1);
+    QString sid2 = QString::number(fid2);
+
+    sm->setFixtureTransform(sid1,
+        rigmath::RigidTransform::translation(placedX, placedY, placedZ),
+        SpatialModel::Committed);
+    sm->setFixtureTransform(sid2,
+        rigmath::RigidTransform::translation(placedX + 3.0, placedY, placedZ),
+        SpatialModel::Committed);
+
+    // Tight Z tolerance (measured), loose X/Y (eyeballed)
+    cm->setTolerance(sid1, 0, 1.0);  // X ±1m
+    cm->setTolerance(sid1, 1, 1.0);  // Y ±1m
+    cm->setTolerance(sid1, 2, 0.05); // Z ±5cm (measured)
+    cm->setTolerance(sid2, 0, 1.0);
+    cm->setTolerance(sid2, 1, 1.0);
+    cm->setTolerance(sid2, 2, 0.05);
+
+    // One distance observation
+    cm->addDistanceObservation(sid1, sid2, 3.0, 0.90);
+
+    bool converged = cm->solve();
+    QVERIFY(converged);
+
+    // With tight Z prior, Z should stay very close to placed value
+    auto solved1 = sm->solverDerivedTransform(sid1);
+    QVERIFY(solved1.has_value());
+    QVERIFY(std::abs(solved1->pos[2] - placedZ) < 0.15);
+
+    // Uncertainty should exist
+    auto unc = cm->fixtureUncertainty(sid1);
+    QVERIFY(unc.x_cm > 0);
+
+    delete doc;
+}
+
+void CalibrationModel_Test::setAndGetTolerance()
+{
+    CalibrationModel model;
+
+    // Default when not set
+    QCOMPARE(model.getTolerance("1", 0), CalibrationModel::kDefaultPosTolerance);
+    QCOMPARE(model.getTolerance("1", 3), CalibrationModel::kDefaultRotTolerance);
+
+    // Set and read back
+    model.setTolerance("1", 2, 0.05);
+    QCOMPARE(model.getTolerance("1", 2), 0.05);
+
+    // Other DOFs still default
+    QCOMPARE(model.getTolerance("1", 0), CalibrationModel::kDefaultPosTolerance);
+
+    // Reset
+    model.resetTolerances("1");
+    QCOMPARE(model.getTolerance("1", 2), CalibrationModel::kDefaultPosTolerance);
+}
+
+void CalibrationModel_Test::saveAndLoadTolerances()
+{
+    CalibrationModel model;
+    model.setTolerance("1", 0, 0.1);
+    model.setTolerance("1", 2, 0.05);
+    model.setTolerance("2", 3, 5.0);
+
+    QBuffer buffer;
+    buffer.open(QIODevice::WriteOnly);
+    QXmlStreamWriter writer(&buffer);
+    writer.writeStartDocument();
+    model.saveXML(writer);
+    writer.writeEndDocument();
+    buffer.close();
+
+    CalibrationModel loaded;
+    buffer.open(QIODevice::ReadOnly);
+    QXmlStreamReader reader(&buffer);
+    reader.readNextStartElement();
+    loaded.loadXML(reader);
+    buffer.close();
+
+    QCOMPARE(loaded.getTolerance("1", 0), 0.1);
+    QCOMPARE(loaded.getTolerance("1", 2), 0.05);
+    QCOMPARE(loaded.getTolerance("2", 3), 5.0);
 }
 
 void CalibrationModel_Test::saveAndLoadObservations()

@@ -71,7 +71,9 @@ Rectangle
         anchors.margins: 8
         spacing: 6
 
-        // --- Mode selector ---
+        // ===============================================================
+        // ALWAYS-VISIBLE TOP: Mode selector
+        // ===============================================================
         Row
         {
             Layout.fillWidth: true
@@ -116,460 +118,540 @@ Rectangle
         // ===============================================================
         ColumnLayout
         {
+            id: layoutPanel
             visible: spatialController.mode === 0
             Layout.fillWidth: true
-            Layout.fillHeight: true
             spacing: 6
 
-        // --- Gizmo mode (W/E shortcuts) ---
-        RowLayout
-        {
-            spacing: 4
-
-            Text { text: "Tool:"; color: "#999"; font.pixelSize: 11;
-                   Layout.alignment: Qt.AlignVCenter }
-
-            Button
+            // --- Selection header ---
+            Text
             {
-                text: "Move (W)"
-                checkable: true
-                checked: spatialController.gizmoMode === 0
-                autoExclusive: true
-                implicitHeight: 26; Layout.fillWidth: true
-
-                onClicked: spatialController.gizmoMode = 0
-
-                background: Rectangle
-                {
-                    color: parent.checked ? "#4a9eff" : (parent.hovered ? "#444" : "#333")
-                    radius: 3
+                text: {
+                    if (!spatialController.hasSelection)
+                        return "No Selection"
+                    if (spatialController.selectionCount > 1)
+                        return spatialController.selectionCount + " fixtures selected"
+                    return spatialController.selectedFixtureName
                 }
-                contentItem: Text
-                {
-                    text: parent.text; color: parent.checked ? "#fff" : "#aaa"
-                    font.pixelSize: 10; horizontalAlignment: Text.AlignHCenter
-                    verticalAlignment: Text.AlignVCenter
-                }
+                color: spatialController.hasSelection ? "#ccc" : "#666"
+                font.pixelSize: 13
+                font.bold: true
+                elide: Text.ElideRight
+                Layout.fillWidth: true
             }
 
-            Button
-            {
-                text: "Rotate (E)"
-                checkable: true
-                checked: spatialController.gizmoMode === 1
-                autoExclusive: true
-                implicitHeight: 26; Layout.fillWidth: true
-
-                onClicked: spatialController.gizmoMode = 1
-
-                background: Rectangle
-                {
-                    color: parent.checked ? "#4a9eff" : (parent.hovered ? "#444" : "#333")
-                    radius: 3
-                }
-                contentItem: Text
-                {
-                    text: parent.text; color: parent.checked ? "#fff" : "#aaa"
-                    font.pixelSize: 10; horizontalAlignment: Text.AlignHCenter
-                    verticalAlignment: Text.AlignVCenter
-                }
-            }
-        }
-
-        // --- Separator ---
-        Rectangle { Layout.fillWidth: true; height: 1; color: "#444" }
-
-        // --- Selection header ---
-        Text
-        {
-            text: {
-                if (!spatialController.hasSelection)
-                    return "No Selection"
-                if (spatialController.selectionCount > 1)
-                    return spatialController.selectionCount + " fixtures selected"
-                return spatialController.selectedFixtureName
-            }
-            color: spatialController.hasSelection ? "#ccc" : "#666"
-            font.pixelSize: 13
-            font.bold: true
-            elide: Text.ElideRight
-            Layout.fillWidth: true
-        }
-
-        // --- Align tools (visible with multi-select) ---
-        RowLayout
-        {
-            visible: spatialController.selectionCount > 1
-            Layout.fillWidth: true
-            spacing: 4
-
-            Text { text: "Align:"; color: "#999"; font.pixelSize: 11;
-                   Layout.alignment: Qt.AlignVCenter }
-
-            Button
-            {
-                text: "X"; implicitWidth: 36; implicitHeight: 26
-                onClicked: spatialController.alignSelection("X")
-                background: Rectangle { color: parent.hovered ? "#e74c3c" : "#444"; radius: 3 }
-                contentItem: Text { text: parent.text; color: "#fff"; font.pixelSize: 11;
-                    horizontalAlignment: Text.AlignHCenter; verticalAlignment: Text.AlignVCenter }
-            }
-            Button
-            {
-                text: "Y"; implicitWidth: 36; implicitHeight: 26
-                onClicked: spatialController.alignSelection("Y")
-                background: Rectangle { color: parent.hovered ? "#2ecc71" : "#444"; radius: 3 }
-                contentItem: Text { text: parent.text; color: "#fff"; font.pixelSize: 11;
-                    horizontalAlignment: Text.AlignHCenter; verticalAlignment: Text.AlignVCenter }
-            }
-            Button
-            {
-                text: "Z"; implicitWidth: 36; implicitHeight: 26
-                onClicked: spatialController.alignSelection("Z")
-                background: Rectangle { color: parent.hovered ? "#3498db" : "#444"; radius: 3 }
-                contentItem: Text { text: parent.text; color: "#fff"; font.pixelSize: 11;
-                    horizontalAlignment: Text.AlignHCenter; verticalAlignment: Text.AlignVCenter }
-            }
-        }
-
-        // --- Properties (visible only when a single fixture is selected) ---
-        ColumnLayout
-        {
-            visible: spatialController.hasSelection && spatialController.selectionCount === 1
-            Layout.fillWidth: true
-            spacing: 4
-
-            // --- Position ---
-            Text { text: "Position (m)"; color: "#999"; font.pixelSize: 11 }
-
+            // --- Tool + Frame rows (visible only with selection) ---
             RowLayout
             {
+                visible: spatialController.hasSelection
                 Layout.fillWidth: true
                 spacing: 4
 
-                Text { text: "X"; color: "#e74c3c"; font.pixelSize: 11; Layout.preferredWidth: 12 }
-                CompactSpin
-                {
-                    id: posXSpin
-                    from: -100000; to: 100000
-                    value: Math.round(spatialController.posX * 100)
-                    stepSize: 10
-                    Layout.fillWidth: true
-                    editable: true
-                    property bool updating: false
-                    onValueModified: { if (!updating) spatialController.posX = value / 100.0 }
-                    textFromValue: function(v) { return (v / 100.0).toFixed(2) }
-                    valueFromText: function(t) { return Math.round(parseFloat(t) * 100) }
-                    Connections {
-                        target: spatialController
-                        function onTransformChanged() {
-                            posXSpin.updating = true
-                            posXSpin.value = Math.round(spatialController.posX * 100)
-                            posXSpin.updating = false
-                        }
-                    }
-                }
-
-                Text { text: "Y"; color: "#2ecc71"; font.pixelSize: 11; Layout.preferredWidth: 12 }
-                CompactSpin
-                {
-                    id: posYSpin
-                    from: -100000; to: 100000
-                    value: Math.round(spatialController.posY * 100)
-                    stepSize: 10
-                    Layout.fillWidth: true
-                    editable: true
-                    property bool updating: false
-                    onValueModified: { if (!updating) spatialController.posY = value / 100.0 }
-                    textFromValue: function(v) { return (v / 100.0).toFixed(2) }
-                    valueFromText: function(t) { return Math.round(parseFloat(t) * 100) }
-                    Connections {
-                        target: spatialController
-                        function onTransformChanged() {
-                            posYSpin.updating = true
-                            posYSpin.value = Math.round(spatialController.posY * 100)
-                            posYSpin.updating = false
-                        }
-                    }
-                }
-
-                Text { text: "Z"; color: "#3498db"; font.pixelSize: 11; Layout.preferredWidth: 12 }
-                CompactSpin
-                {
-                    id: posZSpin
-                    from: -100000; to: 100000
-                    value: Math.round(spatialController.posZ * 100)
-                    stepSize: 1
-                    Layout.fillWidth: true
-                    editable: true
-                    property bool updating: false
-                    onValueModified: { if (!updating) spatialController.posZ = value / 100.0 }
-                    textFromValue: function(v) { return (v / 100.0).toFixed(2) }
-                    valueFromText: function(t) { return Math.round(parseFloat(t) * 100) }
-                    Connections {
-                        target: spatialController
-                        function onTransformChanged() {
-                            posZSpin.updating = true
-                            posZSpin.value = Math.round(spatialController.posZ * 100)
-                            posZSpin.updating = false
-                        }
-                    }
-                }
-            }
-
-            // --- Rotation ---
-            Text { text: "Rotation (\u00B0)"; color: "#999"; font.pixelSize: 11 }
-
-            RowLayout
-            {
-                Layout.fillWidth: true
-                spacing: 4
-
-                Text { text: "P"; color: "#e74c3c"; font.pixelSize: 11; Layout.preferredWidth: 12 }
-                CompactSpin
-                {
-                    id: rotPSpin
-                    from: -36000; to: 36000
-                    value: Math.round(spatialController.rotPitch * 10)
-                    stepSize: 50
-                    Layout.fillWidth: true
-                    editable: true
-                    property bool updating: false
-                    onValueModified: { if (!updating) spatialController.rotPitch = value / 10.0 }
-                    textFromValue: function(v) { return (v / 10.0).toFixed(1) }
-                    valueFromText: function(t) { return Math.round(parseFloat(t) * 10) }
-                    Connections {
-                        target: spatialController
-                        function onTransformChanged() {
-                            rotPSpin.updating = true
-                            rotPSpin.value = Math.round(spatialController.rotPitch * 10)
-                            rotPSpin.updating = false
-                        }
-                    }
-                }
-
-                Text { text: "Y"; color: "#2ecc71"; font.pixelSize: 11; Layout.preferredWidth: 12 }
-                CompactSpin
-                {
-                    id: rotYSpin
-                    from: -36000; to: 36000
-                    value: Math.round(spatialController.rotYaw * 10)
-                    stepSize: 50
-                    Layout.fillWidth: true
-                    editable: true
-                    property bool updating: false
-                    onValueModified: { if (!updating) spatialController.rotYaw = value / 10.0 }
-                    textFromValue: function(v) { return (v / 10.0).toFixed(1) }
-                    valueFromText: function(t) { return Math.round(parseFloat(t) * 10) }
-                    Connections {
-                        target: spatialController
-                        function onTransformChanged() {
-                            rotYSpin.updating = true
-                            rotYSpin.value = Math.round(spatialController.rotYaw * 10)
-                            rotYSpin.updating = false
-                        }
-                    }
-                }
-
-                Text { text: "R"; color: "#3498db"; font.pixelSize: 11; Layout.preferredWidth: 12 }
-                CompactSpin
-                {
-                    id: rotRSpin
-                    from: -36000; to: 36000
-                    value: Math.round(spatialController.rotRoll * 10)
-                    stepSize: 50
-                    Layout.fillWidth: true
-                    editable: true
-                    property bool updating: false
-                    onValueModified: { if (!updating) spatialController.rotRoll = value / 10.0 }
-                    textFromValue: function(v) { return (v / 10.0).toFixed(1) }
-                    valueFromText: function(t) { return Math.round(parseFloat(t) * 10) }
-                    Connections {
-                        target: spatialController
-                        function onTransformChanged() {
-                            rotRSpin.updating = true
-                            rotRSpin.value = Math.round(spatialController.rotRoll * 10)
-                            rotRSpin.updating = false
-                        }
-                    }
-                }
-            }
-        }
-
-        // --- Separator ---
-        Rectangle { Layout.fillWidth: true; height: 1; color: "#444" }
-
-        // --- Snap settings ---
-        Text { text: "Snap"; color: "#ccc"; font.pixelSize: 13; font.bold: true }
-
-        RowLayout
-        {
-            Layout.fillWidth: true
-            spacing: 6
-
-            Button
-            {
-                text: "Grid"
-                checkable: true
-                checked: spatialController.gridSnap
-                implicitWidth: 50; implicitHeight: 28
-
-                onClicked: spatialController.gridSnap = checked
-
-                background: Rectangle
-                {
-                    color: parent.checked ? "#4a9eff" : (parent.hovered ? "#444" : "#333")
-                    radius: 3
-                }
-                contentItem: Text
-                {
-                    text: parent.text; color: parent.checked ? "#fff" : "#aaa"
-                    font.pixelSize: 11; horizontalAlignment: Text.AlignHCenter
-                    verticalAlignment: Text.AlignVCenter
-                }
-            }
-
-            CompactSpin
-            {
-                id: gridSizeSpin
-                from: 1; to: 500
-                value: Math.round(spatialController.gridSize * 100)
-                stepSize: 5
-                Layout.fillWidth: true
-                editable: true
-                enabled: spatialController.gridSnap
-
-                onValueModified: spatialController.gridSize = value / 100.0
-
-                textFromValue: function(v) { return (v / 100.0).toFixed(2) + " m" }
-                valueFromText: function(t) { return Math.round(parseFloat(t) * 100) }
-
-                Connections
-                {
-                    target: spatialController
-                    function onGridSizeChanged()
-                    {
-                        gridSizeSpin.value = Math.round(spatialController.gridSize * 100)
-                    }
-                }
-            }
-        }
-
-        // --- Axis mode ---
-        RowLayout
-        {
-            spacing: 6
-
-            Text { text: "Axes:"; color: "#999"; font.pixelSize: 11;
-                   Layout.alignment: Qt.AlignVCenter }
-
-            Button
-            {
-                text: "World"
-                checkable: true
-                checked: spatialController.axisMode === 0
-                autoExclusive: true
-                implicitWidth: 55; implicitHeight: 28
-
-                onClicked: spatialController.axisMode = 0
-
-                background: Rectangle
-                {
-                    color: parent.checked ? "#4a9eff" : (parent.hovered ? "#444" : "#333")
-                    radius: 3
-                }
-                contentItem: Text
-                {
-                    text: parent.text; color: parent.checked ? "#fff" : "#aaa"
-                    font.pixelSize: 11; horizontalAlignment: Text.AlignHCenter
-                    verticalAlignment: Text.AlignVCenter
-                }
-            }
-
-            Button
-            {
-                text: "Local"
-                checkable: true
-                checked: spatialController.axisMode === 1
-                autoExclusive: true
-                implicitWidth: 55; implicitHeight: 28
-
-                onClicked: spatialController.axisMode = 1
-
-                background: Rectangle
-                {
-                    color: parent.checked ? "#4a9eff" : (parent.hovered ? "#444" : "#333")
-                    radius: 3
-                }
-                contentItem: Text
-                {
-                    text: parent.text; color: parent.checked ? "#fff" : "#aaa"
-                    font.pixelSize: 11; horizontalAlignment: Text.AlignHCenter
-                    verticalAlignment: Text.AlignVCenter
-                }
-            }
-        }
-
-        // --- Camera presets ---
-        Rectangle { Layout.fillWidth: true; height: 1; color: "#444" }
-
-        Text { text: "Camera"; color: "#ccc"; font.pixelSize: 13; font.bold: true }
-
-        Row
-        {
-            spacing: 4
-
-            Repeater
-            {
-                model: ["FOH", "Top", "Front", "Side"]
+                Text { text: "Tool"; color: "#999"; font.pixelSize: 11;
+                       Layout.preferredWidth: 36; Layout.alignment: Qt.AlignVCenter }
 
                 Button
                 {
-                    width: 56; height: 28
-                    text: modelData
+                    text: "Move"
+                    checkable: true
+                    checked: spatialController.gizmoMode === 0
+                    autoExclusive: true
+                    implicitHeight: 24; Layout.fillWidth: true
+                    onClicked: spatialController.gizmoMode = 0
+                    background: Rectangle { color: parent.checked ? "#4a9eff" : (parent.hovered ? "#444" : "#333"); radius: 3 }
+                    contentItem: Text { text: parent.text; color: parent.checked ? "#fff" : "#aaa";
+                        font.pixelSize: 10; horizontalAlignment: Text.AlignHCenter; verticalAlignment: Text.AlignVCenter }
+                }
 
-                    onClicked: spatialController.setCameraPreset(modelData)
+                Button
+                {
+                    text: "Rotate"
+                    checkable: true
+                    checked: spatialController.gizmoMode === 1
+                    autoExclusive: true
+                    implicitHeight: 24; Layout.fillWidth: true
+                    onClicked: spatialController.gizmoMode = 1
+                    background: Rectangle { color: parent.checked ? "#4a9eff" : (parent.hovered ? "#444" : "#333"); radius: 3 }
+                    contentItem: Text { text: parent.text; color: parent.checked ? "#fff" : "#aaa";
+                        font.pixelSize: 10; horizontalAlignment: Text.AlignHCenter; verticalAlignment: Text.AlignVCenter }
+                }
+            }
 
-                    background: Rectangle
+            RowLayout
+            {
+                visible: spatialController.hasSelection
+                Layout.fillWidth: true
+                spacing: 4
+
+                Text { text: "Frame"; color: "#999"; font.pixelSize: 11;
+                       Layout.preferredWidth: 36; Layout.alignment: Qt.AlignVCenter }
+
+                Button
+                {
+                    text: "World"
+                    checkable: true
+                    checked: spatialController.axisMode === 0
+                    autoExclusive: true
+                    implicitHeight: 24; Layout.fillWidth: true
+                    onClicked: spatialController.axisMode = 0
+                    background: Rectangle { color: parent.checked ? "#4a9eff" : (parent.hovered ? "#444" : "#333"); radius: 3 }
+                    contentItem: Text { text: parent.text; color: parent.checked ? "#fff" : "#aaa";
+                        font.pixelSize: 10; horizontalAlignment: Text.AlignHCenter; verticalAlignment: Text.AlignVCenter }
+                }
+
+                Button
+                {
+                    text: "Local"
+                    checkable: true
+                    checked: spatialController.axisMode === 1
+                    autoExclusive: true
+                    implicitHeight: 24; Layout.fillWidth: true
+                    onClicked: spatialController.axisMode = 1
+                    background: Rectangle { color: parent.checked ? "#4a9eff" : (parent.hovered ? "#444" : "#333"); radius: 3 }
+                    contentItem: Text { text: parent.text; color: parent.checked ? "#fff" : "#aaa";
+                        font.pixelSize: 10; horizontalAlignment: Text.AlignHCenter; verticalAlignment: Text.AlignVCenter }
+                }
+            }
+
+            // ===== NO SELECTION: Workspace tools =====
+            ColumnLayout
+            {
+                visible: !spatialController.hasSelection
+                Layout.fillWidth: true
+                spacing: 6
+
+                Rectangle { Layout.fillWidth: true; height: 1; color: "#444" }
+
+                Text { text: "Workspace"; color: "#ccc"; font.pixelSize: 13; font.bold: true }
+
+                Button
+                {
+                    text: "+ Add Truss"
+                    implicitHeight: 28
+                    Layout.fillWidth: true
+                    onClicked: spatialController.addDefaultTruss()
+                    background: Rectangle { color: parent.hovered ? "#444" : "#333"; radius: 3 }
+                    contentItem: Text { text: parent.text; color: "#aaa"; font.pixelSize: 11;
+                        horizontalAlignment: Text.AlignHCenter; verticalAlignment: Text.AlignVCenter }
+                }
+            }
+
+            // ===== MULTI-SELECT: Align tools =====
+            ColumnLayout
+            {
+                visible: spatialController.selectionCount > 1
+                Layout.fillWidth: true
+                spacing: 4
+
+                Rectangle { Layout.fillWidth: true; height: 1; color: "#444" }
+
+                RowLayout
+                {
+                    Layout.fillWidth: true
+                    spacing: 4
+
+                    Text { text: "Align:"; color: "#999"; font.pixelSize: 11;
+                           Layout.alignment: Qt.AlignVCenter }
+
+                    Button
                     {
-                        color: parent.hovered ? "#444" : "#333"
-                        radius: 3
+                        text: "X"; implicitWidth: 36; implicitHeight: 26
+                        onClicked: spatialController.alignSelection("X")
+                        background: Rectangle { color: parent.hovered ? "#e74c3c" : "#444"; radius: 3 }
+                        contentItem: Text { text: parent.text; color: "#fff"; font.pixelSize: 11;
+                            horizontalAlignment: Text.AlignHCenter; verticalAlignment: Text.AlignVCenter }
                     }
-                    contentItem: Text
+                    Button
                     {
-                        text: parent.text; color: "#aaa"
-                        font.pixelSize: 11; horizontalAlignment: Text.AlignHCenter
-                        verticalAlignment: Text.AlignVCenter
+                        text: "Y"; implicitWidth: 36; implicitHeight: 26
+                        onClicked: spatialController.alignSelection("Y")
+                        background: Rectangle { color: parent.hovered ? "#2ecc71" : "#444"; radius: 3 }
+                        contentItem: Text { text: parent.text; color: "#fff"; font.pixelSize: 11;
+                            horizontalAlignment: Text.AlignHCenter; verticalAlignment: Text.AlignVCenter }
+                    }
+                    Button
+                    {
+                        text: "Z"; implicitWidth: 36; implicitHeight: 26
+                        onClicked: spatialController.alignSelection("Z")
+                        background: Rectangle { color: parent.hovered ? "#3498db" : "#444"; radius: 3 }
+                        contentItem: Text { text: parent.text; color: "#fff"; font.pixelSize: 11;
+                            horizontalAlignment: Text.AlignHCenter; verticalAlignment: Text.AlignVCenter }
                     }
                 }
             }
-        }
 
-        // --- Truss ---
-        Rectangle { Layout.fillWidth: true; height: 1; color: "#444" }
-
-        Text { text: "Truss"; color: "#ccc"; font.pixelSize: 13; font.bold: true }
-
-        Button
-        {
-            text: "+ Add Truss"
-            implicitHeight: 28
-            Layout.fillWidth: true
-
-            onClicked: spatialController.addDefaultTruss()
-
-            background: Rectangle
+            // ===== SINGLE-SELECT: Position + Rotation properties =====
+            ColumnLayout
             {
-                color: parent.hovered ? "#444" : "#333"
-                radius: 3
+                visible: spatialController.hasSelection && spatialController.selectionCount === 1
+                Layout.fillWidth: true
+                spacing: 4
+
+                Rectangle { Layout.fillWidth: true; height: 1; color: "#444" }
+
+                Text { text: "Position (m)"; color: "#999"; font.pixelSize: 11 }
+
+                RowLayout
+                {
+                    Layout.fillWidth: true
+                    spacing: 4
+
+                    Text { text: "X"; color: "#e74c3c"; font.pixelSize: 11; Layout.preferredWidth: 12 }
+                    CompactSpin
+                    {
+                        id: posXSpin
+                        from: -100000; to: 100000
+                        value: Math.round(spatialController.posX * 100)
+                        stepSize: 10
+                        Layout.fillWidth: true
+                        editable: true
+                        property bool updating: false
+                        onValueModified: { if (!updating) spatialController.posX = value / 100.0 }
+                        textFromValue: function(v) { return (v / 100.0).toFixed(2) }
+                        valueFromText: function(t) { return Math.round(parseFloat(t) * 100) }
+                        Connections {
+                            target: spatialController
+                            function onTransformChanged() {
+                                posXSpin.updating = true
+                                posXSpin.value = Math.round(spatialController.posX * 100)
+                                posXSpin.updating = false
+                            }
+                        }
+                    }
+
+                    Text { text: "Y"; color: "#2ecc71"; font.pixelSize: 11; Layout.preferredWidth: 12 }
+                    CompactSpin
+                    {
+                        id: posYSpin
+                        from: -100000; to: 100000
+                        value: Math.round(spatialController.posY * 100)
+                        stepSize: 10
+                        Layout.fillWidth: true
+                        editable: true
+                        property bool updating: false
+                        onValueModified: { if (!updating) spatialController.posY = value / 100.0 }
+                        textFromValue: function(v) { return (v / 100.0).toFixed(2) }
+                        valueFromText: function(t) { return Math.round(parseFloat(t) * 100) }
+                        Connections {
+                            target: spatialController
+                            function onTransformChanged() {
+                                posYSpin.updating = true
+                                posYSpin.value = Math.round(spatialController.posY * 100)
+                                posYSpin.updating = false
+                            }
+                        }
+                    }
+
+                    Text { text: "Z"; color: "#3498db"; font.pixelSize: 11; Layout.preferredWidth: 12 }
+                    CompactSpin
+                    {
+                        id: posZSpin
+                        from: -100000; to: 100000
+                        value: Math.round(spatialController.posZ * 100)
+                        stepSize: 1
+                        Layout.fillWidth: true
+                        editable: true
+                        property bool updating: false
+                        onValueModified: { if (!updating) spatialController.posZ = value / 100.0 }
+                        textFromValue: function(v) { return (v / 100.0).toFixed(2) }
+                        valueFromText: function(t) { return Math.round(parseFloat(t) * 100) }
+                        Connections {
+                            target: spatialController
+                            function onTransformChanged() {
+                                posZSpin.updating = true
+                                posZSpin.value = Math.round(spatialController.posZ * 100)
+                                posZSpin.updating = false
+                            }
+                        }
+                    }
+                }
+
+                Text { text: "Rotation (\u00B0)"; color: "#999"; font.pixelSize: 11 }
+
+                RowLayout
+                {
+                    Layout.fillWidth: true
+                    spacing: 4
+
+                    Text { text: "P"; color: "#e74c3c"; font.pixelSize: 11; Layout.preferredWidth: 12 }
+                    CompactSpin
+                    {
+                        id: rotPSpin
+                        from: -36000; to: 36000
+                        value: Math.round(spatialController.rotPitch * 10)
+                        stepSize: 50
+                        Layout.fillWidth: true
+                        editable: true
+                        property bool updating: false
+                        onValueModified: { if (!updating) spatialController.rotPitch = value / 10.0 }
+                        textFromValue: function(v) { return (v / 10.0).toFixed(1) }
+                        valueFromText: function(t) { return Math.round(parseFloat(t) * 10) }
+                        Connections {
+                            target: spatialController
+                            function onTransformChanged() {
+                                rotPSpin.updating = true
+                                rotPSpin.value = Math.round(spatialController.rotPitch * 10)
+                                rotPSpin.updating = false
+                            }
+                        }
+                    }
+
+                    Text { text: "Y"; color: "#2ecc71"; font.pixelSize: 11; Layout.preferredWidth: 12 }
+                    CompactSpin
+                    {
+                        id: rotYSpin
+                        from: -36000; to: 36000
+                        value: Math.round(spatialController.rotYaw * 10)
+                        stepSize: 50
+                        Layout.fillWidth: true
+                        editable: true
+                        property bool updating: false
+                        onValueModified: { if (!updating) spatialController.rotYaw = value / 10.0 }
+                        textFromValue: function(v) { return (v / 10.0).toFixed(1) }
+                        valueFromText: function(t) { return Math.round(parseFloat(t) * 10) }
+                        Connections {
+                            target: spatialController
+                            function onTransformChanged() {
+                                rotYSpin.updating = true
+                                rotYSpin.value = Math.round(spatialController.rotYaw * 10)
+                                rotYSpin.updating = false
+                            }
+                        }
+                    }
+
+                    Text { text: "R"; color: "#3498db"; font.pixelSize: 11; Layout.preferredWidth: 12 }
+                    CompactSpin
+                    {
+                        id: rotRSpin
+                        from: -36000; to: 36000
+                        value: Math.round(spatialController.rotRoll * 10)
+                        stepSize: 50
+                        Layout.fillWidth: true
+                        editable: true
+                        property bool updating: false
+                        onValueModified: { if (!updating) spatialController.rotRoll = value / 10.0 }
+                        textFromValue: function(v) { return (v / 10.0).toFixed(1) }
+                        valueFromText: function(t) { return Math.round(parseFloat(t) * 10) }
+                        Connections {
+                            target: spatialController
+                            function onTransformChanged() {
+                                rotRSpin.updating = true
+                                rotRSpin.value = Math.round(spatialController.rotRoll * 10)
+                                rotRSpin.updating = false
+                            }
+                        }
+                    }
+                }
             }
-            contentItem: Text
+
+            // ===== SELECTION (1 OR MORE): Tolerance (solver prior) =====
+            ColumnLayout
             {
-                text: parent.text; color: "#aaa"
-                font.pixelSize: 11; horizontalAlignment: Text.AlignHCenter
-                verticalAlignment: Text.AlignVCenter
+                id: tolerancePanel
+                visible: spatialController.hasSelection
+                Layout.fillWidth: true
+                spacing: 4
+
+                // Refresh tolerance spinbox values when selection or solver state changes
+                property int primaryId: spatialController.selectedFixtureId
+                property bool updatingTols: false
+
+                function reloadTolerances() {
+                    if (primaryId < 0)
+                        return
+                    updatingTols = true
+                    tolPosX.value = Math.round(calibrateController.getTolerance(primaryId, 0) * 100)
+                    tolPosY.value = Math.round(calibrateController.getTolerance(primaryId, 1) * 100)
+                    tolPosZ.value = Math.round(calibrateController.getTolerance(primaryId, 2) * 100)
+                    tolRotP.value = Math.round(calibrateController.getTolerance(primaryId, 3) * 10)
+                    tolRotY.value = Math.round(calibrateController.getTolerance(primaryId, 4) * 10)
+                    tolRotR.value = Math.round(calibrateController.getTolerance(primaryId, 5) * 10)
+                    updatingTols = false
+                }
+
+                onPrimaryIdChanged: reloadTolerances()
+                Component.onCompleted: reloadTolerances()
+
+                Connections {
+                    target: calibrateController
+                    function onChanged() { tolerancePanel.reloadTolerances() }
+                }
+
+                Rectangle { Layout.fillWidth: true; height: 1; color: "#444" }
+
+                Text {
+                    text: spatialController.selectionCount > 1
+                          ? "Tolerance (applies to all)"
+                          : "Tolerance (solver prior)"
+                    color: "#ccc"
+                    font.pixelSize: 13
+                    font.bold: true
+                }
+
+                Text { text: "Pos (m)"; color: "#999"; font.pixelSize: 10 }
+
+                RowLayout
+                {
+                    Layout.fillWidth: true
+                    spacing: 4
+
+                    Text { text: "X"; color: "#e74c3c"; font.pixelSize: 11; Layout.preferredWidth: 12 }
+                    CompactSpin
+                    {
+                        id: tolPosX
+                        from: 0; to: 10000
+                        value: 50  // 0.50m default
+                        stepSize: 5
+                        Layout.fillWidth: true
+                        editable: true
+                        textFromValue: function(v) { return (v / 100.0).toFixed(2) }
+                        valueFromText: function(t) { return Math.round(parseFloat(t) * 100) }
+                        onValueModified: {
+                            if (tolerancePanel.updatingTols) return
+                            if (spatialController.selectionCount > 1) {
+                                calibrateController.setToleranceForFixtures(
+                                    spatialController.selectedFixtureIds(), 0, value / 100.0)
+                            } else if (tolerancePanel.primaryId >= 0) {
+                                calibrateController.setTolerance(tolerancePanel.primaryId, 0, value / 100.0)
+                            }
+                        }
+                    }
+
+                    Text { text: "Y"; color: "#2ecc71"; font.pixelSize: 11; Layout.preferredWidth: 12 }
+                    CompactSpin
+                    {
+                        id: tolPosY
+                        from: 0; to: 10000
+                        value: 50
+                        stepSize: 5
+                        Layout.fillWidth: true
+                        editable: true
+                        textFromValue: function(v) { return (v / 100.0).toFixed(2) }
+                        valueFromText: function(t) { return Math.round(parseFloat(t) * 100) }
+                        onValueModified: {
+                            if (tolerancePanel.updatingTols) return
+                            if (spatialController.selectionCount > 1) {
+                                calibrateController.setToleranceForFixtures(
+                                    spatialController.selectedFixtureIds(), 1, value / 100.0)
+                            } else if (tolerancePanel.primaryId >= 0) {
+                                calibrateController.setTolerance(tolerancePanel.primaryId, 1, value / 100.0)
+                            }
+                        }
+                    }
+
+                    Text { text: "Z"; color: "#3498db"; font.pixelSize: 11; Layout.preferredWidth: 12 }
+                    CompactSpin
+                    {
+                        id: tolPosZ
+                        from: 0; to: 10000
+                        value: 50
+                        stepSize: 5
+                        Layout.fillWidth: true
+                        editable: true
+                        textFromValue: function(v) { return (v / 100.0).toFixed(2) }
+                        valueFromText: function(t) { return Math.round(parseFloat(t) * 100) }
+                        onValueModified: {
+                            if (tolerancePanel.updatingTols) return
+                            if (spatialController.selectionCount > 1) {
+                                calibrateController.setToleranceForFixtures(
+                                    spatialController.selectedFixtureIds(), 2, value / 100.0)
+                            } else if (tolerancePanel.primaryId >= 0) {
+                                calibrateController.setTolerance(tolerancePanel.primaryId, 2, value / 100.0)
+                            }
+                        }
+                    }
+                }
+
+                Text { text: "Rot (\u00B0)"; color: "#999"; font.pixelSize: 10 }
+
+                RowLayout
+                {
+                    Layout.fillWidth: true
+                    spacing: 4
+
+                    Text { text: "P"; color: "#e74c3c"; font.pixelSize: 11; Layout.preferredWidth: 12 }
+                    CompactSpin
+                    {
+                        id: tolRotP
+                        from: 0; to: 36000
+                        value: 150  // 15.0°
+                        stepSize: 10
+                        Layout.fillWidth: true
+                        editable: true
+                        textFromValue: function(v) { return (v / 10.0).toFixed(1) }
+                        valueFromText: function(t) { return Math.round(parseFloat(t) * 10) }
+                        onValueModified: {
+                            if (tolerancePanel.updatingTols) return
+                            if (spatialController.selectionCount > 1) {
+                                calibrateController.setToleranceForFixtures(
+                                    spatialController.selectedFixtureIds(), 3, value / 10.0)
+                            } else if (tolerancePanel.primaryId >= 0) {
+                                calibrateController.setTolerance(tolerancePanel.primaryId, 3, value / 10.0)
+                            }
+                        }
+                    }
+
+                    Text { text: "Y"; color: "#2ecc71"; font.pixelSize: 11; Layout.preferredWidth: 12 }
+                    CompactSpin
+                    {
+                        id: tolRotY
+                        from: 0; to: 36000
+                        value: 150
+                        stepSize: 10
+                        Layout.fillWidth: true
+                        editable: true
+                        textFromValue: function(v) { return (v / 10.0).toFixed(1) }
+                        valueFromText: function(t) { return Math.round(parseFloat(t) * 10) }
+                        onValueModified: {
+                            if (tolerancePanel.updatingTols) return
+                            if (spatialController.selectionCount > 1) {
+                                calibrateController.setToleranceForFixtures(
+                                    spatialController.selectedFixtureIds(), 4, value / 10.0)
+                            } else if (tolerancePanel.primaryId >= 0) {
+                                calibrateController.setTolerance(tolerancePanel.primaryId, 4, value / 10.0)
+                            }
+                        }
+                    }
+
+                    Text { text: "R"; color: "#3498db"; font.pixelSize: 11; Layout.preferredWidth: 12 }
+                    CompactSpin
+                    {
+                        id: tolRotR
+                        from: 0; to: 36000
+                        value: 150
+                        stepSize: 10
+                        Layout.fillWidth: true
+                        editable: true
+                        textFromValue: function(v) { return (v / 10.0).toFixed(1) }
+                        valueFromText: function(t) { return Math.round(parseFloat(t) * 10) }
+                        onValueModified: {
+                            if (tolerancePanel.updatingTols) return
+                            if (spatialController.selectionCount > 1) {
+                                calibrateController.setToleranceForFixtures(
+                                    spatialController.selectedFixtureIds(), 5, value / 10.0)
+                            } else if (tolerancePanel.primaryId >= 0) {
+                                calibrateController.setTolerance(tolerancePanel.primaryId, 5, value / 10.0)
+                            }
+                        }
+                    }
+                }
+
+                Button
+                {
+                    text: "Reset to defaults"
+                    implicitHeight: 24
+                    Layout.fillWidth: true
+                    onClicked: {
+                        if (spatialController.selectionCount > 1)
+                            calibrateController.resetTolerancesForSelection(spatialController.selectedFixtureIds())
+                        else if (tolerancePanel.primaryId >= 0)
+                            calibrateController.resetTolerances(tolerancePanel.primaryId)
+                    }
+                    background: Rectangle { color: parent.hovered ? "#444" : "#333"; radius: 3 }
+                    contentItem: Text { text: parent.text; color: "#aaa"; font.pixelSize: 10;
+                        horizontalAlignment: Text.AlignHCenter; verticalAlignment: Text.AlignVCenter }
+                }
             }
-        }
 
         } // end Layout mode ColumnLayout
 
@@ -581,7 +663,6 @@ Rectangle
             id: calibratePanel
             visible: spatialController.mode === 1
             Layout.fillWidth: true
-            Layout.fillHeight: true
             spacing: 6
 
             // Observation data (refreshed on calibrationChanged)
@@ -716,38 +797,20 @@ Rectangle
                 }
             }
 
-            // Distance observation
+            // Distance observation (uses current multi-selection)
             RowLayout
             {
                 Layout.fillWidth: true
                 spacing: 4
+                enabled: spatialController.selectionCount === 2
 
-                Text { text: "Dist"; color: "#999"; font.pixelSize: 11; Layout.preferredWidth: 30 }
-
-                CompactSpin
-                {
-                    id: distFixA
-                    from: 0; to: 999
-                    value: 0
-                    stepSize: 1
-                    implicitWidth: 36
-                    editable: true
-                    textFromValue: function(v) { return v.toString() }
-                    valueFromText: function(t) { return parseInt(t) || 0 }
-                }
-
-                Text { text: "\u2194"; color: "#999"; font.pixelSize: 11 }
-
-                CompactSpin
-                {
-                    id: distFixB
-                    from: 0; to: 999
-                    value: 1
-                    stepSize: 1
-                    implicitWidth: 36
-                    editable: true
-                    textFromValue: function(v) { return v.toString() }
-                    valueFromText: function(t) { return parseInt(t) || 0 }
+                Text {
+                    text: spatialController.selectionCount === 2
+                          ? "Dist A\u2194B"
+                          : "Dist (select 2)"
+                    color: spatialController.selectionCount === 2 ? "#999" : "#666"
+                    font.pixelSize: 11
+                    Layout.preferredWidth: 92
                 }
 
                 CompactSpin
@@ -764,13 +827,86 @@ Rectangle
 
                 Button
                 {
-                    text: "+"
-                    implicitWidth: 28; implicitHeight: 28
-                    onClicked: calibrateController.addDistanceObs(
-                        distFixA.value, distFixB.value,
-                        distValueSpin.value / 100.0, 0.90)
-                    background: Rectangle { color: parent.hovered ? "#4a9eff" : "#3a7fcc"; radius: 3 }
-                    contentItem: Text { text: parent.text; color: "#fff"; font.pixelSize: 11;
+                    text: "+ Add"
+                    implicitWidth: 50; implicitHeight: 28
+                    enabled: spatialController.selectionCount === 2
+                    onClicked: {
+                        var ids = spatialController.selectedFixtureIds()
+                        if (ids.length >= 2) {
+                            calibrateController.addDistanceObs(
+                                ids[0], ids[1],
+                                distValueSpin.value / 100.0, 0.90)
+                        }
+                    }
+                    background: Rectangle { color: parent.enabled ? (parent.hovered ? "#4a9eff" : "#3a7fcc") : "#444"; radius: 3 }
+                    contentItem: Text { text: parent.text; color: parent.enabled ? "#fff" : "#666"; font.pixelSize: 10;
+                        horizontalAlignment: Text.AlignHCenter; verticalAlignment: Text.AlignVCenter }
+                }
+            }
+
+            // Aim observation — beam aimed at a known point
+            RowLayout
+            {
+                Layout.fillWidth: true
+                spacing: 4
+                enabled: spatialController.hasSelection && spatialController.selectionCount === 1
+
+                Text {
+                    text: "Aim \u2192"
+                    color: (spatialController.hasSelection && spatialController.selectionCount === 1) ? "#999" : "#666"
+                    font.pixelSize: 11
+                    Layout.preferredWidth: 46
+                }
+
+                CompactSpin
+                {
+                    id: aimX
+                    from: -10000; to: 10000
+                    value: 0
+                    stepSize: 10
+                    implicitWidth: 56
+                    editable: true
+                    textFromValue: function(v) { return (v / 100.0).toFixed(1) }
+                    valueFromText: function(t) { return Math.round(parseFloat(t) * 100) }
+                }
+
+                CompactSpin
+                {
+                    id: aimY
+                    from: -10000; to: 10000
+                    value: 0
+                    stepSize: 10
+                    implicitWidth: 56
+                    editable: true
+                    textFromValue: function(v) { return (v / 100.0).toFixed(1) }
+                    valueFromText: function(t) { return Math.round(parseFloat(t) * 100) }
+                }
+
+                CompactSpin
+                {
+                    id: aimZ
+                    from: -10000; to: 10000
+                    value: 0
+                    stepSize: 10
+                    implicitWidth: 56
+                    editable: true
+                    textFromValue: function(v) { return (v / 100.0).toFixed(1) }
+                    valueFromText: function(t) { return Math.round(parseFloat(t) * 100) }
+                }
+
+                Button
+                {
+                    text: "+ Add"
+                    implicitWidth: 50; implicitHeight: 28
+                    enabled: spatialController.hasSelection && spatialController.selectionCount === 1
+                    onClicked: calibrateController.addAimObs(
+                        spatialController.selectedFixtureId,
+                        aimX.value / 100.0,
+                        aimY.value / 100.0,
+                        aimZ.value / 100.0,
+                        0.95)
+                    background: Rectangle { color: parent.enabled ? (parent.hovered ? "#4a9eff" : "#3a7fcc") : "#444"; radius: 3 }
+                    contentItem: Text { text: parent.text; color: parent.enabled ? "#fff" : "#666"; font.pixelSize: 10;
                         horizontalAlignment: Text.AlignHCenter; verticalAlignment: Text.AlignVCenter }
                 }
             }
@@ -901,6 +1037,82 @@ Rectangle
 
         // --- Spacer ---
         Item { Layout.fillHeight: true }
+
+        // ===============================================================
+        // ALWAYS-VISIBLE BOTTOM: Snap + Camera
+        // ===============================================================
+        Rectangle { Layout.fillWidth: true; height: 1; color: "#444" }
+
+        // Snap
+        RowLayout
+        {
+            Layout.fillWidth: true
+            spacing: 6
+
+            Text { text: "Snap"; color: "#999"; font.pixelSize: 11;
+                   Layout.preferredWidth: 36; Layout.alignment: Qt.AlignVCenter }
+
+            Button
+            {
+                text: "Grid"
+                checkable: true
+                checked: spatialController.gridSnap
+                implicitWidth: 44; implicitHeight: 24
+                onClicked: spatialController.gridSnap = checked
+                background: Rectangle { color: parent.checked ? "#4a9eff" : (parent.hovered ? "#444" : "#333"); radius: 3 }
+                contentItem: Text { text: parent.text; color: parent.checked ? "#fff" : "#aaa";
+                    font.pixelSize: 10; horizontalAlignment: Text.AlignHCenter; verticalAlignment: Text.AlignVCenter }
+            }
+
+            CompactSpin
+            {
+                id: gridSizeSpin
+                from: 1; to: 500
+                value: Math.round(spatialController.gridSize * 100)
+                stepSize: 5
+                Layout.fillWidth: true
+                editable: true
+                enabled: spatialController.gridSnap
+                onValueModified: spatialController.gridSize = value / 100.0
+                textFromValue: function(v) { return (v / 100.0).toFixed(2) + " m" }
+                valueFromText: function(t) { return Math.round(parseFloat(t) * 100) }
+
+                Connections
+                {
+                    target: spatialController
+                    function onGridSizeChanged()
+                    {
+                        gridSizeSpin.value = Math.round(spatialController.gridSize * 100)
+                    }
+                }
+            }
+        }
+
+        // Camera presets
+        RowLayout
+        {
+            Layout.fillWidth: true
+            spacing: 4
+
+            Text { text: "View"; color: "#999"; font.pixelSize: 11;
+                   Layout.preferredWidth: 36; Layout.alignment: Qt.AlignVCenter }
+
+            Repeater
+            {
+                model: ["FOH", "Top", "Front", "Side"]
+
+                Button
+                {
+                    Layout.fillWidth: true
+                    implicitHeight: 24
+                    text: modelData
+                    onClicked: spatialController.setCameraPreset(modelData)
+                    background: Rectangle { color: parent.hovered ? "#444" : "#333"; radius: 3 }
+                    contentItem: Text { text: parent.text; color: "#aaa"; font.pixelSize: 10;
+                        horizontalAlignment: Text.AlignHCenter; verticalAlignment: Text.AlignVCenter }
+                }
+            }
+        }
 
         // --- Status ---
         Text

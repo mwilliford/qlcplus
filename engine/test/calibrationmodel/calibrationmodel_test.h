@@ -35,6 +35,11 @@ private slots:
     void solveWithAimObservations();
     void solveReportsConvergence();
     void solveUpdatesCovariance();
+    void solveUsesLayoutPriors();
+
+    // Tolerances
+    void setAndGetTolerance();
+    void saveAndLoadTolerances();
 
     // XML persistence
     void saveAndLoadObservations();

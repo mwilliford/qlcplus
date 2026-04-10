@@ -27,6 +27,7 @@
 #include <QString>
 #include <QXmlStreamReader>
 #include <QXmlStreamWriter>
+#include <array>
 #include <variant>
 #include <vector>
 
@@ -184,6 +185,33 @@ public:
     void clearConstraints(const QString &fixture);
 
     // -----------------------------------------------------------------------
+    // Per-fixture layout tolerances (auto-priors for the solver)
+    // -----------------------------------------------------------------------
+    //
+    // When the user places a fixture in Layout mode, its committed position
+    // should anchor the solver. The tolerance expresses the user's confidence
+    // in that placement per DOF — tighter tolerance = stronger prior.
+    //
+    // DOF index: 0=tx, 1=ty, 2=tz (meters), 3=rx, 4=ry, 5=rz (degrees)
+    // Value < 0 means "no tolerance / free parameter".
+    //
+
+    /** Default position tolerance in meters (all three position axes). */
+    static constexpr double kDefaultPosTolerance = 0.5;
+
+    /** Default rotation tolerance in degrees (all three rotation axes). */
+    static constexpr double kDefaultRotTolerance = 15.0;
+
+    /** Get the tolerance for a fixture DOF. Returns default if not explicitly set. */
+    double getTolerance(const QString &fixture, int dof) const;
+
+    /** Set the tolerance for a fixture DOF. */
+    void setTolerance(const QString &fixture, int dof, double value);
+
+    /** Reset all tolerances for a fixture to defaults. */
+    void resetTolerances(const QString &fixture);
+
+    // -----------------------------------------------------------------------
     // Solver
     // -----------------------------------------------------------------------
 
@@ -222,6 +250,7 @@ public:
 signals:
     void observationsChanged();
     void solveCompleted(bool converged);
+    void tolerancesChanged(const QString &fixtureId);
 
 private:
     /** Build ChannelSpec + KinematicsType for a QLC+ fixture ID. */
@@ -237,6 +266,11 @@ private:
 
     // Per-fixture constraints: fixture_id → list of DOF constraints
     QMap<QString, QList<FixtureConstraint>> m_constraints;
+
+    // Per-fixture tolerances: fixture_id → array of 6 DOF tolerances
+    // Values < 0 mean "use default". Defaults are kDefaultPosTolerance / kDefaultRotTolerance.
+    using ToleranceArray = std::array<double, 6>;
+    QMap<QString, ToleranceArray> m_tolerances;
 
     // Last solve result
     bool m_hasResult = false;
