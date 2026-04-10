@@ -151,6 +151,10 @@ Rectangle
             }
 
             // --- Tool + Frame combined row (visible only with selection) ---
+            // Two independent button groups so toggling one doesn't affect the other
+            ButtonGroup { id: toolGroup }
+            ButtonGroup { id: frameGroup }
+
             RowLayout
             {
                 visible: spatialController.hasSelection
@@ -163,7 +167,7 @@ Rectangle
                     text: "\u2194"  // ↔ horizontal arrows = move
                     checkable: true
                     checked: spatialController.gizmoMode === 0
-                    autoExclusive: true
+                    ButtonGroup.group: toolGroup
                     implicitWidth: 26; implicitHeight: 22
                     onClicked: spatialController.gizmoMode = 0
                     ToolTip.visible: hovered
@@ -179,7 +183,7 @@ Rectangle
                     text: "\u21BB"  // ↻ clockwise arrow = rotate
                     checkable: true
                     checked: spatialController.gizmoMode === 1
-                    autoExclusive: true
+                    ButtonGroup.group: toolGroup
                     implicitWidth: 26; implicitHeight: 22
                     onClicked: spatialController.gizmoMode = 1
                     ToolTip.visible: hovered
@@ -199,7 +203,7 @@ Rectangle
                     text: "W"
                     checkable: true
                     checked: spatialController.axisMode === 0
-                    autoExclusive: true
+                    ButtonGroup.group: frameGroup
                     implicitWidth: 26; implicitHeight: 22
                     onClicked: spatialController.axisMode = 0
                     ToolTip.visible: hovered
@@ -215,7 +219,7 @@ Rectangle
                     text: "L"
                     checkable: true
                     checked: spatialController.axisMode === 1
-                    autoExclusive: true
+                    ButtonGroup.group: frameGroup
                     implicitWidth: 26; implicitHeight: 22
                     onClicked: spatialController.axisMode = 1
                     ToolTip.visible: hovered
