@@ -103,6 +103,7 @@ private:
     void rebuildFixtures();
     void rebuildEllipsoids();
     void rebuildTrusses();
+    void rebuildObservationLines();
     const qlcrender::FixtureSceneGraph *getOrBuildSceneGraph(
         const QString &manufacturer, const QString &model,
         const GDTFGeometryData *geoData);

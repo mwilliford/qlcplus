@@ -799,13 +799,52 @@ Rectangle
                 {
                     model: calibratePanel.solverResults
 
-                    Text
+                    Rectangle
                     {
-                        text: modelData.fixtureName + ": \u00b1"
-                              + Math.max(modelData.xCm, modelData.yCm, modelData.zCm).toFixed(0) + "cm"
-                        color: modelData.quality === "good" ? "#2ecc71" :
-                               modelData.quality === "moderate" ? "#f39c12" : "#e74c3c"
-                        font.pixelSize: 11
+                        width: parent ? parent.width : 0
+                        height: 28
+                        color: index % 2 ? "#383838" : "#333"
+                        radius: 3
+
+                        RowLayout
+                        {
+                            anchors.fill: parent
+                            anchors.leftMargin: 6
+                            anchors.rightMargin: 4
+                            spacing: 4
+
+                            Text
+                            {
+                                text: modelData.fixtureName + ": \u00b1"
+                                      + Math.max(modelData.xCm, modelData.yCm, modelData.zCm).toFixed(0) + "cm"
+                                color: modelData.quality === "good" ? "#2ecc71" :
+                                       modelData.quality === "moderate" ? "#f39c12" : "#e74c3c"
+                                font.pixelSize: 11
+                                elide: Text.ElideRight
+                                Layout.fillWidth: true
+                            }
+
+                            Button
+                            {
+                                text: "\u2714"
+                                implicitWidth: 24; implicitHeight: 22
+                                visible: calibrateController.solverConverged
+                                onClicked: calibrateController.acceptFixtureResult(parseInt(modelData.fixtureId))
+                                background: Rectangle { color: parent.hovered ? "#2ecc71" : "#27ae60"; radius: 3 }
+                                contentItem: Text { text: parent.text; color: "#fff"; font.pixelSize: 11;
+                                    horizontalAlignment: Text.AlignHCenter; verticalAlignment: Text.AlignVCenter }
+                            }
+
+                            Button
+                            {
+                                text: "\u00d7"
+                                implicitWidth: 24; implicitHeight: 22
+                                onClicked: calibrateController.dismissFixtureResult(parseInt(modelData.fixtureId))
+                                background: Rectangle { color: parent.hovered ? "#a33" : "transparent"; radius: 3 }
+                                contentItem: Text { text: parent.text; color: "#c66"; font.pixelSize: 13;
+                                    horizontalAlignment: Text.AlignHCenter; verticalAlignment: Text.AlignVCenter }
+                            }
+                        }
                     }
                 }
             }

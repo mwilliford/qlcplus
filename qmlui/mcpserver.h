@@ -113,6 +113,8 @@ private:
     QJsonObject toolAlignSelection(const QJsonObject &args);
     QJsonObject toolAddTruss(const QJsonObject &args);
     QJsonObject toolSetSpatialMode(const QJsonObject &args);
+    QJsonObject toolCalibrateAddObs(const QJsonObject &args);
+    QJsonObject toolCalibrateRunSolve(const QJsonObject &args);
 
     // Helpers
     QJsonObject makeResult(int id, const QJsonObject &result);

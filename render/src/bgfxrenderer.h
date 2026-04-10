@@ -91,6 +91,7 @@ public:
     const std::vector<RenderFixture>& fixtures() const { return m_fixtures; }
 
     void setMeshBasePath(const std::string &path) override { m_meshBasePath = path; }
+    void setObservationLines(const std::vector<RenderLine>& lines) override;
 
 private:
     void renderGrid();
@@ -98,6 +99,7 @@ private:
     void renderGizmo();
     void renderRotateGizmo();
     void renderTrusses();
+    void renderObservationLines();
     void renderLabels();
     void renderSceneGraph(const SceneNode &node, const float parentTransform[16],
                           const float color[4]);
@@ -138,6 +140,7 @@ private:
 
     // Calibration overlays
     std::vector<RenderEllipsoid> m_ellipsoids;
+    std::vector<RenderLine> m_observationLines;
 
     // Shader programs
     bgfx::ProgramHandle m_colorProgram = BGFX_INVALID_HANDLE;  // vertex-color (grid/lines)

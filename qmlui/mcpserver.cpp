@@ -38,6 +38,7 @@
 #include "qlcfixturedef.h"
 #include "universe.h"
 #include "inputoutputmap.h"
+#include "calibrationmodel.h"
 
 #include <QGuiApplication>
 #include <QMouseEvent>
@@ -516,6 +517,35 @@ void McpServer::registerBuiltinTools()
             {"required", QJsonArray{"mode"}}
         },
         [this](const QJsonObject &args) { return toolSetSpatialMode(args); }
+    });
+
+    registerTool({
+        "calibrate_add_obs",
+        "Add a calibration observation. type='height': set fixture Z position (requires fixtureId, value in meters). "
+        "type='distance': set distance between two fixtures (requires fixtureIdA, fixtureIdB, value in meters).",
+        QJsonObject{
+            {"type", "object"},
+            {"properties", QJsonObject{
+                {"type", QJsonObject{{"type", "string"}, {"description", "Observation type: 'height' or 'distance'"}}},
+                {"fixtureId", QJsonObject{{"type", "integer"}, {"description", "Fixture ID (for height obs)"}}},
+                {"fixtureIdA", QJsonObject{{"type", "integer"}, {"description", "First fixture ID (for distance obs)"}}},
+                {"fixtureIdB", QJsonObject{{"type", "integer"}, {"description", "Second fixture ID (for distance obs)"}}},
+                {"value", QJsonObject{{"type", "number"}, {"description", "Measurement value in meters"}}},
+                {"certainty", QJsonObject{{"type", "number"}, {"description", "Certainty 0.0-1.0 (default 0.9)"}}},
+            }},
+            {"required", QJsonArray{"type", "value"}}
+        },
+        [this](const QJsonObject &args) { return toolCalibrateAddObs(args); }
+    });
+
+    registerTool({
+        "calibrate_run_solve",
+        "Run the spatial calibration solver. Returns convergence status and RMS residual.",
+        QJsonObject{
+            {"type", "object"},
+            {"properties", QJsonObject{}},
+        },
+        [this](const QJsonObject &args) { return toolCalibrateRunSolve(args); }
     });
 }
 
@@ -1019,6 +1049,62 @@ QJsonObject McpServer::toolSetSpatialMode(const QJsonObject &args)
             {"text", QString("Spatial View mode set to %1 (%2)").arg(mode).arg(name)}
         }}}
     };
+}
+
+QJsonObject McpServer::toolCalibrateAddObs(const QJsonObject &args)
+{
+    QString type = args.value("type").toString();
+    double value = args.value("value").toDouble(3.0);
+    double certainty = args.value("certainty").toDouble(0.9);
+    CalibrationModel *cm = m_doc->calibrationModel();
+
+    if (type == "height")
+    {
+        int fixtureId = args.value("fixtureId").toInt(0);
+        int id = cm->addPositionObservation(QString::number(fixtureId), 2, value, certainty);
+        emit cm->observationsChanged();
+        return QJsonObject{{"content", QJsonArray{QJsonObject{{"type", "text"},
+            {"text", QString("Added height obs (id=%1) for fixture %2: Z=%3m").arg(id).arg(fixtureId).arg(value)}}}}};
+    }
+    else if (type == "distance")
+    {
+        int fidA = args.value("fixtureIdA").toInt(0);
+        int fidB = args.value("fixtureIdB").toInt(1);
+        int id = cm->addDistanceObservation(QString::number(fidA), QString::number(fidB), value, certainty);
+        emit cm->observationsChanged();
+        return QJsonObject{{"content", QJsonArray{QJsonObject{{"type", "text"},
+            {"text", QString("Added distance obs (id=%1) between fixtures %2 and %3: %4m").arg(id).arg(fidA).arg(fidB).arg(value)}}}}};
+    }
+
+    return QJsonObject{{"content", QJsonArray{QJsonObject{{"type", "text"},
+        {"text", QString("Unknown obs type: %1. Use 'height' or 'distance'.").arg(type)}}}},
+        {"isError", true}};
+}
+
+QJsonObject McpServer::toolCalibrateRunSolve(const QJsonObject &)
+{
+    CalibrationModel *cm = m_doc->calibrationModel();
+    if (cm->observationCount() == 0)
+    {
+        return QJsonObject{{"content", QJsonArray{QJsonObject{{"type", "text"},
+            {"text", "No observations to solve. Add observations first."}}}},
+            {"isError", true}};
+    }
+    bool ok = cm->solve();
+    QString msg;
+    if (ok && cm->hasSolveResult())
+    {
+        const auto &result = cm->lastResult();
+        msg = QString("Solver %1. RMS=%2m. Fixtures: %3")
+            .arg(result.converged ? "converged" : "did not converge")
+            .arg(result.rms_residual, 0, 'f', 4)
+            .arg(int(result.poses.size()));
+    }
+    else
+    {
+        msg = "Solver failed or returned no result.";
+    }
+    return QJsonObject{{"content", QJsonArray{QJsonObject{{"type", "text"}, {"text", msg}}}}};
 }
 
 // ---------------------------------------------------------------------------
