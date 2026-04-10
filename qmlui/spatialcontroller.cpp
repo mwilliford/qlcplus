@@ -231,6 +231,23 @@ void SpatialController::setAxisMode(int m)
     emit axisModeChanged();
 }
 
+// --- Selection query ---
+
+QVariantList SpatialController::selectedFixtureIds() const
+{
+    QVariantList list;
+    if (!m_selectedIdsCallback)
+    {
+        // Fall back to primary selection
+        if (m_selectedFixtureId >= 0)
+            list.append(m_selectedFixtureId);
+        return list;
+    }
+    for (int32_t id : m_selectedIdsCallback())
+        list.append(int(id));
+    return list;
+}
+
 // --- Align ---
 
 void SpatialController::alignSelection(const QString &axis)

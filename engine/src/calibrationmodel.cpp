@@ -31,6 +31,13 @@
 using namespace rigmath::solver;
 
 #define KXMLQLCCalibration          "Calibration"
+#define KXMLQLCCalibrationTolerance "Tolerance"
+#define KXMLQLCAttrTx               "Tx"
+#define KXMLQLCAttrTy               "Ty"
+#define KXMLQLCAttrTz               "Tz"
+#define KXMLQLCAttrRx               "Rx"
+#define KXMLQLCAttrRy               "Ry"
+#define KXMLQLCAttrRz               "Rz"
 #define KXMLQLCCalibrationObs       "Observation"
 #define KXMLQLCCalibrationConstraint "Constraint"
 #define KXMLQLCAttrType             "Type"
@@ -220,6 +227,56 @@ void CalibrationModel::clearConstraints(const QString &fixture)
 }
 
 // ---------------------------------------------------------------------------
+// Tolerances (layout priors for the solver)
+// ---------------------------------------------------------------------------
+
+double CalibrationModel::getTolerance(const QString &fixture, int dof) const
+{
+    if (dof < 0 || dof >= 6)
+        return -1.0;
+
+    auto it = m_tolerances.find(fixture);
+    if (it == m_tolerances.end())
+    {
+        // Not explicitly set — return default
+        return (dof < 3) ? kDefaultPosTolerance : kDefaultRotTolerance;
+    }
+
+    double v = it.value()[dof];
+    if (v < 0)
+        return (dof < 3) ? kDefaultPosTolerance : kDefaultRotTolerance;
+    return v;
+}
+
+void CalibrationModel::setTolerance(const QString &fixture, int dof, double value)
+{
+    if (dof < 0 || dof >= 6)
+        return;
+
+    auto it = m_tolerances.find(fixture);
+    if (it == m_tolerances.end())
+    {
+        ToleranceArray arr;
+        for (int i = 0; i < 6; i++)
+            arr[i] = -1.0;
+        arr[dof] = value;
+        m_tolerances.insert(fixture, arr);
+    }
+    else
+    {
+        it.value()[dof] = value;
+    }
+
+    emit tolerancesChanged(fixture);
+}
+
+void CalibrationModel::resetTolerances(const QString &fixture)
+{
+    m_tolerances.remove(fixture);
+    emit tolerancesChanged(fixture);
+}
+
+// ---------------------------------------------------------------------------
 // Build fixture spec from QLC+ fixture data
 // ---------------------------------------------------------------------------
 
@@ -280,17 +337,31 @@ bool CalibrationModel::buildFixtureSpec(quint32 fixtureId,
 // Solver
 // ---------------------------------------------------------------------------
 
+// Map a user tolerance to a solver certainty weight.
+// Tighter tolerance → higher certainty → stronger prior.
+static double certaintyFromTolerance(double tolerance, bool isRotation)
+{
+    if (tolerance <= 0.0)
+        return 0.0;  // no constraint
+
+    // Position: 1 / (1 + 2*tol_m) — 0.5m → 0.50, 0.05m → 0.91, 5m → 0.09
+    // Rotation: 1 / (1 + deg/15) — 15° → 0.50, 5° → 0.75, 90° → 0.14
+    double c;
+    if (isRotation)
+        c = 1.0 / (1.0 + tolerance / 15.0);
+    else
+        c = 1.0 / (1.0 + 2.0 * tolerance);
+
+    if (c < 0.05) c = 0.05;
+    if (c > 0.99) c = 0.99;
+    return c;
+}
+
 bool CalibrationModel::solve()
 {
     if (!m_doc || !m_spatialModel)
     {
         qWarning() << "[CalibrationModel] Cannot solve: doc or spatialModel not set";
-        return false;
-    }
-
-    if (m_observations.isEmpty())
-    {
-        qWarning() << "[CalibrationModel] Cannot solve: no observations";
         return false;
     }
 
@@ -320,6 +391,20 @@ bool CalibrationModel::solve()
         }, obs);
     }
 
+    // Also include all fixtures with committed transforms — so layout priors
+    // apply even if the user hasn't added explicit observations.
+    for (const QString &fid : m_spatialModel->fixtureIds())
+    {
+        if (m_spatialModel->committedTransform(fid).has_value())
+            referencedFixtures.insert(fid);
+    }
+
+    if (referencedFixtures.isEmpty())
+    {
+        qWarning() << "[CalibrationModel] Cannot solve: no fixtures to solve for";
+        return false;
+    }
+
     // Register fixtures with the solver
     for (const QString &fid : referencedFixtures)
     {
@@ -339,7 +424,40 @@ bool CalibrationModel::solve()
         prob.addFixture(sid, initialPose, channels, kinType);
     }
 
-    // Add constraints
+    // Auto-add layout priors (soft constraints from committed positions + tolerances)
+    // These anchor the solver so it doesn't drift from user-placed positions.
+    for (const QString &fid : referencedFixtures)
+    {
+        auto committed = m_spatialModel->committedTransform(fid);
+        if (!committed.has_value())
+            continue;
+
+        std::string sid = fid.toStdString();
+        const rigmath::RigidTransform &t = committed.value();
+
+        // Extract pose values: tx, ty, tz (meters), rx, ry, rz (axis-angle radians)
+        double ax, ay, az;
+        t.get_axis_angle(ax, ay, az);
+        double poseVals[6] = {t.pos[0], t.pos[1], t.pos[2], ax, ay, az};
+
+        for (int dof = 0; dof < 6; dof++)
+        {
+            double tol = getTolerance(fid, dof);
+            bool isRot = (dof >= 3);
+
+            // For rotation tolerances, the user value is degrees but solver uses radians
+            double certainty = certaintyFromTolerance(tol, isRot);
+            if (certainty <= 0.0)
+                continue;
+
+            DOFConstraint dc;
+            dc.value = poseVals[dof];
+            dc.certainty = certainty;
+            prob.setConstraint(sid, dof, dc);
+        }
+    }
+
+    // Explicit constraints override auto-priors for the same DOF
     for (auto it = m_constraints.constBegin(); it != m_constraints.constEnd(); ++it)
     {
         std::string sid = it.key().toStdString();
@@ -544,7 +662,7 @@ static std::vector<double> stringToDmx(const QString &s)
 
 void CalibrationModel::saveXML(QXmlStreamWriter &writer) const
 {
-    if (m_observations.isEmpty() && m_constraints.isEmpty())
+    if (m_observations.isEmpty() && m_constraints.isEmpty() && m_tolerances.isEmpty())
         return;
 
     writer.writeStartElement(KXMLQLCCalibration);
@@ -628,6 +746,20 @@ void CalibrationModel::saveXML(QXmlStreamWriter &writer) const
             writer.writeAttribute(KXMLQLCAttrCertainty, QString::number(c.certainty, 'g', 10));
             writer.writeEndElement();
         }
+    }
+
+    // Save tolerances
+    for (auto it = m_tolerances.constBegin(); it != m_tolerances.constEnd(); ++it)
+    {
+        writer.writeStartElement(KXMLQLCCalibrationTolerance);
+        writer.writeAttribute(KXMLQLCAttrFixture, it.key());
+        writer.writeAttribute(KXMLQLCAttrTx, QString::number(it.value()[0], 'g', 10));
+        writer.writeAttribute(KXMLQLCAttrTy, QString::number(it.value()[1], 'g', 10));
+        writer.writeAttribute(KXMLQLCAttrTz, QString::number(it.value()[2], 'g', 10));
+        writer.writeAttribute(KXMLQLCAttrRx, QString::number(it.value()[3], 'g', 10));
+        writer.writeAttribute(KXMLQLCAttrRy, QString::number(it.value()[4], 'g', 10));
+        writer.writeAttribute(KXMLQLCAttrRz, QString::number(it.value()[5], 'g', 10));
+        writer.writeEndElement();
     }
 
     writer.writeEndElement();
@@ -731,6 +863,20 @@ bool CalibrationModel::loadXML(QXmlStreamReader &reader)
             m_constraints[fixture].append(c);
             reader.skipCurrentElement();
         }
+        else if (reader.name() == QLatin1String(KXMLQLCCalibrationTolerance))
+        {
+            QXmlStreamAttributes attrs = reader.attributes();
+            QString fixture = attrs.value(KXMLQLCAttrFixture).toString();
+            ToleranceArray arr;
+            arr[0] = attrs.value(KXMLQLCAttrTx).toDouble();
+            arr[1] = attrs.value(KXMLQLCAttrTy).toDouble();
+            arr[2] = attrs.value(KXMLQLCAttrTz).toDouble();
+            arr[3] = attrs.value(KXMLQLCAttrRx).toDouble();
+            arr[4] = attrs.value(KXMLQLCAttrRy).toDouble();
+            arr[5] = attrs.value(KXMLQLCAttrRz).toDouble();
+            m_tolerances.insert(fixture, arr);
+            reader.skipCurrentElement();
+        }
         else
         {
             reader.skipCurrentElement();
@@ -753,6 +899,7 @@ void CalibrationModel::clear()
 {
     m_observations.clear();
     m_constraints.clear();
+    m_tolerances.clear();
     m_nextObsId = 0;
     m_hasResult = false;
     m_lastResult = SolveResult();

@@ -15,6 +15,7 @@
 #define SPATIALCONTROLLER_H
 
 #include <QObject>
+#include <QVariantList>
 #include <cstdint>
 #include <functional>
 #include <vector>
@@ -111,6 +112,9 @@ public:
 
     // --- Align (Q_INVOKABLE for QML button clicks) ---
     Q_INVOKABLE void alignSelection(const QString &axis);
+
+    /** Get all currently selected fixture IDs (from the renderer selection). */
+    Q_INVOKABLE QVariantList selectedFixtureIds() const;
 
     // --- Truss ---
     Q_INVOKABLE void addDefaultTruss();

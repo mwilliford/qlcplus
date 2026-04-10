@@ -63,6 +63,25 @@ public:
     Q_INVOKABLE void lockFixtureInSolver(int fixtureId);
     Q_INVOKABLE void setHeightConstraint(int fixtureId, double heightM, double certainty);
 
+    // --- Tolerances (layout priors for the solver) ---
+    // dof: 0=tx, 1=ty, 2=tz (meters), 3=rx, 4=ry, 5=rz (degrees)
+
+    /** Get the current tolerance for a fixture DOF (default if not set). */
+    Q_INVOKABLE double getTolerance(int fixtureId, int dof) const;
+
+    /** Set the tolerance for a fixture DOF. */
+    Q_INVOKABLE void setTolerance(int fixtureId, int dof, double value);
+
+    /** Reset all 6 DOF tolerances for a fixture to defaults. */
+    Q_INVOKABLE void resetTolerances(int fixtureId);
+
+    /** Reset tolerances for all currently selected fixtures. */
+    Q_INVOKABLE void resetTolerancesForSelection(const QVariantList &fixtureIds);
+
+    /** Set the same tolerance on multiple fixtures (for multi-select edits). */
+    Q_INVOKABLE void setToleranceForFixtures(const QVariantList &fixtureIds,
+                                              int dof, double value);
+
     // --- Data for QML lists ---
     Q_INVOKABLE QVariantList observationsList() const;
     Q_INVOKABLE QVariantList solverFixtureResults() const;

@@ -26,6 +26,7 @@ CalibrateController::CalibrateController(Doc *doc, QObject *parent)
     CalibrationModel *cm = m_doc->calibrationModel();
     connect(cm, &CalibrationModel::observationsChanged, this, &CalibrateController::changed);
     connect(cm, &CalibrationModel::solveCompleted, this, &CalibrateController::changed);
+    connect(cm, &CalibrationModel::tolerancesChanged, this, &CalibrateController::changed);
 }
 
 // ---------------------------------------------------------------------------
@@ -175,6 +176,44 @@ void CalibrateController::setHeightConstraint(int fixtureId, double heightM, dou
 {
     m_doc->calibrationModel()->setConstraint(
         QString::number(fixtureId), 2 /* tz */, heightM, certainty);
+}
+
+// ---------------------------------------------------------------------------
+// Tolerances (layout priors)
+// ---------------------------------------------------------------------------
+
+double CalibrateController::getTolerance(int fixtureId, int dof) const
+{
+    return m_doc->calibrationModel()->getTolerance(QString::number(fixtureId), dof);
+}
+
+void CalibrateController::setTolerance(int fixtureId, int dof, double value)
+{
+    m_doc->calibrationModel()->setTolerance(QString::number(fixtureId), dof, value);
+    emit changed();
+}
+
+void CalibrateController::resetTolerances(int fixtureId)
+{
+    m_doc->calibrationModel()->resetTolerances(QString::number(fixtureId));
+    emit changed();
+}
+
+void CalibrateController::resetTolerancesForSelection(const QVariantList &fixtureIds)
+{
+    CalibrationModel *cm = m_doc->calibrationModel();
+    for (const QVariant &v : fixtureIds)
+        cm->resetTolerances(QString::number(v.toInt()));
+    emit changed();
+}
+
+void CalibrateController::setToleranceForFixtures(const QVariantList &fixtureIds,
+                                                   int dof, double value)
+{
+    CalibrationModel *cm = m_doc->calibrationModel();
+    for (const QVariant &v : fixtureIds)
+        cm->setTolerance(QString::number(v.toInt()), dof, value);
+    emit changed();
 }
 
 // ---------------------------------------------------------------------------
