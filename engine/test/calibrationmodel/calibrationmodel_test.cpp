@@ -356,11 +356,16 @@ void CalibrationModel_Test::solveUsesLayoutPriors()
     // With tight Z prior, Z should stay very close to placed value
     auto solved1 = sm->solverDerivedTransform(sid1);
     QVERIFY(solved1.has_value());
-    QVERIFY(std::abs(solved1->pos[2] - placedZ) < 0.15);
+    QVERIFY(std::abs(solved1->pos[2] - placedZ) < 0.10);
 
-    // Uncertainty should exist
+    // Uncertainty should reflect the stated tolerances (v0.8.0 sigma API).
+    // Z is tight (5cm tolerance) → reported σ should be ≤ ~10cm.
+    // X/Y are loose (1m tolerance) → reported σ should be ~100cm (±50cm).
     auto unc = cm->fixtureUncertainty(sid1);
-    QVERIFY(unc.x_cm > 0);
+    QVERIFY2(unc.z_cm > 0 && unc.z_cm < 15.0,
+             qPrintable(QString("Expected Z σ ~5cm, got %1cm").arg(unc.z_cm)));
+    QVERIFY2(unc.x_cm > 20.0 && unc.x_cm < 200.0,
+             qPrintable(QString("Expected X σ ~100cm, got %1cm").arg(unc.x_cm)));
 
     delete doc;
 }
