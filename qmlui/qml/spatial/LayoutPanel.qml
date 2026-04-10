@@ -116,11 +116,21 @@ Rectangle
         // ===============================================================
         // LAYOUT MODE (mode === 0)
         // ===============================================================
+        ScrollView
+        {
+            id: layoutScroll
+            visible: spatialController.mode === 0
+            Layout.fillWidth: true
+            Layout.fillHeight: true
+            clip: true
+            contentWidth: availableWidth
+            ScrollBar.horizontal.policy: ScrollBar.AlwaysOff
+            ScrollBar.vertical.policy: ScrollBar.AsNeeded
+
         ColumnLayout
         {
             id: layoutPanel
-            visible: spatialController.mode === 0
-            Layout.fillWidth: true
+            width: layoutScroll.availableWidth
             spacing: 6
 
             // --- Selection header ---
@@ -654,15 +664,26 @@ Rectangle
             }
 
         } // end Layout mode ColumnLayout
+        } // end ScrollView wrapping Layout
 
         // ===============================================================
         // CALIBRATE MODE (mode === 1)
         // ===============================================================
+        ScrollView
+        {
+            id: calibrateScroll
+            visible: spatialController.mode === 1
+            Layout.fillWidth: true
+            Layout.fillHeight: true
+            clip: true
+            contentWidth: availableWidth
+            ScrollBar.horizontal.policy: ScrollBar.AlwaysOff
+            ScrollBar.vertical.policy: ScrollBar.AsNeeded
+
         ColumnLayout
         {
             id: calibratePanel
-            visible: spatialController.mode === 1
-            Layout.fillWidth: true
+            width: calibrateScroll.availableWidth
             spacing: 6
 
             // Observation data (refreshed on calibrationChanged)
@@ -931,14 +952,20 @@ Rectangle
                     font.pixelSize: 11
                 }
 
-                Repeater
+                ListView
                 {
+                    id: solverResultsList
+                    Layout.fillWidth: true
+                    Layout.preferredHeight: Math.min(contentHeight, 180)
+                    clip: true
+                    spacing: 2
                     model: calibratePanel.solverResults
+                    boundsBehavior: Flickable.StopAtBounds
 
-                    Rectangle
+                    delegate: Rectangle
                     {
-                        width: parent ? parent.width : 0
-                        height: 28
+                        width: solverResultsList.width
+                        height: 32
                         color: index % 2 ? "#383838" : "#333"
                         radius: 3
 
@@ -951,19 +978,27 @@ Rectangle
 
                             Text
                             {
-                                text: modelData.fixtureName + ": \u00b1"
-                                      + Math.max(modelData.xCm, modelData.yCm, modelData.zCm).toFixed(0) + "cm"
-                                color: modelData.quality === "good" ? "#2ecc71" :
-                                       modelData.quality === "moderate" ? "#f39c12" : "#e74c3c"
-                                font.pixelSize: 11
+                                text: modelData.fixtureName
+                                color: "#ccc"
+                                font.pixelSize: 10
                                 elide: Text.ElideRight
                                 Layout.fillWidth: true
+                            }
+
+                            Text
+                            {
+                                text: "\u00b1" + Math.max(modelData.xCm, modelData.yCm, modelData.zCm).toFixed(0) + "cm"
+                                color: modelData.quality === "good" ? "#2ecc71" :
+                                       modelData.quality === "moderate" ? "#f39c12" : "#e74c3c"
+                                font.pixelSize: 10
+                                Layout.preferredWidth: 52
+                                horizontalAlignment: Text.AlignRight
                             }
 
                             Button
                             {
                                 text: "\u2714"
-                                implicitWidth: 24; implicitHeight: 22
+                                implicitWidth: 22; implicitHeight: 22
                                 visible: calibrateController.solverConverged
                                 onClicked: calibrateController.acceptFixtureResult(parseInt(modelData.fixtureId))
                                 background: Rectangle { color: parent.hovered ? "#2ecc71" : "#27ae60"; radius: 3 }
@@ -974,7 +1009,7 @@ Rectangle
                             Button
                             {
                                 text: "\u00d7"
-                                implicitWidth: 24; implicitHeight: 22
+                                implicitWidth: 22; implicitHeight: 22
                                 onClicked: calibrateController.dismissFixtureResult(parseInt(modelData.fixtureId))
                                 background: Rectangle { color: parent.hovered ? "#a33" : "transparent"; radius: 3 }
                                 contentItem: Text { text: parent.text; color: "#c66"; font.pixelSize: 13;
@@ -1034,9 +1069,9 @@ Rectangle
                 }
             }
         } // end Calibrate mode ColumnLayout
+        } // end ScrollView wrapping Calibrate
 
-        // --- Spacer ---
-        Item { Layout.fillHeight: true }
+        // (No spacer needed — ScrollViews above use Layout.fillHeight)
 
         // ===============================================================
         // ALWAYS-VISIBLE BOTTOM: Snap + Camera
