@@ -13,6 +13,7 @@
 
 #include <QWidget>
 #include <QHBoxLayout>
+#include <QSplitter>
 #include <QSettings>
 #include <QScreen>
 #include <QGuiApplication>
@@ -128,7 +129,7 @@ public:
         m_sidePanel = new QQuickWidget(this);
         m_sidePanel->setResizeMode(QQuickWidget::SizeRootObjectToView);
         m_sidePanel->setClearColor(QColor(0x2a, 0x2a, 0x2a));
-        m_sidePanel->setFixedWidth(280);
+        m_sidePanel->setMinimumWidth(260);
 
         // Calibrate controller (owns observation/solver QML API)
         m_calibrateController = new CalibrateController(doc, this);
@@ -170,12 +171,31 @@ public:
             qWarning() << "[SpatialViewWindow] LayoutPanel.qml not found";
         }
 
-        // --- Layout ---
+        // --- Layout: splitter so user can drag the side panel wider/narrower ---
+        m_splitter = new QSplitter(Qt::Horizontal, this);
+        m_splitter->addWidget(viewportContainer);
+        m_splitter->addWidget(m_sidePanel);
+        m_splitter->setCollapsible(0, false);
+        m_splitter->setCollapsible(1, false);
+        m_splitter->setHandleWidth(6);
+        m_splitter->setStretchFactor(0, 1);  // viewport stretches, panel stays
+        m_splitter->setStretchFactor(1, 0);
+        m_splitter->setChildrenCollapsible(false);
+
+        // Visible handle with hover effect (dark theme compatible)
+        m_splitter->setStyleSheet(
+            "QSplitter::handle { background: #444; }"
+            "QSplitter::handle:hover { background: #4a9eff; }"
+            "QSplitter::handle:pressed { background: #4a9eff; }"
+        );
+
         QHBoxLayout *layout = new QHBoxLayout(this);
         layout->setContentsMargins(0, 0, 0, 0);
         layout->setSpacing(0);
-        layout->addWidget(viewportContainer, 1);  // stretch
-        layout->addWidget(m_sidePanel, 0);         // fixed width
+        layout->addWidget(m_splitter);
+
+        // Initial panel width — will be overridden by saved geometry in showEvent
+        m_splitter->setSizes(QList<int>() << 800 << 340);
     }
 
     ~SpatialViewWindow() override
@@ -218,6 +238,20 @@ public:
         }
 
         s_instance->show();
+
+        // Restore splitter state after show so widget has real size
+        QVariant splitVar = settings.value("spatialview/splitter");
+        if (splitVar.isValid())
+        {
+            s_instance->m_splitter->restoreState(splitVar.toByteArray());
+        }
+        else
+        {
+            // Force initial split sizes now that the widget has a real width
+            int totalWidth = s_instance->width();
+            int panelWidth = 340;
+            s_instance->m_splitter->setSizes(QList<int>() << (totalWidth - panelWidth) << panelWidth);
+        }
     }
 
 protected:
@@ -225,6 +259,8 @@ protected:
     {
         QSettings settings;
         settings.setValue(SETTINGS_SPATIALVIEW_GEOMETRY, saveGeometry());
+        if (m_splitter)
+            settings.setValue("spatialview/splitter", m_splitter->saveState());
         m_spatialView->stopRendering();
         hide();
         event->ignore();
@@ -248,6 +284,7 @@ private:
     SpatialController *m_controller = nullptr;
     CalibrateController *m_calibrateController = nullptr;
     QQuickWidget *m_sidePanel = nullptr;
+    QSplitter *m_splitter = nullptr;
 };
 
 SpatialViewWindow *SpatialViewWindow::s_instance = nullptr;
