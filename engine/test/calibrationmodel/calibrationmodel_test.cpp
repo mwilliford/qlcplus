@@ -107,7 +107,7 @@ void CalibrationModel_Test::addAndRemoveObservation()
     obs.fixture = "1";
     obs.axis = 2;
     obs.value = 3.5;
-    obs.certainty = 0.95;
+    obs.sigma = 0.05;  // 5cm
 
     int id = model.addObservation(obs);
     QCOMPARE(model.observationCount(), 1);
@@ -125,7 +125,7 @@ void CalibrationModel_Test::addAllObservationTypes()
     aim.fixture = "1";
     aim.dmxNormalized = {0.5, 0.5};
     aim.target[0] = 1.0; aim.target[1] = 2.0; aim.target[2] = 0.0;
-    aim.certainty = 0.95;
+    aim.sigma = 0.05;  // 5cm
     model.addObservation(aim);
 
     // Crossing
@@ -134,7 +134,7 @@ void CalibrationModel_Test::addAllObservationTypes()
     crossing.dmxValues = {{0.5, 0.5}, {0.3, 0.7}};
     crossing.axis = 2;
     crossing.value = 0.0;
-    crossing.certainty = 0.85;
+    crossing.sigma = 0.10;  // 10cm
     model.addObservation(crossing);
 
     // Position
@@ -172,8 +172,8 @@ void CalibrationModel_Test::addAllObservationTypes()
 void CalibrationModel_Test::clearObservations()
 {
     CalibrationModel model;
-    model.addPositionObservation("1", 2, 3.5, 0.95);
-    model.addPositionObservation("2", 2, 3.2, 0.95);
+    model.addPositionObservation("1", 2, 3.5, 0.05);
+    model.addPositionObservation("2", 2, 3.2, 0.05);
     QCOMPARE(model.observationCount(), 2);
 
     model.clearObservations();
@@ -184,12 +184,12 @@ void CalibrationModel_Test::convenienceBuilders()
 {
     CalibrationModel model;
 
-    int id1 = model.addPositionObservation("1", 2, 3.5, 0.95);
-    int id2 = model.addRotationObservation("1", 5, 90.0, 0.80);
-    int id3 = model.addDistanceObservation("1", "2", 2.5, 0.90);
-    int id4 = model.addAimObservation("1", {0.5, 0.5}, 0.0, 0.0, 0.0, 0.95);
-    int id5 = model.addBeamDirectionObservation("1", {0.5, 0.5}, -45.0, 0.0, true, false, 0.85);
-    int id6 = model.addCrossingObservation({"1", "2"}, {{0.5, 0.5}, {0.3, 0.7}}, 2, 0.0, 0.85);
+    int id1 = model.addPositionObservation("1", 2, 3.5, 0.05);    // 5cm
+    int id2 = model.addRotationObservation("1", 5, 90.0, 3.0);    // 3°
+    int id3 = model.addDistanceObservation("1", "2", 2.5, 0.10);  // 10cm
+    int id4 = model.addAimObservation("1", {0.5, 0.5}, 0.0, 0.0, 0.0, 0.05);  // 5cm
+    int id5 = model.addBeamDirectionObservation("1", {0.5, 0.5}, -45.0, 0.0, true, false, 5.0);  // 5°
+    int id6 = model.addCrossingObservation({"1", "2"}, {{0.5, 0.5}, {0.3, 0.7}}, 2, 0.0, 0.15);  // 15cm
 
     QCOMPARE(model.observationCount(), 6);
     // IDs should be sequential
@@ -247,11 +247,11 @@ void CalibrationModel_Test::solveWithAimObservations()
     for (auto &t : targets)
     {
         auto dmx = computeAimDmx(trueX, trueY, trueZ, panRange, tiltRange, t[0], t[1], t[2]);
-        cm->addAimObservation(sid, dmx, t[0], t[1], t[2], 0.95);
+        cm->addAimObservation(sid, dmx, t[0], t[1], t[2], 0.02);  // 2cm
     }
 
     // Add height observation
-    cm->addPositionObservation(sid, 2, trueZ, 0.95);
+    cm->addPositionObservation(sid, 2, trueZ, 0.02);  // 2cm
 
     // Solve
     bool converged = cm->solve();
@@ -298,9 +298,9 @@ void CalibrationModel_Test::solveUpdatesCovariance()
     for (auto &t : targets)
     {
         auto dmx = computeAimDmx(trueX, trueY, trueZ, panRange, tiltRange, t[0], t[1], t[2]);
-        cm->addAimObservation(sid, dmx, t[0], t[1], t[2], 0.95);
+        cm->addAimObservation(sid, dmx, t[0], t[1], t[2], 0.02);  // 2cm
     }
-    cm->addPositionObservation(sid, 2, trueZ, 0.95);
+    cm->addPositionObservation(sid, 2, trueZ, 0.02);  // 2cm
 
     cm->solve();
     QVERIFY(cm->hasSolveResult());
@@ -348,7 +348,7 @@ void CalibrationModel_Test::solveUsesLayoutPriors()
     cm->setTolerance(sid2, 2, 0.05);
 
     // One distance observation
-    cm->addDistanceObservation(sid1, sid2, 3.0, 0.90);
+    cm->addDistanceObservation(sid1, sid2, 3.0, 0.05);  // 5cm
 
     bool converged = cm->solve();
     QVERIFY(converged);
@@ -420,8 +420,8 @@ void CalibrationModel_Test::saveAndLoadTolerances()
 void CalibrationModel_Test::saveAndLoadObservations()
 {
     CalibrationModel model;
-    model.addPositionObservation("1", 2, 3.5, 0.95);
-    model.addPositionObservation("2", 0, 1.0, 0.80);
+    model.addPositionObservation("1", 2, 3.5, 0.05);
+    model.addPositionObservation("2", 0, 1.0, 0.20);
 
     // Save to XML
     QBuffer buffer;
@@ -471,12 +471,12 @@ void CalibrationModel_Test::saveAndLoadConstraints()
 void CalibrationModel_Test::saveAndLoadAllTypes()
 {
     CalibrationModel model;
-    model.addAimObservation("1", {0.5, 0.5}, 1.0, 2.0, 0.0, 0.95);
+    model.addAimObservation("1", {0.5, 0.5}, 1.0, 2.0, 0.0, 0.05);
     model.addCrossingObservation({"1", "2"}, {{0.5, 0.5}, {0.3, 0.7}}, 2, 0.0, 0.85);
-    model.addPositionObservation("1", 2, 3.5, 0.95);
+    model.addPositionObservation("1", 2, 3.5, 0.05);
     model.addRotationObservation("1", 5, 45.0, 0.80);
     model.addBeamDirectionObservation("1", {0.5, 0.5}, -45.0, 90.0, true, true, 0.85);
-    model.addDistanceObservation("1", "2", 3.0, 0.90);
+    model.addDistanceObservation("1", "2", 3.0, 0.10);
     QCOMPARE(model.observationCount(), 6);
 
     QBuffer buffer;
@@ -500,7 +500,7 @@ void CalibrationModel_Test::saveAndLoadAllTypes()
 void CalibrationModel_Test::clearAll()
 {
     CalibrationModel model;
-    model.addPositionObservation("1", 2, 3.5, 0.95);
+    model.addPositionObservation("1", 2, 3.5, 0.05);
     model.setConstraint("1", 2, 3.5, 0.95);
     QCOMPARE(model.observationCount(), 1);
 

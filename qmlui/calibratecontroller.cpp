@@ -61,28 +61,28 @@ double CalibrateController::solverRms() const
 // Observation CRUD
 // ---------------------------------------------------------------------------
 
-int CalibrateController::addPositionObs(int fixtureId, int axis, double value, double certainty)
+int CalibrateController::addPositionObs(int fixtureId, int axis, double value, double sigma)
 {
     CalibrationModel *cm = m_doc->calibrationModel();
-    int id = cm->addPositionObservation(QString::number(fixtureId), axis, value, certainty);
+    int id = cm->addPositionObservation(QString::number(fixtureId), axis, value, sigma);
     emit changed();
     return id;
 }
 
-int CalibrateController::addRotationObs(int fixtureId, int axis, double valueDeg, double certainty)
+int CalibrateController::addRotationObs(int fixtureId, int axis, double valueDeg, double sigma)
 {
     CalibrationModel *cm = m_doc->calibrationModel();
-    int id = cm->addRotationObservation(QString::number(fixtureId), axis, valueDeg, certainty);
+    int id = cm->addRotationObservation(QString::number(fixtureId), axis, valueDeg, sigma);
     emit changed();
     return id;
 }
 
-int CalibrateController::addDistanceObs(int fixtureIdA, int fixtureIdB, double distance, double certainty)
+int CalibrateController::addDistanceObs(int fixtureIdA, int fixtureIdB, double distance, double sigma)
 {
     CalibrationModel *cm = m_doc->calibrationModel();
     int id = cm->addDistanceObservation(QString::number(fixtureIdA),
                                          QString::number(fixtureIdB),
-                                         distance, certainty);
+                                         distance, sigma);
     emit changed();
     return id;
 }
@@ -153,12 +153,12 @@ void CalibrateController::dismissFixtureResult(int fixtureId)
 }
 
 int CalibrateController::addAimObs(int fixtureId, double targetX, double targetY,
-                                    double targetZ, double certainty)
+                                    double targetZ, double sigma)
 {
     CalibrationModel *cm = m_doc->calibrationModel();
     std::vector<double> emptyDmx;
     int id = cm->addAimObservation(QString::number(fixtureId), emptyDmx,
-                                    targetX, targetY, targetZ, certainty);
+                                    targetX, targetY, targetZ, sigma);
     emit changed();
     return id;
 }
@@ -241,17 +241,18 @@ QVariantList CalibrateController::observationsList() const
             using T = std::decay_t<decltype(o)>;
 
             map["id"] = o.id;
+            map["sigma"] = o.sigma;
 
             if constexpr (std::is_same_v<T, CalibrationModel::AimObs>)
             {
                 map["type"] = "Aim";
                 map["fixture"] = o.fixture;
-                map["certainty"] = o.certainty;
-                map["description"] = QString("[%1] aim -> (%2, %3, %4)")
+                map["description"] = QString("[%1] aim → (%2, %3, %4) ±%5cm")
                     .arg(fixtureName(o.fixture))
                     .arg(o.target[0], 0, 'f', 2)
                     .arg(o.target[1], 0, 'f', 2)
-                    .arg(o.target[2], 0, 'f', 2);
+                    .arg(o.target[2], 0, 'f', 2)
+                    .arg(o.sigma * 100.0, 0, 'f', 0);
             }
             else if constexpr (std::is_same_v<T, CalibrationModel::CrossingObs>)
             {
@@ -259,11 +260,11 @@ QVariantList CalibrateController::observationsList() const
                 QStringList names;
                 for (const auto &f : o.fixtures)
                     names.append(fixtureName(f));
-                map["certainty"] = o.certainty;
-                map["description"] = QString("%1 crossing @ %2=%3")
+                map["description"] = QString("%1 crossing @ %2=%3 ±%4cm")
                     .arg(names.join(" x "))
                     .arg(o.axis < 3 ? axisLabels[o.axis] : "?")
-                    .arg(o.value, 0, 'f', 2);
+                    .arg(o.value, 0, 'f', 2)
+                    .arg(o.sigma * 100.0, 0, 'f', 0);
             }
             else if constexpr (std::is_same_v<T, CalibrationModel::PositionObs>)
             {
@@ -271,11 +272,11 @@ QVariantList CalibrateController::observationsList() const
                 map["fixture"] = o.fixture;
                 map["axis"] = o.axis;
                 map["value"] = o.value;
-                map["certainty"] = o.certainty;
-                map["description"] = QString("[%1] %2 = %3m")
+                map["description"] = QString("[%1] %2 = %3m ±%4cm")
                     .arg(fixtureName(o.fixture))
                     .arg(o.axis >= 0 && o.axis < 3 ? axisLabels[o.axis] : "?")
-                    .arg(o.value, 0, 'f', 2);
+                    .arg(o.value, 0, 'f', 2)
+                    .arg(o.sigma * 100.0, 0, 'f', 0);
             }
             else if constexpr (std::is_same_v<T, CalibrationModel::RotationObs>)
             {
@@ -283,26 +284,26 @@ QVariantList CalibrateController::observationsList() const
                 map["fixture"] = o.fixture;
                 map["axis"] = o.axis;
                 map["value"] = o.valueDeg;
-                map["certainty"] = o.certainty;
                 int ri = o.axis >= 3 ? o.axis - 3 : o.axis;
-                map["description"] = QString("[%1] %2 = %3 deg")
+                map["description"] = QString("[%1] %2 = %3° ±%4°")
                     .arg(fixtureName(o.fixture))
                     .arg(ri >= 0 && ri < 3 ? rotLabels[ri] : "?")
-                    .arg(o.valueDeg, 0, 'f', 1);
+                    .arg(o.valueDeg, 0, 'f', 1)
+                    .arg(o.sigma, 0, 'f', 1);
             }
             else if constexpr (std::is_same_v<T, CalibrationModel::BeamDirectionObs>)
             {
                 map["type"] = "BeamDirection";
                 map["fixture"] = o.fixture;
-                map["certainty"] = o.certainty;
                 QStringList parts;
                 if (o.hasElevation)
-                    parts.append(QString("el=%1").arg(o.elevationDeg, 0, 'f', 0));
+                    parts.append(QString("el=%1°").arg(o.elevationDeg, 0, 'f', 0));
                 if (o.hasAzimuth)
-                    parts.append(QString("az=%1").arg(o.azimuthDeg, 0, 'f', 0));
-                map["description"] = QString("[%1] beam %2 deg")
+                    parts.append(QString("az=%1°").arg(o.azimuthDeg, 0, 'f', 0));
+                map["description"] = QString("[%1] beam %2 ±%3°")
                     .arg(fixtureName(o.fixture))
-                    .arg(parts.join(", "));
+                    .arg(parts.join(", "))
+                    .arg(o.sigma, 0, 'f', 1);
             }
             else if constexpr (std::is_same_v<T, CalibrationModel::DistanceObs>)
             {
@@ -310,11 +311,11 @@ QVariantList CalibrateController::observationsList() const
                 map["fixtureA"] = o.fixtureA;
                 map["fixtureB"] = o.fixtureB;
                 map["distance"] = o.distance;
-                map["certainty"] = o.certainty;
-                map["description"] = QString("[%1] <-> [%2] = %3m")
+                map["description"] = QString("[%1] ↔ [%2] = %3m ±%4cm")
                     .arg(fixtureName(o.fixtureA))
                     .arg(fixtureName(o.fixtureB))
-                    .arg(o.distance, 0, 'f', 2);
+                    .arg(o.distance, 0, 'f', 2)
+                    .arg(o.sigma * 100.0, 0, 'f', 0);
             }
         }, obs);
 

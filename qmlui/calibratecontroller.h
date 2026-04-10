@@ -45,9 +45,9 @@ public:
     double solverRms() const;
 
     // --- Observation CRUD ---
-    Q_INVOKABLE int addPositionObs(int fixtureId, int axis, double value, double certainty);
-    Q_INVOKABLE int addRotationObs(int fixtureId, int axis, double valueDeg, double certainty);
-    Q_INVOKABLE int addDistanceObs(int fixtureIdA, int fixtureIdB, double distance, double certainty);
+    Q_INVOKABLE int addPositionObs(int fixtureId, int axis, double value, double sigma);
+    Q_INVOKABLE int addRotationObs(int fixtureId, int axis, double valueDeg, double sigma);
+    Q_INVOKABLE int addDistanceObs(int fixtureIdA, int fixtureIdB, double distance, double sigma);
     Q_INVOKABLE void removeObs(int obsId);
     Q_INVOKABLE void clearAllObs();
 
@@ -57,7 +57,7 @@ public:
     Q_INVOKABLE void dismissSolverResults();
     Q_INVOKABLE void acceptFixtureResult(int fixtureId);
     Q_INVOKABLE void dismissFixtureResult(int fixtureId);
-    Q_INVOKABLE int addAimObs(int fixtureId, double targetX, double targetY, double targetZ, double certainty);
+    Q_INVOKABLE int addAimObs(int fixtureId, double targetX, double targetY, double targetZ, double sigma);
 
     // --- Constraints ---
     Q_INVOKABLE void lockFixtureInSolver(int fixtureId);
