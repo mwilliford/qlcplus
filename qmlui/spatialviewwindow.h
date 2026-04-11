@@ -25,6 +25,7 @@
 //
 
 class Doc;
+class SimpleDesk;
 class QImage;
 class QJsonArray;
 
@@ -32,6 +33,16 @@ class QJsonArray;
 
 /** Show (or create) the Spatial View window. */
 void showSpatialViewWindow(Doc *doc);
+
+/**
+ * Register the qmlui SimpleDesk instance that Focus mode should drive.
+ *
+ * Called once from App after the SimpleDesk is constructed. Stores a static
+ * pointer; the SpatialViewWindow wires its controller's Focus signals to the
+ * SimpleDesk on first creation. Forward declaration keeps this header free
+ * of Qt3D/QtGui collisions.
+ */
+void spatialViewSetSimpleDesk(SimpleDesk *desk);
 
 /**
  * Grab a screenshot of the Spatial View.

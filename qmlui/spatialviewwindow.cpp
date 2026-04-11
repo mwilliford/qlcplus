@@ -31,6 +31,7 @@
 #include "calibratecontroller.h"
 #include "spatialmodel.h"
 #include "doc.h"
+#include "simpledesk.h"
 #include <cmath>
 #include "bgfxrenderer.h"
 #include <QPainter>
@@ -39,6 +40,20 @@
 #include <QJsonArray>
 #include <QJsonObject>
 #include <QTest>
+
+// ---------------------------------------------------------------------------
+// SimpleDesk bridge for Focus mode DMX writes.
+// App::App() calls spatialViewSetSimpleDesk(m_simpleDesk) once at startup.
+// SpatialViewWindow's constructor reads this pointer when wiring up the
+// SpatialController → SimpleDesk signals.
+// ---------------------------------------------------------------------------
+
+SimpleDesk *s_spatialViewSimpleDesk = nullptr;
+
+void spatialViewSetSimpleDesk(SimpleDesk *desk)
+{
+    s_spatialViewSimpleDesk = desk;
+}
 
 // ---------------------------------------------------------------------------
 // SpatialViewWindow — defined entirely in this .cpp to avoid pulling <QWidget>
@@ -104,6 +119,46 @@ public:
             if (m_spatialView && m_spatialView->renderer())
                 m_spatialView->renderer()->setGizmoMode(m_controller->gizmoMode());
         });
+
+        // --- Focus mode wiring ---
+        m_spatialView->setFocusModeCallback([this]() {
+            return m_controller->mode() == SpatialController::Focus;
+        });
+        m_spatialView->setFocusAimCallback([this](double x, double y, double z) {
+            m_controller->setFocusAim(x, y, z);
+        });
+        m_spatialView->setLiveDmxModeCallback([this]() {
+            int m = m_controller->mode();
+            return m == SpatialController::Calibrate || m == SpatialController::Focus;
+        });
+
+        // Mode change: rebuild beam cones so Layout↔Calibrate switches between
+        // home-position and live-DMX rendering immediately.
+        connect(m_controller, &SpatialController::modeChanged, this, [this]() {
+            if (m_spatialView)
+                m_spatialView->rebuildBeamCones();
+        });
+
+        // Focus aim marker: update renderer when SpatialController aim changes.
+        connect(m_controller, &SpatialController::focusAimChanged, this, [this]() {
+            if (!m_spatialView || !m_spatialView->renderer())
+                return;
+            double x, y, z;
+            m_controller->getFocusAim(&x, &y, &z);
+            float pos[3] = { float(x), float(y), float(z) };
+            m_spatialView->renderer()->setFocusAimMarker(
+                m_controller->focusAimValid(), pos);
+        });
+
+        // Wire SimpleDesk DMX writes from Focus mode.
+        // s_spatialViewSimpleDesk is set by spatialViewSetSimpleDesk() at startup.
+        if (s_spatialViewSimpleDesk)
+        {
+            connect(m_controller, &SpatialController::focusDmxWrite,
+                    s_spatialViewSimpleDesk, &SimpleDesk::setAbsoluteChannelValue);
+            connect(m_controller, &SpatialController::focusDmxReset,
+                    s_spatialViewSimpleDesk, &SimpleDesk::resetAbsoluteChannel);
+        }
 
         // Snap: truss first, then grid
         m_spatialView->setSnapCallback([this](double &x, double &y, double &z) {

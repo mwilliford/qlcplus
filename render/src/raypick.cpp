@@ -184,6 +184,30 @@ bool rayIntersectsAABB(const Ray &ray, const AABB &aabb, float &outT)
     return true;
 }
 
+bool rayIntersectsPlaneZ(const Ray &r, float planeZ, float out[3], float *outT)
+{
+    // Plane: z = planeZ, normal = +Z.
+    // t = (planeZ - origin.z) / direction.z
+    const float dz = r.direction[2];
+    if (std::abs(dz) < 1e-6f)
+        return false;  // ray parallel to plane
+
+    const float t = (planeZ - r.origin[2]) / dz;
+    if (t < 0.0f)
+        return false;  // plane is behind the ray origin
+
+    // Reject absurdly far skims (horizon shots) — the aim marker would fly off
+    // and inverse kinematics would complain about unreachable points anyway.
+    if (t > 200.0f)
+        return false;
+
+    out[0] = r.origin[0] + t * r.direction[0];
+    out[1] = r.origin[1] + t * r.direction[1];
+    out[2] = planeZ;
+    if (outT) *outT = t;
+    return true;
+}
+
 AABB transformAABB(const float transform[16], const AABB &localAABB)
 {
     if (!localAABB.valid())

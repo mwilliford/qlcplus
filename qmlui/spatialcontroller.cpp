@@ -16,7 +16,12 @@
 #include "spatialmodel.h"
 #include "doc.h"
 #include "fixture.h"
+#include "fixturepantilt.h"
 
+#include <rigmath/kinematics.hpp>
+#include <rigmath/rigid_transform.hpp>
+
+#include <QDebug>
 #include <cmath>
 
 // --- Euler angle helpers (intrinsic XYZ / pitch-yaw-roll) ---
@@ -199,6 +204,9 @@ void SpatialController::setMode(int m)
 {
     if (m_mode == m)
         return;
+    // Leaving Focus mode → release any DMX we were holding.
+    if (m_mode == Focus && m != Focus)
+        clearFocusAim();
     m_mode = m;
     emit modeChanged();
 }
@@ -348,4 +356,83 @@ void SpatialController::updateTransformFromModel()
     m_rotPitch = pitch * 180.0 / M_PI;
     m_rotYaw = yaw * 180.0 / M_PI;
     m_rotRoll = roll * 180.0 / M_PI;
+}
+
+// --- Focus mode aim ---
+
+void SpatialController::getFocusAim(double *x, double *y, double *z) const
+{
+    if (x) *x = m_focusAim[0];
+    if (y) *y = m_focusAim[1];
+    if (z) *z = m_focusAim[2];
+}
+
+void SpatialController::setFocusAim(double wx, double wy, double wz)
+{
+    m_focusAim[0] = wx;
+    m_focusAim[1] = wy;
+    m_focusAim[2] = wz;
+    m_focusAimValid = true;
+
+    SpatialModel *sm = m_doc->spatialModel();
+
+    qDebug().nospace() << "[Focus] aim world=(" << wx << ", " << wy << ", " << wz << ")";
+
+    // Iterate all selected fixtures; only moving heads get aimed.
+    std::vector<int32_t> ids;
+    if (m_selectedIdsCallback)
+        ids = m_selectedIdsCallback();
+    else if (m_selectedFixtureId >= 0)
+        ids.push_back(m_selectedFixtureId);
+
+    for (int32_t fid : ids)
+    {
+        Fixture *fxi = m_doc->fixture(quint32(fid));
+        if (!fxi)
+            continue;
+
+        PanTiltChannelMap map = buildPanTiltChannelMap(fxi);
+        if (!map.isMovingHead() || !map.kinematics)
+            continue;  // fixed or pan-only — skip aim in v1
+
+        // Single polymorphic call: world → local + inverse_local in one step.
+        rigmath::RigidTransform xf = sm->fixtureTransform(QString::number(fid));
+        rigmath::AngleResult result = map.kinematics->inverse_world(xf, wx, wy, wz);
+
+        // Clamp to reachable via the kinematics' own logic (per-axis for
+        // moving head / moving mirror; fancier for future subclasses).
+        std::vector<double> clamped = map.kinematics->clamp_to_reachable(result.angles);
+        double panDeg  = clamped[0];
+        double tiltDeg = clamped[1];
+
+        qDebug().nospace()
+            << "  fx=" << fid
+            << " fxPos=(" << xf.pos[0] << ", " << xf.pos[1] << ", " << xf.pos[2] << ")"
+            << " raw=(pan=" << result.angles[0] << ", tilt=" << result.angles[1] << ")"
+            << " clamped=(pan=" << panDeg << ", tilt=" << tiltDeg << ")"
+            << " reach=" << result.reachable;
+
+        std::vector<FocusDmxWrite> writes =
+            anglesToDmxWrites(map, panDeg, tiltDeg);
+        for (const FocusDmxWrite &w : writes)
+        {
+            qDebug().nospace() << "  dmx addr=" << w.absAddr << " val=" << int(w.value);
+            emit focusDmxWrite(w.absAddr, w.value);
+            m_focusControlledChannels.insert(w.absAddr);
+        }
+    }
+
+    emit focusAimChanged();
+}
+
+void SpatialController::clearFocusAim()
+{
+    for (uint addr : m_focusControlledChannels)
+        emit focusDmxReset(addr);
+    m_focusControlledChannels.clear();
+
+    m_focusAimValid = false;
+    m_focusAim[0] = m_focusAim[1] = m_focusAim[2] = 0.0;
+
+    emit focusAimChanged();
 }

@@ -241,6 +241,7 @@ void BgfxRenderer::frame()
     renderFixtures();
     renderEllipsoids();
     renderBeamCones();
+    renderFocusAimMarker();
     if (m_gizmoMode == 0)
         renderGizmo();
     else
@@ -627,15 +628,178 @@ void BgfxRenderer::setBeamCones(const std::vector<RenderBeamCone>& cones)
 
 void BgfxRenderer::renderBeamCones()
 {
-    if (m_beamCones.empty() || !bgfx::isValid(m_colorProgram))
+    if (m_beamCones.empty())
         return;
 
-    // 12 segments per cone: N radial spokes + N base circle edges = 2N line segments
-    constexpr int N = 12;
-    constexpr int linesPerCone = 2 * N;
-    constexpr int vertsPerCone = 2 * linesPerCone;
+    // --- Pass 1: Solid translucent foggy white cone via lit shader ---
+    // N triangles (apex + adjacent base ring verts) per cone, with smooth radial normals.
+    if (bgfx::isValid(m_litProgram) && bgfx::isValid(m_u_color))
+    {
+        constexpr int N = 24;
+        constexpr int vertsPerCone = 3 * N;  // no index buffer, 3 verts per triangle
 
-    uint32_t totalVerts = uint32_t(m_beamCones.size()) * vertsPerCone;
+        uint32_t totalVerts = uint32_t(m_beamCones.size()) * vertsPerCone;
+        if (bgfx::getAvailTransientVertexBuffer(totalVerts, PosNormalVertex::layout))
+        {
+            bgfx::TransientVertexBuffer tvb;
+            bgfx::allocTransientVertexBuffer(&tvb, totalVerts, PosNormalVertex::layout);
+            auto *v = (PosNormalVertex *)tvb.data;
+
+            size_t writeIdx = 0;
+            for (const auto &cone : m_beamCones)
+            {
+                float dx = cone.direction[0];
+                float dy = cone.direction[1];
+                float dz = cone.direction[2];
+                float dlen = std::sqrt(dx*dx + dy*dy + dz*dz);
+                if (dlen < 1e-6f) continue;
+                dx /= dlen; dy /= dlen; dz /= dlen;
+
+                // Orthonormal basis {u, vAxis} perpendicular to direction.
+                float helper[3];
+                if (std::fabs(dy) < 0.9f) { helper[0]=0; helper[1]=1; helper[2]=0; }
+                else                      { helper[0]=1; helper[1]=0; helper[2]=0; }
+                float ux = dy*helper[2] - dz*helper[1];
+                float uy = dz*helper[0] - dx*helper[2];
+                float uz = dx*helper[1] - dy*helper[0];
+                float ulen = std::sqrt(ux*ux + uy*uy + uz*uz);
+                if (ulen < 1e-6f) continue;
+                ux /= ulen; uy /= ulen; uz /= ulen;
+                float vAx = dy*uz - dz*uy;
+                float vAy = dz*ux - dx*uz;
+                float vAz = dx*uy - dy*ux;
+
+                float bcx = cone.origin[0] + dx * cone.length;
+                float bcy = cone.origin[1] + dy * cone.length;
+                float bcz = cone.origin[2] + dz * cone.length;
+                float halfRad = cone.halfAngleDeg * float(M_PI) / 180.0f;
+                float radius = cone.length * std::tan(halfRad);
+
+                // Precompute ring positions and outward-radial normals (N+1 so we can reuse wrap)
+                float bx[N+1], by[N+1], bz[N+1];
+                float rnx[N+1], rny[N+1], rnz[N+1];
+                for (int i = 0; i <= N; i++) {
+                    float angle = (2.0f * float(M_PI) * i) / N;
+                    float c = std::cos(angle);
+                    float s = std::sin(angle);
+                    float rx = ux * c + vAx * s;
+                    float ry = uy * c + vAy * s;
+                    float rz = uz * c + vAz * s;
+                    bx[i] = bcx + rx * radius;
+                    by[i] = bcy + ry * radius;
+                    bz[i] = bcz + rz * radius;
+                    rnx[i] = rx;
+                    rny[i] = ry;
+                    rnz[i] = rz;
+                }
+
+                // Emit N triangles (apex, ring[i], ring[i+1])
+                for (int i = 0; i < N; i++) {
+                    // Apex normal: average of adjacent ring radials (smooth along rim)
+                    float anx = (rnx[i] + rnx[i+1]) * 0.5f;
+                    float any = (rny[i] + rny[i+1]) * 0.5f;
+                    float anz = (rnz[i] + rnz[i+1]) * 0.5f;
+                    v[writeIdx++] = { cone.origin[0], cone.origin[1], cone.origin[2], anx, any, anz };
+                    v[writeIdx++] = { bx[i],   by[i],   bz[i],   rnx[i],   rny[i],   rnz[i] };
+                    v[writeIdx++] = { bx[i+1], by[i+1], bz[i+1], rnx[i+1], rny[i+1], rnz[i+1] };
+                }
+            }
+
+            if (writeIdx > 0) {
+                float identity[16];
+                bx::mtxIdentity(identity);
+                bgfx::setTransform(identity);
+
+                // Foggy white, soft alpha
+                float foggyColor[4] = { 0.95f, 0.95f, 1.0f, 0.18f };
+                bgfx::setUniform(m_u_color, foggyColor);
+
+                bgfx::setVertexBuffer(0, &tvb, 0, uint32_t(writeIdx));
+                // No back-face culling so both sides of the thin cone read.
+                // Depth test on, no depth write so the cone doesn't occlude the rod or other geo.
+                bgfx::setState(
+                    BGFX_STATE_WRITE_RGB | BGFX_STATE_WRITE_A
+                    | BGFX_STATE_DEPTH_TEST_LESS
+                    | BGFX_STATE_BLEND_ALPHA
+                );
+                bgfx::submit(0, m_litProgram);
+            }
+        }
+    }
+
+    // --- Pass 2: Sharp contrasting center rod (magenta line along beam axis) ---
+    if (bgfx::isValid(m_colorProgram))
+    {
+        uint32_t totalLineVerts = uint32_t(m_beamCones.size()) * 2;
+        if (bgfx::getAvailTransientVertexBuffer(totalLineVerts, PosColorVertex::layout))
+        {
+            bgfx::TransientVertexBuffer tvb2;
+            bgfx::allocTransientVertexBuffer(&tvb2, totalLineVerts, PosColorVertex::layout);
+            auto *lv = (PosColorVertex *)tvb2.data;
+
+            // Magenta (packed ABGR): A=ff, B=ff, G=00, R=ff → 0xffff00ff
+            const uint32_t rodColor = 0xffff00ff;
+
+            size_t rodIdx = 0;
+            for (const auto &cone : m_beamCones)
+            {
+                float dx = cone.direction[0];
+                float dy = cone.direction[1];
+                float dz = cone.direction[2];
+                float dlen = std::sqrt(dx*dx + dy*dy + dz*dz);
+                if (dlen < 1e-6f) continue;
+                dx /= dlen; dy /= dlen; dz /= dlen;
+
+                float ex = cone.origin[0] + dx * cone.length;
+                float ey = cone.origin[1] + dy * cone.length;
+                float ez = cone.origin[2] + dz * cone.length;
+
+                lv[rodIdx++] = { cone.origin[0], cone.origin[1], cone.origin[2], rodColor };
+                lv[rodIdx++] = { ex, ey, ez, rodColor };
+            }
+
+            if (rodIdx > 0) {
+                float identity[16];
+                bx::mtxIdentity(identity);
+                bgfx::setTransform(identity);
+                bgfx::setVertexBuffer(0, &tvb2, 0, uint32_t(rodIdx));
+                bgfx::setState(
+                    BGFX_STATE_WRITE_RGB
+                    | BGFX_STATE_DEPTH_TEST_LESS
+                    | BGFX_STATE_PT_LINES
+                );
+                bgfx::submit(0, m_colorProgram);
+            }
+        }
+    }
+}
+
+void BgfxRenderer::setFocusAimMarker(bool visible, const float pos[3])
+{
+    m_focusAimVisible = visible;
+    if (visible && pos)
+    {
+        m_focusAimPos[0] = pos[0];
+        m_focusAimPos[1] = pos[1];
+        m_focusAimPos[2] = pos[2];
+    }
+}
+
+void BgfxRenderer::renderFocusAimMarker()
+{
+    if (!m_focusAimVisible || !bgfx::isValid(m_colorProgram))
+        return;
+
+    // Geometry: horizontal ring (N segments, radius R) on the XY plane at the
+    // aim point, plus a vertical stub from the ring center up to Z+stubLen.
+    // Reads as "aim here / target on the floor".
+    constexpr int N = 16;
+    constexpr float kRadius = 0.25f;   // meters
+    constexpr float kStubLen = 0.30f;  // meters
+    constexpr int ringVerts = 2 * N;   // N line segments, 2 verts each
+    constexpr int stubVerts = 2;       // 1 line segment
+    constexpr int totalVerts = ringVerts + stubVerts;
+
     if (!bgfx::getAvailTransientVertexBuffer(totalVerts, PosColorVertex::layout))
         return;
 
@@ -643,87 +807,44 @@ void BgfxRenderer::renderBeamCones()
     bgfx::allocTransientVertexBuffer(&tvb, totalVerts, PosColorVertex::layout);
     auto *v = (PosColorVertex *)tvb.data;
 
-    size_t writeIdx = 0;
-    for (const auto &cone : m_beamCones)
+    // Bright yellow. ABGR packed (R=ff, G=e6, B=10, A=ff) → 0xff10e6ff
+    const uint32_t kYellow = 0xff10e6ff;
+
+    const float cx = m_focusAimPos[0];
+    const float cy = m_focusAimPos[1];
+    const float cz = m_focusAimPos[2];
+
+    // Ring around (cx, cy, cz) in the XY plane
+    float ring[N][3];
+    for (int i = 0; i < N; i++)
     {
-        // Color: RGBA float → packed ABGR
-        uint32_t r = uint32_t(cone.color[0] * 255) & 0xFF;
-        uint32_t g = uint32_t(cone.color[1] * 255) & 0xFF;
-        uint32_t b = uint32_t(cone.color[2] * 255) & 0xFF;
-        uint32_t a = uint32_t(cone.color[3] * 255) & 0xFF;
-        uint32_t col = (a << 24) | (b << 16) | (g << 8) | r;
-
-        // Normalize direction (should already be, but be safe)
-        float dx = cone.direction[0];
-        float dy = cone.direction[1];
-        float dz = cone.direction[2];
-        float dlen = std::sqrt(dx*dx + dy*dy + dz*dz);
-        if (dlen < 1e-6f) continue;
-        dx /= dlen; dy /= dlen; dz /= dlen;
-
-        // Build orthonormal basis {u, v} perpendicular to direction.
-        // Pick a helper axis that isn't parallel to direction.
-        float helper[3];
-        if (std::fabs(dy) < 0.9f) {
-            helper[0] = 0; helper[1] = 1; helper[2] = 0;
-        } else {
-            helper[0] = 1; helper[1] = 0; helper[2] = 0;
-        }
-
-        // u = normalize(direction × helper)
-        float ux = dy * helper[2] - dz * helper[1];
-        float uy = dz * helper[0] - dx * helper[2];
-        float uz = dx * helper[1] - dy * helper[0];
-        float ulen = std::sqrt(ux*ux + uy*uy + uz*uz);
-        if (ulen < 1e-6f) continue;
-        ux /= ulen; uy /= ulen; uz /= ulen;
-
-        // v = direction × u
-        float vx = dy * uz - dz * uy;
-        float vy = dz * ux - dx * uz;
-        float vz = dx * uy - dy * ux;
-
-        // Base circle center and radius
-        float bcx = cone.origin[0] + dx * cone.length;
-        float bcy = cone.origin[1] + dy * cone.length;
-        float bcz = cone.origin[2] + dz * cone.length;
-        float halfRad = cone.halfAngleDeg * float(M_PI) / 180.0f;
-        float radius = cone.length * std::tan(halfRad);
-
-        // Precompute base circle vertices
-        float bx[N], by[N], bz[N];
-        for (int i = 0; i < N; i++) {
-            float angle = (2.0f * float(M_PI) * i) / N;
-            float c = std::cos(angle);
-            float s = std::sin(angle);
-            bx[i] = bcx + (ux * c + vx * s) * radius;
-            by[i] = bcy + (uy * c + vy * s) * radius;
-            bz[i] = bcz + (uz * c + vz * s) * radius;
-        }
-
-        // N radial spokes from origin to base circle points
-        for (int i = 0; i < N; i++) {
-            v[writeIdx++] = { cone.origin[0], cone.origin[1], cone.origin[2], col };
-            v[writeIdx++] = { bx[i], by[i], bz[i], col };
-        }
-
-        // N base circle edges connecting adjacent vertices
-        for (int i = 0; i < N; i++) {
-            int j = (i + 1) % N;
-            v[writeIdx++] = { bx[i], by[i], bz[i], col };
-            v[writeIdx++] = { bx[j], by[j], bz[j], col };
-        }
+        float angle = (2.0f * float(M_PI) * i) / N;
+        ring[i][0] = cx + std::cos(angle) * kRadius;
+        ring[i][1] = cy + std::sin(angle) * kRadius;
+        ring[i][2] = cz;
     }
 
-    // writeIdx may be less than totalVerts if any cones were skipped; only submit what we used
-    if (writeIdx == 0)
-        return;
+    uint32_t idx = 0;
+    for (int i = 0; i < N; i++)
+    {
+        int j = (i + 1) % N;
+        v[idx++] = { ring[i][0], ring[i][1], ring[i][2], kYellow };
+        v[idx++] = { ring[j][0], ring[j][1], ring[j][2], kYellow };
+    }
+
+    // Vertical stub from center up
+    v[idx++] = { cx, cy, cz, kYellow };
+    v[idx++] = { cx, cy, cz + kStubLen, kYellow };
 
     float identity[16];
     bx::mtxIdentity(identity);
     bgfx::setTransform(identity);
-    bgfx::setState(BGFX_STATE_WRITE_RGB | BGFX_STATE_PT_LINES);
-    bgfx::setVertexBuffer(0, &tvb, 0, uint32_t(writeIdx));
+    bgfx::setVertexBuffer(0, &tvb, 0, totalVerts);
+    bgfx::setState(
+        BGFX_STATE_WRITE_RGB
+        | BGFX_STATE_DEPTH_TEST_LESS
+        | BGFX_STATE_PT_LINES
+    );
     bgfx::submit(0, m_colorProgram);
 }
 

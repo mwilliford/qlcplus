@@ -17,6 +17,8 @@
 #include <QWindow>
 #include <QTimer>
 #include <QPoint>
+#include <QHash>
+#include <QByteArray>
 #include <memory>
 #include <functional>
 #include <unordered_map>
@@ -84,10 +86,25 @@ public:
         m_gizmoModeSetCallback = std::move(setter);
     }
 
+    /** Set focus-mode predicate callback. Returns true when in Focus mode. */
+    void setFocusModeCallback(std::function<bool()> cb) { m_focusModeCallback = std::move(cb); }
+
+    /** Set Focus aim commit callback — SpatialView calls it on mouse click/drag. */
+    void setFocusAimCallback(std::function<void(double, double, double)> cb) {
+        m_focusAimCallback = std::move(cb);
+    }
+
+    /** Set live-DMX predicate: true in Calibrate or Focus modes — beam cones
+     *  use live DMX values instead of home position. */
+    void setLiveDmxModeCallback(std::function<bool()> cb) { m_liveDmxModeCallback = std::move(cb); }
+
     /** Get current camera state. */
     float cameraYaw() const { return m_cameraYaw; }
     float cameraPitch() const { return m_cameraPitch; }
     float cameraDistance() const { return m_cameraDistance; }
+
+    /** Rebuild the beam cones (public for mode change triggers). */
+    void rebuildBeamCones();
 
 protected:
     void exposeEvent(QExposeEvent *event) override;
@@ -104,7 +121,6 @@ private:
     void rebuildEllipsoids();
     void rebuildTrusses();
     void rebuildObservationLines();
-    void rebuildBeamCones();
     const qlcrender::FixtureSceneGraph *getOrBuildSceneGraph(
         const QString &manufacturer, const QString &model,
         const GDTFGeometryData *geoData);
@@ -117,6 +133,7 @@ private slots:
     void onFrameTimer();
     void onSpatialTransformChanged(const QString &id);
     void onSolverVizChanged();
+    void onUniverseWritten(quint32 universeId, const QByteArray &data);
 
 private:
     Doc *m_doc;
@@ -131,6 +148,7 @@ private:
     bool m_panning = false;
     bool m_draggingGizmo = false;
     bool m_draggingRotate = false;
+    bool m_focusDragging = false;
 
     // Gizmo drag state
     float m_dragStartPos[3] = {0, 0, 0};  // primary fixture position at drag start
@@ -150,6 +168,14 @@ private:
     // Gizmo mode callbacks (0=Translate, 1=Rotate)
     std::function<int()> m_gizmoModeCallback;
     std::function<void(int)> m_gizmoModeSetCallback;
+
+    // Focus mode callbacks
+    std::function<bool()> m_focusModeCallback;
+    std::function<void(double, double, double)> m_focusAimCallback;
+    std::function<bool()> m_liveDmxModeCallback;
+
+    // Universe DMX snapshots (deep-copied from InputOutputMap::universeWritten)
+    QHash<quint32, QByteArray> m_universeSnapshots;
 
     // GDTF scene graph cache: one per fixture def (manufacturer+model)
     std::unordered_map<std::string, qlcrender::FixtureSceneGraph> m_sceneGraphCache;

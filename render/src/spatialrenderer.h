@@ -80,6 +80,9 @@ public:
     // --- Beam cones (one per selected fixture, optional) ---
     virtual void setBeamCones(const std::vector<RenderBeamCone>& cones) { (void)cones; }
 
+    // --- Focus aim marker (visible in Focus mode when an aim point is set) ---
+    virtual void setFocusAimMarker(bool visible, const float pos[3]) { (void)visible; (void)pos; }
+
 protected:
     std::set<int32_t> m_selectedIds;
     int m_gizmoMode = 0;
