@@ -28,6 +28,8 @@
 #include "calibrationmodel.h"
 #include "doc.h"
 #include "fixture.h"
+#include "fixturepantilt.h"
+#include "inputoutputmap.h"
 #include "qlcfixturedef.h"
 #include "qlcfixturedefcache.h"
 #include "qlcfixturemode.h"
@@ -68,6 +70,14 @@ SpatialView::SpatialView(Doc *doc, QWindow *parent)
             this, [this]() { rebuildObservationLines(); });
     connect(cm, &CalibrationModel::solveCompleted,
             this, [this](bool) { rebuildObservationLines(); });
+
+    // Subscribe to live DMX — deep-copied snapshots per universe tick.
+    // Used by Calibrate/Focus mode beam cones to render the actual DMX state.
+    if (InputOutputMap *ioMap = m_doc->inputOutputMap())
+    {
+        connect(ioMap, &InputOutputMap::universeWritten,
+                this, &SpatialView::onUniverseWritten);
+    }
 }
 
 SpatialView::~SpatialView()
@@ -226,6 +236,43 @@ void SpatialView::mousePressEvent(QMouseEvent *event)
         int gizmoMode = m_gizmoModeCallback ? m_gizmoModeCallback() : 0;
         auto *bgfxR = dynamic_cast<qlcrender::BgfxRenderer *>(m_renderer.get());
 
+        // Focus mode: left-click either selects a fixture (if the click hits
+        // a fixture body) or commits an aim point on the floor (if it misses
+        // all fixtures). Checked BEFORE gizmo hit-tests so camera orbit
+        // doesn't fight the aim.
+        if (m_focusModeCallback && m_focusModeCallback() && bgfxR)
+        {
+            // Hit-test fixture AABBs first. If we hit one, fall through to
+            // the normal click-release path so mouseReleaseEvent's existing
+            // selection logic can handle it (same as Layout mode). Don't set
+            // m_orbiting — stop here so dragging on a fixture is a no-op
+            // rather than rotating the camera.
+            int32_t hitId = m_renderer->hitTest(mx, my, vw, vh);
+            if (hitId >= 0)
+            {
+                m_orbiting = false;
+                return;
+            }
+
+            // Missed all fixtures — aim click. Commit immediately and enter
+            // drag mode so mouseMoveEvent sweeps the aim.
+            float view[16], proj[16];
+            bgfxR->camera().viewMatrix(view);
+            float aspect = float(vw) / float(vh);
+            bgfxR->camera().projMatrix(proj, aspect, true);
+            qlcrender::Ray ray = qlcrender::screenToRay(mx, my, vw, vh, view, proj);
+
+            float hit[3];
+            if (qlcrender::rayIntersectsPlaneZ(ray, 0.0f, hit))
+            {
+                m_focusDragging = true;
+                m_orbiting = false;
+                if (m_focusAimCallback)
+                    m_focusAimCallback(double(hit[0]), double(hit[1]), double(hit[2]));
+            }
+            return;
+        }
+
         if (gizmoMode == 0)
         {
             // Translate mode — check translate gizmo
@@ -281,6 +328,31 @@ void SpatialView::mouseMoveEvent(QMouseEvent *event)
 {
     QPoint delta = event->pos() - m_lastMousePos;
     m_lastMousePos = event->pos();
+
+    if (m_focusDragging && m_bgfxReady)
+    {
+        auto *bgfxR = dynamic_cast<qlcrender::BgfxRenderer *>(m_renderer.get());
+        if (!bgfxR)
+            return;
+
+        float mx, my;
+        uint32_t vw, vh;
+        mouseToViewport(event->pos(), mx, my, vw, vh);
+
+        float view[16], proj[16];
+        bgfxR->camera().viewMatrix(view);
+        float aspect = float(vw) / float(vh);
+        bgfxR->camera().projMatrix(proj, aspect, true);
+        qlcrender::Ray ray = qlcrender::screenToRay(mx, my, vw, vh, view, proj);
+
+        float hit[3];
+        if (qlcrender::rayIntersectsPlaneZ(ray, 0.0f, hit))
+        {
+            if (m_focusAimCallback)
+                m_focusAimCallback(double(hit[0]), double(hit[1]), double(hit[2]));
+        }
+        return;
+    }
 
     if (m_draggingRotate && m_bgfxReady)
     {
@@ -409,6 +481,12 @@ void SpatialView::mouseMoveEvent(QMouseEvent *event)
 
 void SpatialView::mouseReleaseEvent(QMouseEvent *event)
 {
+    if (event->button() == Qt::LeftButton && m_focusDragging)
+    {
+        m_focusDragging = false;
+        return;
+    }
+
     if (event->button() == Qt::LeftButton && m_draggingGizmo)
     {
         auto *bgfxR = dynamic_cast<qlcrender::BgfxRenderer *>(m_renderer.get());
@@ -523,6 +601,19 @@ void SpatialView::onSolverVizChanged()
     rebuildEllipsoids();
     rebuildObservationLines();
     rebuildBeamCones();
+}
+
+void SpatialView::onUniverseWritten(quint32 universeId, const QByteArray &data)
+{
+    // Deep-copied snapshot from the DMX tick — store for live-DMX beam cone
+    // rendering in Calibrate/Focus modes. QByteArray uses copy-on-write, so
+    // this assignment is cheap.
+    m_universeSnapshots[universeId] = data;
+
+    // Only rebuild cones in modes that care about live DMX. Layout mode
+    // uses home-position forward kinematics and is unaffected.
+    if (m_liveDmxModeCallback && m_liveDmxModeCallback())
+        rebuildBeamCones();
 }
 
 static void addFixtureEntry(std::vector<qlcrender::RenderFixture> &out,
@@ -750,6 +841,8 @@ void SpatialView::rebuildBeamCones()
     if (!m_bgfxReady)
         return;
 
+    const bool useLiveDmx = m_liveDmxModeCallback && m_liveDmxModeCallback();
+
     std::vector<qlcrender::RenderBeamCone> cones;
     SpatialModel *sm = m_doc->spatialModel();
     auto selectedIds = m_renderer->selectedIds();
@@ -781,32 +874,51 @@ void SpatialView::rebuildBeamCones()
         double panRange = phy.focusPanMax() > 0 ? phy.focusPanMax() : 540.0;
         double tiltRange = phy.focusTiltMax() > 0 ? phy.focusTiltMax() : 270.0;
 
-        // Compute local beam ray at default (centered) angles
-        rigmath::Ray localRay;
-        if (hasPan && hasTilt)
+        // Angle source: live DMX in Calibrate/Focus, home (0,0) in Layout.
+        PanTiltChannelMap map = buildPanTiltChannelMap(fxi);
+        if (!map.kinematics)
+            continue;
+
+        double panDeg = 0.0, tiltDeg = 0.0;
+        if (useLiveDmx && (hasPan || hasTilt))
         {
-            rigmath::MovingHeadKinematics kin(panRange, tiltRange);
-            localRay = kin.forward_local({0.0, 0.0});
-        }
-        else if (hasPan)
-        {
-            rigmath::PanOnlyKinematics kin(panRange);
-            localRay = kin.forward_local({0.0});
-        }
-        else
-        {
-            rigmath::FixedKinematics kin;
-            localRay = kin.forward_local({});
+            auto it = m_universeSnapshots.find(map.universeId);
+            if (it != m_universeSnapshots.end())
+            {
+                PanTiltAngles live = dmxSnapshotToAngles(map, it.value());
+                if (live.hasPan)  panDeg = live.panDeg;
+                if (live.hasTilt) tiltDeg = live.tiltDeg;
+            }
+            // Else: no snapshot yet (DMX hasn't ticked) → fall back to home.
         }
 
-        // Transform to world space
+        // Build the angle vector matching the kinematics DOF, then let the
+        // polymorphic kinematics do the rest — including the world transform.
+        std::vector<double> angles;
+        if (hasPan && hasTilt)      angles = {panDeg, tiltDeg};
+        else if (hasPan)            angles = {panDeg};
+        // else (fixed): empty vector
+
         rigmath::RigidTransform t = sm->fixtureTransform(QString::number(fid));
-        rigmath::Ray worldRay = t.transform_ray(localRay);
+        rigmath::Ray worldRay = map.kinematics->forward_world(t, angles);
 
         // Beam half-angle (use widest end of zoom range, default 5°)
         double halfAngle = phy.lensDegreesMax() > 0
                              ? phy.lensDegreesMax() / 2.0
                              : 5.0;
+
+        // Clip the beam length at the Z=0 floor plane when the ray points
+        // down from above the floor. Lets the magenta center rod tip land
+        // exactly on whatever aim target is on the floor, so "centered on
+        // click" is visually obvious. Fall back to 10m if the beam is
+        // horizontal/upward or the fixture is at floor level.
+        float beamLength = 10.0f;
+        if (worldRay.oz > 0.05 && worldRay.dz < -1e-3)
+        {
+            double t = -worldRay.oz / worldRay.dz;
+            // Cap at 15m so very shallow tilts don't produce absurdly long cones.
+            beamLength = float(std::min(t, 15.0));
+        }
 
         qlcrender::RenderBeamCone cone;
         cone.fixtureId = uint32_t(fid);
@@ -817,7 +929,7 @@ void SpatialView::rebuildBeamCones()
         cone.direction[1] = float(worldRay.dy);
         cone.direction[2] = float(worldRay.dz);
         cone.halfAngleDeg = float(halfAngle);
-        cone.length = 10.0f;  // 10m default
+        cone.length = beamLength;
         cone.color[0] = 0.3f;
         cone.color[1] = 0.9f;
         cone.color[2] = 1.0f;

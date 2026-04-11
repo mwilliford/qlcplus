@@ -77,6 +77,19 @@ Ray screenToRay(float mouseX, float mouseY,
 bool rayIntersectsAABB(const Ray &ray, const AABB &aabb, float &outT);
 
 /**
+ * @brief Intersect a ray with a horizontal plane at fixed Z.
+ *
+ * @param r         The ray to test
+ * @param planeZ    Z value of the plane (normal = +Z)
+ * @param out       If hit, the intersection point (x, y, planeZ)
+ * @param outT      Optional: the ray t value at the intersection
+ * @return true if the ray hits the plane in front of the camera within a
+ *         reasonable distance (rejects parallel rays, behind-camera hits,
+ *         and horizon skims beyond 200 m)
+ */
+bool rayIntersectsPlaneZ(const Ray &r, float planeZ, float out[3], float *outT = nullptr);
+
+/**
  * @brief Compute the world-space AABB of a fixture from its transform.
  *
  * Uses the fixture's scene graph local AABB (if available) or a default

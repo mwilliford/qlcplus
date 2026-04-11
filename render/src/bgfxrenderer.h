@@ -93,6 +93,7 @@ public:
     void setMeshBasePath(const std::string &path) override { m_meshBasePath = path; }
     void setObservationLines(const std::vector<RenderLine>& lines) override;
     void setBeamCones(const std::vector<RenderBeamCone>& cones) override;
+    void setFocusAimMarker(bool visible, const float pos[3]) override;
 
 private:
     void renderGrid();
@@ -102,6 +103,7 @@ private:
     void renderTrusses();
     void renderObservationLines();
     void renderBeamCones();
+    void renderFocusAimMarker();
     void renderLabels();
     void renderSceneGraph(const SceneNode &node, const float parentTransform[16],
                           const float color[4]);
@@ -146,6 +148,10 @@ private:
 
     // Beam cones (one per selected fixture)
     std::vector<RenderBeamCone> m_beamCones;
+
+    // Focus aim marker (Focus mode target indicator)
+    bool m_focusAimVisible = false;
+    float m_focusAimPos[3] = {0, 0, 0};
 
     // Shader programs
     bgfx::ProgramHandle m_colorProgram = BGFX_INVALID_HANDLE;  // vertex-color (grid/lines)

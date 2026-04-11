@@ -15,6 +15,7 @@
 #define SPATIALCONTROLLER_H
 
 #include <QObject>
+#include <QSet>
 #include <QVariantList>
 #include <cstdint>
 #include <functional>
@@ -129,6 +130,17 @@ public:
     /** Set a callback to retrieve all selected fixture IDs. */
     void setSelectedIdsCallback(std::function<std::vector<int32_t>()> cb) { m_selectedIdsCallback = std::move(cb); }
 
+    // --- Focus mode aim ---
+    /** Set the world-space aim point for Focus mode. Computes IK for each
+     *  selected moving-head fixture and emits focusDmxWrite signals. */
+    Q_INVOKABLE void setFocusAim(double wx, double wy, double wz);
+
+    /** Clear the aim and release any DMX channels we were holding. */
+    Q_INVOKABLE void clearFocusAim();
+
+    bool focusAimValid() const { return m_focusAimValid; }
+    void getFocusAim(double *x, double *y, double *z) const;
+
 signals:
     void selectionChanged();
     void transformChanged();
@@ -137,6 +149,18 @@ signals:
     void gridSizeChanged();
     void axisModeChanged();
     void gizmoModeChanged();
+
+    /** Emitted for each DMX byte Focus mode wants to write. Wired in
+     *  spatialviewwindow.cpp to SimpleDesk::setAbsoluteChannelValue. */
+    void focusDmxWrite(uint absChannel, uchar value);
+
+    /** Emitted for each DMX channel Focus mode is releasing on exit/clear.
+     *  Wired to SimpleDesk::resetAbsoluteChannel. */
+    void focusDmxReset(uint absChannel);
+
+    /** Fired when the aim point changes or clears — SpatialView uses this
+     *  to update the renderer's focus aim marker. */
+    void focusAimChanged();
 
 private:
     void updateTransformFromModel();
@@ -155,6 +179,11 @@ private:
     // Cached transform values (avoid querying model every frame)
     double m_posX = 0, m_posY = 0, m_posZ = 0;
     double m_rotPitch = 0, m_rotYaw = 0, m_rotRoll = 0;
+
+    // --- Focus mode state ---
+    bool m_focusAimValid = false;
+    double m_focusAim[3] = {0, 0, 0};
+    QSet<uint> m_focusControlledChannels;
 };
 
 #endif // SPATIALCONTROLLER_H

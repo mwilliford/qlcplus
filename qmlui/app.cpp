@@ -41,6 +41,7 @@
 #include "app.h"
 #include "uimanager.h"
 #include "simpledesk.h"
+#include "spatialviewwindow.h"
 #include "showmanager.h"
 #include "fixtureeditor.h"
 #include "modelselector.h"
@@ -181,6 +182,8 @@ void App::startup()
     m_fixtureGroupEditor = new FixtureGroupEditor(this, m_doc, m_fixtureManager);
     m_functionManager = new FunctionManager(this, m_doc);
     m_simpleDesk = new SimpleDesk(this, m_doc, m_functionManager);
+    // Register SimpleDesk with the Spatial View so Focus mode can push DMX.
+    spatialViewSetSimpleDesk(m_simpleDesk);
     m_contextManager = new ContextManager(this, m_doc, m_fixtureManager, m_functionManager);
     m_paletteManager = new PaletteManager(this, m_doc, m_contextManager);
 
