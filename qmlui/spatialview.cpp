@@ -26,6 +26,7 @@
 #include "primitivegen.h"
 #include "spatialmodel.h"
 #include "calibrationmodel.h"
+#include "tardis/tardis.h"
 #include "doc.h"
 #include "fixture.h"
 #include "fixturepantilt.h"
@@ -285,6 +286,7 @@ void SpatialView::mousePressEvent(QMouseEvent *event)
                 bgfxR->gizmo().getPosition(m_dragStartPos);
 
                 m_dragStartPositions.clear();
+                m_dragStartTransforms.clear();
                 SpatialModel *sm = m_doc->spatialModel();
                 for (int32_t id : m_renderer->selectedIds())
                 {
@@ -293,6 +295,14 @@ void SpatialView::mousePressEvent(QMouseEvent *event)
                     m_dragStartPositions[id][0] = t.pos[0];
                     m_dragStartPositions[id][1] = t.pos[1];
                     m_dragStartPositions[id][2] = t.pos[2];
+                    double ax, ay, az;
+                    t.get_axis_angle(ax, ay, az);
+                    m_dragStartTransforms[id][0] = t.pos[0];
+                    m_dragStartTransforms[id][1] = t.pos[1];
+                    m_dragStartTransforms[id][2] = t.pos[2];
+                    m_dragStartTransforms[id][3] = ax;
+                    m_dragStartTransforms[id][4] = ay;
+                    m_dragStartTransforms[id][5] = az;
                 }
                 return;
             }
@@ -312,6 +322,21 @@ void SpatialView::mousePressEvent(QMouseEvent *event)
                 m_draggingRotate = true;
                 m_orbiting = false;
                 bgfxR->rotateGizmo().setActiveAxis(axis);
+                // Capture start transforms for undo
+                m_dragStartTransforms.clear();
+                SpatialModel *sm = m_doc->spatialModel();
+                for (int32_t id : m_renderer->selectedIds())
+                {
+                    rigmath::RigidTransform t = sm->fixtureTransform(QString::number(id));
+                    double ax, ay, az;
+                    t.get_axis_angle(ax, ay, az);
+                    m_dragStartTransforms[id][0] = t.pos[0];
+                    m_dragStartTransforms[id][1] = t.pos[1];
+                    m_dragStartTransforms[id][2] = t.pos[2];
+                    m_dragStartTransforms[id][3] = ax;
+                    m_dragStartTransforms[id][4] = ay;
+                    m_dragStartTransforms[id][5] = az;
+                }
                 return;
             }
         }
@@ -493,7 +518,11 @@ void SpatialView::mouseReleaseEvent(QMouseEvent *event)
         if (bgfxR)
             bgfxR->gizmo().setActiveAxis(qlcrender::GizmoAxis::None);
         m_draggingGizmo = false;
-        qDebug() << "[SpatialView] Translate drag completed";
+
+        // Enqueue undo for each fixture that was dragged.
+        // Tardis batches actions within 150ms, so all fixtures in the same
+        // drag get a single undo step.
+        enqueueSpatialUndoActions();
         return;
     }
 
@@ -503,7 +532,8 @@ void SpatialView::mouseReleaseEvent(QMouseEvent *event)
         if (bgfxR)
             bgfxR->rotateGizmo().setActiveAxis(qlcrender::GizmoAxis::None);
         m_draggingRotate = false;
-        qDebug() << "[SpatialView] Rotate drag completed";
+
+        enqueueSpatialUndoActions();
         return;
     }
 
@@ -566,6 +596,17 @@ void SpatialView::keyPressEvent(QKeyEvent *event)
         m_gizmoModeSetCallback(0);  // Translate
     else if (event->key() == Qt::Key_E && m_gizmoModeSetCallback)
         m_gizmoModeSetCallback(1);  // Rotate
+    else if (event->key() == Qt::Key_Z && (event->modifiers() & Qt::ControlModifier))
+    {
+        Tardis *tardis = Tardis::instance();
+        if (tardis)
+        {
+            if (event->modifiers() & Qt::ShiftModifier)
+                tardis->redoAction();
+            else
+                tardis->undoAction();
+        }
+    }
     else
         QWindow::keyPressEvent(event);
 }
@@ -601,6 +642,58 @@ void SpatialView::onSolverVizChanged()
     rebuildEllipsoids();
     rebuildObservationLines();
     rebuildBeamCones();
+}
+
+// --- Undo helpers ---
+
+static QVariantList transformToVariantList(const rigmath::RigidTransform &t)
+{
+    double ax, ay, az;
+    t.get_axis_angle(ax, ay, az);
+    return QVariantList{t.pos[0], t.pos[1], t.pos[2], ax, ay, az};
+}
+
+void SpatialView::enqueueSpatialUndoActions()
+{
+    SpatialModel *sm = m_doc->spatialModel();
+    Tardis *tardis = Tardis::instance();
+    if (!tardis)
+        return;
+
+    for (const auto &pair : m_dragStartTransforms)
+    {
+        int32_t id = pair.first;
+        const double *start = pair.second;
+
+        // Current (post-drag) transform
+        rigmath::RigidTransform endT = sm->fixtureTransform(QString::number(id));
+
+        // Start transform (pre-drag)
+        rigmath::RigidTransform startT = rigmath::RigidTransform::from_pose(
+            start[0], start[1], start[2], start[3], start[4], start[5]);
+
+        // Only enqueue if something actually changed
+        bool moved = std::abs(endT.pos[0] - startT.pos[0]) > 1e-9
+                  || std::abs(endT.pos[1] - startT.pos[1]) > 1e-9
+                  || std::abs(endT.pos[2] - startT.pos[2]) > 1e-9;
+        double eax, eay, eaz;
+        endT.get_axis_angle(eax, eay, eaz);
+        bool rotated = std::abs(eax - start[3]) > 1e-9
+                    || std::abs(eay - start[4]) > 1e-9
+                    || std::abs(eaz - start[5]) > 1e-9;
+
+        if (moved || rotated)
+        {
+            tardis->enqueueAction(
+                Tardis::SpatialFixtureSetTransform,
+                quint32(id),
+                QVariant::fromValue(QVariantList{start[0], start[1], start[2],
+                                                 start[3], start[4], start[5]}),
+                QVariant::fromValue(transformToVariantList(endT))
+            );
+        }
+    }
+    m_dragStartTransforms.clear();
 }
 
 void SpatialView::onUniverseWritten(quint32 universeId, const QByteArray &data)
