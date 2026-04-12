@@ -21,7 +21,6 @@
 #include <rigmath/kinematics.hpp>
 #include <rigmath/rigid_transform.hpp>
 
-#include <QDebug>
 #include <cmath>
 
 // --- Euler angle helpers (intrinsic XYZ / pitch-yaw-roll) ---
@@ -376,8 +375,6 @@ void SpatialController::setFocusAim(double wx, double wy, double wz)
 
     SpatialModel *sm = m_doc->spatialModel();
 
-    qDebug().nospace() << "[Focus] aim world=(" << wx << ", " << wy << ", " << wz << ")";
-
     // Iterate all selected fixtures; only moving heads get aimed.
     std::vector<int32_t> ids;
     if (m_selectedIdsCallback)
@@ -405,18 +402,10 @@ void SpatialController::setFocusAim(double wx, double wy, double wz)
         double panDeg  = clamped[0];
         double tiltDeg = clamped[1];
 
-        qDebug().nospace()
-            << "  fx=" << fid
-            << " fxPos=(" << xf.pos[0] << ", " << xf.pos[1] << ", " << xf.pos[2] << ")"
-            << " raw=(pan=" << result.angles[0] << ", tilt=" << result.angles[1] << ")"
-            << " clamped=(pan=" << panDeg << ", tilt=" << tiltDeg << ")"
-            << " reach=" << result.reachable;
-
         std::vector<FocusDmxWrite> writes =
             anglesToDmxWrites(map, panDeg, tiltDeg);
         for (const FocusDmxWrite &w : writes)
         {
-            qDebug().nospace() << "  dmx addr=" << w.absAddr << " val=" << int(w.value);
             emit focusDmxWrite(w.absAddr, w.value);
             m_focusControlledChannels.insert(w.absAddr);
         }
