@@ -78,6 +78,9 @@ public:
         GenericItemSetRotation,
         GenericItemSetScale,
 
+        /* Spatial View 3D actions (SpatialModel transforms) */
+        SpatialFixtureSetTransform = 0x0080, // full RigidTransform (gizmo drag or panel edit)
+
         IOAddUniverse = 0x0090,
         IORemoveUniverse,
 

@@ -129,6 +129,10 @@ private:
     void mouseToViewport(const QPoint &pos, float &mx, float &my,
                          uint32_t &vw, uint32_t &vh) const;
 
+    /** Enqueue one Tardis undo action per dragged fixture, comparing
+     *  m_dragStartTransforms against current SpatialModel state. */
+    void enqueueSpatialUndoActions();
+
 private slots:
     void onFrameTimer();
     void onSpatialTransformChanged(const QString &id);
@@ -153,6 +157,8 @@ private:
     // Gizmo drag state
     float m_dragStartPos[3] = {0, 0, 0};  // primary fixture position at drag start
     std::unordered_map<int32_t, double[3]> m_dragStartPositions;  // all selected fixtures' start positions
+    // Full transforms at drag start — used for undo (captures both position and rotation)
+    std::unordered_map<int32_t, double[6]> m_dragStartTransforms;  // [x,y,z,rx,ry,rz] per fixture
 
     // Default: front-of-house view (audience looking at stage)
     float m_cameraYaw = -90.0f;

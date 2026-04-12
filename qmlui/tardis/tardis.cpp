@@ -32,6 +32,8 @@
 #include "mainview2d.h"
 #include "mainview3d.h"
 #include "simpledesk.h"
+#include "spatialmodel.h"
+#include <rigmath/rigid_transform.hpp>
 #include "collection.h"
 #include "rgbmatrix.h"
 #include "vccuelist.h"
@@ -664,6 +666,21 @@ int Tardis::processAction(TardisAction &action, bool undo)
         case GenericItemSetScale:
         {
             m_contextManager->get3DView()->updateGenericItemScale(action.m_objID, value->value<QVector3D>());
+        }
+        break;
+        case SpatialFixtureSetTransform:
+        {
+            // Value is a QVariantList of 6 doubles: [x, y, z, rx, ry, rz]
+            // matching SpatialModel's XML format (position in meters, rotation as axis-angle radians).
+            QVariantList vl = value->toList();
+            if (vl.size() == 6)
+            {
+                double x = vl[0].toDouble(), y = vl[1].toDouble(), z = vl[2].toDouble();
+                double rx = vl[3].toDouble(), ry = vl[4].toDouble(), rz = vl[5].toDouble();
+                rigmath::RigidTransform t = rigmath::RigidTransform::from_pose(x, y, z, rx, ry, rz);
+                m_doc->spatialModel()->setFixtureTransform(
+                    QString::number(action.m_objID), t, SpatialModel::Committed);
+            }
         }
         break;
 

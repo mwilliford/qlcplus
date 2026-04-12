@@ -14,6 +14,7 @@
 #include "spatialcontroller.h"
 #include "spatialview.h"
 #include "spatialmodel.h"
+#include "tardis/tardis.h"
 #include "doc.h"
 #include "fixture.h"
 #include "fixturepantilt.h"
@@ -22,6 +23,31 @@
 #include <rigmath/rigid_transform.hpp>
 
 #include <cmath>
+
+// Helper: pack a RigidTransform into a QVariantList [x, y, z, rx, ry, rz]
+// matching Tardis::SpatialFixtureSetTransform format.
+static QVariantList transformToVariantList(const rigmath::RigidTransform &t)
+{
+    double ax, ay, az;
+    t.get_axis_angle(ax, ay, az);
+    return QVariantList{t.pos[0], t.pos[1], t.pos[2], ax, ay, az};
+}
+
+// Enqueue a Tardis undo action for a fixture transform change.
+// Call BEFORE writing the new transform to SpatialModel.
+static void enqueueSpatialTransformUndo(quint32 fixtureId,
+                                         const rigmath::RigidTransform &oldT,
+                                         const rigmath::RigidTransform &newT)
+{
+    Tardis *tardis = Tardis::instance();
+    if (!tardis) return;
+    tardis->enqueueAction(
+        Tardis::SpatialFixtureSetTransform,
+        fixtureId,
+        QVariant::fromValue(transformToVariantList(oldT)),
+        QVariant::fromValue(transformToVariantList(newT))
+    );
+}
 
 // --- Euler angle helpers (intrinsic XYZ / pitch-yaw-roll) ---
 // Rotation order: R = Rz(roll) * Ry(yaw) * Rx(pitch)
@@ -124,9 +150,11 @@ void SpatialController::setPosX(double v)
     m_posX = v;
     SpatialModel *sm = m_doc->spatialModel();
     QString id = QString::number(m_selectedFixtureId);
-    rigmath::RigidTransform t = sm->fixtureTransform(id);
-    t.pos[0] = v;
-    sm->setFixtureTransform(id, t, SpatialModel::Committed);
+    rigmath::RigidTransform oldT = sm->fixtureTransform(id);
+    rigmath::RigidTransform newT = oldT;
+    newT.pos[0] = v;
+    enqueueSpatialTransformUndo(quint32(m_selectedFixtureId), oldT, newT);
+    sm->setFixtureTransform(id, newT, SpatialModel::Committed);
 }
 
 void SpatialController::setPosY(double v)
@@ -136,9 +164,11 @@ void SpatialController::setPosY(double v)
     m_posY = v;
     SpatialModel *sm = m_doc->spatialModel();
     QString id = QString::number(m_selectedFixtureId);
-    rigmath::RigidTransform t = sm->fixtureTransform(id);
-    t.pos[1] = v;
-    sm->setFixtureTransform(id, t, SpatialModel::Committed);
+    rigmath::RigidTransform oldT = sm->fixtureTransform(id);
+    rigmath::RigidTransform newT = oldT;
+    newT.pos[1] = v;
+    enqueueSpatialTransformUndo(quint32(m_selectedFixtureId), oldT, newT);
+    sm->setFixtureTransform(id, newT, SpatialModel::Committed);
 }
 
 void SpatialController::setPosZ(double v)
@@ -148,9 +178,11 @@ void SpatialController::setPosZ(double v)
     m_posZ = v;
     SpatialModel *sm = m_doc->spatialModel();
     QString id = QString::number(m_selectedFixtureId);
-    rigmath::RigidTransform t = sm->fixtureTransform(id);
-    t.pos[2] = v;
-    sm->setFixtureTransform(id, t, SpatialModel::Committed);
+    rigmath::RigidTransform oldT = sm->fixtureTransform(id);
+    rigmath::RigidTransform newT = oldT;
+    newT.pos[2] = v;
+    enqueueSpatialTransformUndo(quint32(m_selectedFixtureId), oldT, newT);
+    sm->setFixtureTransform(id, newT, SpatialModel::Committed);
 }
 
 // --- Rotation ---
@@ -159,15 +191,18 @@ double SpatialController::rotPitch() const { return m_rotPitch; }
 double SpatialController::rotYaw() const { return m_rotYaw; }
 double SpatialController::rotRoll() const { return m_rotRoll; }
 
-static void applyEulerRotation(SpatialModel *sm, const QString &id,
+static void applyEulerRotation(SpatialModel *sm, quint32 fixtureId,
                                double pitchDeg, double yawDeg, double rollDeg)
 {
-    rigmath::RigidTransform t = sm->fixtureTransform(id);
+    QString id = QString::number(fixtureId);
+    rigmath::RigidTransform oldT = sm->fixtureTransform(id);
+    rigmath::RigidTransform newT = oldT;
     double pitch = pitchDeg * M_PI / 180.0;
     double yaw   = yawDeg   * M_PI / 180.0;
     double roll  = rollDeg  * M_PI / 180.0;
-    eulerToRotationMatrix(pitch, yaw, roll, t.rot);
-    sm->setFixtureTransform(id, t, SpatialModel::Committed);
+    eulerToRotationMatrix(pitch, yaw, roll, newT.rot);
+    enqueueSpatialTransformUndo(fixtureId, oldT, newT);
+    sm->setFixtureTransform(id, newT, SpatialModel::Committed);
 }
 
 void SpatialController::setRotPitch(double v)
@@ -175,7 +210,7 @@ void SpatialController::setRotPitch(double v)
     if (m_selectedFixtureId < 0 || qFuzzyCompare(v, m_rotPitch))
         return;
     m_rotPitch = v;
-    applyEulerRotation(m_doc->spatialModel(), QString::number(m_selectedFixtureId),
+    applyEulerRotation(m_doc->spatialModel(), quint32(m_selectedFixtureId),
                         m_rotPitch, m_rotYaw, m_rotRoll);
 }
 
@@ -184,7 +219,7 @@ void SpatialController::setRotYaw(double v)
     if (m_selectedFixtureId < 0 || qFuzzyCompare(v, m_rotYaw))
         return;
     m_rotYaw = v;
-    applyEulerRotation(m_doc->spatialModel(), QString::number(m_selectedFixtureId),
+    applyEulerRotation(m_doc->spatialModel(), quint32(m_selectedFixtureId),
                         m_rotPitch, m_rotYaw, m_rotRoll);
 }
 
@@ -193,7 +228,7 @@ void SpatialController::setRotRoll(double v)
     if (m_selectedFixtureId < 0 || qFuzzyCompare(v, m_rotRoll))
         return;
     m_rotRoll = v;
-    applyEulerRotation(m_doc->spatialModel(), QString::number(m_selectedFixtureId),
+    applyEulerRotation(m_doc->spatialModel(), quint32(m_selectedFixtureId),
                         m_rotPitch, m_rotYaw, m_rotRoll);
 }
 
