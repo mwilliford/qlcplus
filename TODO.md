@@ -54,8 +54,14 @@
 - [ ] **Workspace notes**: View/edit UserNote + read-only AgentNote for the workspace. Location TBD (chat panel section, or separate dialog).
 - [ ] **Per-object notes**: Add notes section to fixture/function property editors in v5. Lower priority.
 
-### Tardis Integration — TODO
+### Tardis Integration
+- [x] **Undo for Spatial View gizmo drags**: Translate and rotate drags enqueue `SpatialFixtureSetTransform` on mouse release. Multi-fixture drags batch into one undo step.
+- [x] **Undo for Properties panel edits**: Position (X/Y/Z) and rotation (Pitch/Yaw/Roll) changes enqueue undo before writing to SpatialModel.
+- [x] **Ctrl+Z / Ctrl+Shift+Z in Spatial View**: Forwarded from SpatialView::keyPressEvent to Tardis.
 - [ ] **Undo for agent mutations**: Call `Tardis::instance()->enqueueAction()` after agent commands (create_scene, etc.) so they're undoable. Requires wiring in App or AgentConnection.
+- [ ] **Undo for calibration observation add/remove**: Enqueue when observations are added or removed in CalibrateController.
+- [ ] **Undo for solver accept/dismiss**: Enqueue when solver results are accepted (committed transform changes) or dismissed.
+- [ ] **Undo for truss add/remove**: Enqueue when trusses are added or removed via SpatialModel.
 
 ### Virtual Console — TODO
 - [ ] **VC serializer for v5**: v5 has its own VirtualConsole implementation. May need adapted vcserializer/vccommandhandler or new approach using v5's VC API.
