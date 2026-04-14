@@ -218,23 +218,32 @@ GDTFKinematicsResult buildGDTFKinematics(const GDTFGeometryData &geoData,
         joints.push_back(j);
     }
 
-    // Find the beam node for the beam_offset transform.
-    // Walk from the last axis node's subtree, or from root if no axes matched.
+    // Collect ALL beam nodes from the last axis's subtree.
+    // Multi-beam fixtures (LED bars, multi-pixel) have one beam per emitter.
+    // Each beam node's transform relative to the last axis becomes a beam_offset.
     const GDTFGeometryNode *lastAxis = axes.back();
-    const GDTFGeometryNode *beamNode = nullptr;
-    for (const auto &child : lastAxis->children)
-    {
-        beamNode = findBeamNode(child);
-        if (beamNode)
-            break;
-    }
+    std::vector<rigmath::RigidTransform> beamOffsets;
 
-    rigmath::RigidTransform beamOffset = rigmath::RigidTransform::identity();
-    if (beamNode)
-        beamOffset = gdtfTransformToRigmath(beamNode->localTransform);
+    std::function<void(const GDTFGeometryNode &)> collectBeams;
+    collectBeams = [&](const GDTFGeometryNode &node) {
+        if (node.type == GeometryLamp || node.type == GeometryLaser)
+            beamOffsets.push_back(gdtfTransformToRigmath(node.localTransform));
+        // Also check GeometryReference nodes — they often point to shared
+        // Beam/Lamp geometries (e.g., LED bar pixels).
+        if (node.type == GeometryReference)
+            beamOffsets.push_back(gdtfTransformToRigmath(node.localTransform));
+        for (const auto &child : node.children)
+            collectBeams(child);
+    };
+    for (const auto &child : lastAxis->children)
+        collectBeams(child);
+
+    // If no beam nodes found, use identity (beam at chain tip)
+    if (beamOffsets.empty())
+        beamOffsets.push_back(rigmath::RigidTransform::identity());
 
     result.chain = std::make_shared<rigmath::KinematicChain>(
-        rigmath::KinematicChain(joints, {beamOffset}));
+        rigmath::KinematicChain(joints, beamOffsets));
     result.channelMap = channelMap;
     result.dofCount = dofIdx;
 

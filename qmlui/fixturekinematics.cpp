@@ -1,6 +1,6 @@
 /*
   Q Light Controller Plus
-  fixturepantilt.cpp
+  fixturekinematics.cpp
 
   Copyright (c) Marcus Williford
 
@@ -11,7 +11,7 @@
       http://www.apache.org/licenses/LICENSE-2.0.txt
 */
 
-#include "fixturepantilt.h"
+#include "fixturekinematics.h"
 
 #include <algorithm>
 #include <cmath>
@@ -25,6 +25,24 @@
 #include "qlcfixturemode.h"
 #include "qlcphysical.h"
 
+// ---------------------------------------------------------------------------
+// FixtureKinematics
+// ---------------------------------------------------------------------------
+
+int FixtureKinematics::dofCount() const
+{
+    return chain ? chain->dof_count() : 0;
+}
+
+int FixtureKinematics::beamCount() const
+{
+    return chain ? chain->beam_count() : 0;
+}
+
+// ---------------------------------------------------------------------------
+// Build
+// ---------------------------------------------------------------------------
+
 static quint32 absAddrOrInvalid(const Fixture *fx, quint32 relCh)
 {
     if (relCh == QLCChannel::invalid())
@@ -32,32 +50,21 @@ static quint32 absAddrOrInvalid(const Fixture *fx, quint32 relCh)
     return fx->universeAddress() + relCh;
 }
 
-PanTiltChannelMap buildPanTiltChannelMap(const Fixture *fx)
+FixtureKinematics buildFixtureKinematics(const Fixture *fx)
 {
-    PanTiltChannelMap map;
+    FixtureKinematics fk;
     if (fx == nullptr)
-        return map;
+        return fk;
 
     const QLCFixtureMode *mode = fx->fixtureMode();
     if (mode == nullptr)
-        return map;
+        return fk;
 
-    // Resolve absolute DMX addresses for pan/tilt channels
-    const quint32 panMSB  = mode->channelNumber(QLCChannel::Pan,  QLCChannel::MSB);
-    const quint32 panLSB  = mode->channelNumber(QLCChannel::Pan,  QLCChannel::LSB);
-    const quint32 tiltMSB = mode->channelNumber(QLCChannel::Tilt, QLCChannel::MSB);
-    const quint32 tiltLSB = mode->channelNumber(QLCChannel::Tilt, QLCChannel::LSB);
-
-    map.panMSBAddr  = absAddrOrInvalid(fx, panMSB);
-    map.panLSBAddr  = absAddrOrInvalid(fx, panLSB);
-    map.tiltMSBAddr = absAddrOrInvalid(fx, tiltMSB);
-    map.tiltLSBAddr = absAddrOrInvalid(fx, tiltLSB);
-    map.universeId  = fx->universe();
+    fk.universeId = fx->universe();
 
     QLCPhysical phy = mode->physical();
 
-    // Get GDTF geometry data + mode info. For GDTF fixtures this comes from
-    // the parsed file. For QXF fixtures we synthesize approximate GDTF data.
+    // Get GDTF geometry data (real for GDTF fixtures, synthesize for QXF)
     const QLCFixtureDef *def = fx->fixtureDef();
     const GDTFGeometryData *geoData = def ? def->gdtfGeometryData() : nullptr;
 
@@ -76,7 +83,6 @@ PanTiltChannelMap buildPanTiltChannelMap(const Fixture *fx)
                 break;
             }
         }
-        // Fallback: use the first mode if name didn't match
         if (modeInfo.channels.isEmpty() && !geoData->dmxModes.isEmpty())
             modeInfo = geoData->dmxModes.first();
     }
@@ -88,8 +94,14 @@ PanTiltChannelMap buildPanTiltChannelMap(const Fixture *fx)
         bool isMirror = phy.focusType().compare(
             QStringLiteral("Mirror"), Qt::CaseInsensitive) == 0;
 
+        quint32 panMSB  = mode->channelNumber(QLCChannel::Pan,  QLCChannel::MSB);
+        quint32 panLSB  = mode->channelNumber(QLCChannel::Pan,  QLCChannel::LSB);
+        quint32 tiltMSB = mode->channelNumber(QLCChannel::Tilt, QLCChannel::MSB);
+        quint32 tiltLSB = mode->channelNumber(QLCChannel::Tilt, QLCChannel::LSB);
+
         synthesizeGDTFFromQXF(
-            map.hasPan(), map.hasTilt(),
+            panMSB != QLCChannel::invalid(),
+            tiltMSB != QLCChannel::invalid(),
             panRange, tiltRange, isMirror,
             panMSB != QLCChannel::invalid() ? static_cast<int>(panMSB) : -1,
             panLSB != QLCChannel::invalid() ? static_cast<int>(panLSB) : -1,
@@ -100,103 +112,71 @@ PanTiltChannelMap buildPanTiltChannelMap(const Fixture *fx)
         geoData = &synthesized;
     }
 
-    // Build kinematics from GDTF data (single code path for both formats)
+    // Build kinematics from GDTF data (single code path)
     GDTFKinematicsResult kinResult = buildGDTFKinematics(*geoData, modeInfo);
-    map.kinematics = kinResult.chain;
-    map.channelMap = kinResult.channelMap;
+    fk.chain = kinResult.chain;
+    fk.channelMap = kinResult.channelMap;
 
-    // Store ranges for UI display
+    // Build the absolute DMX address list matching the ChannelMap's
+    // channel_index layout. The GDTFDmxChannelInfo entries in modeInfo
+    // are in the same order as the ChannelMap bindings were created.
     for (const auto &ch : modeInfo.channels)
     {
-        if (ch.attributeName.startsWith(QStringLiteral("Pan")))
-            map.panRange = std::abs(ch.physicalTo - ch.physicalFrom);
-        if (ch.attributeName.startsWith(QStringLiteral("Tilt")))
-            map.tiltRange = std::abs(ch.physicalTo - ch.physicalFrom);
+        // Only include channels that drive DOFs (Pan, Tilt, etc.)
+        // Skip non-motion channels (Dimmer, Color, etc.)
+        if (ch.attributeName.startsWith(QStringLiteral("Pan")) ||
+            ch.attributeName.startsWith(QStringLiteral("Tilt")))
+        {
+            quint32 coarseAddr = absAddrOrInvalid(fx, ch.coarseOffset >= 0
+                                                     ? quint32(ch.coarseOffset) : QLCChannel::invalid());
+            fk.dmxAddresses.push_back(coarseAddr);
+            if (ch.fineOffset >= 0)
+                fk.dmxAddresses.push_back(absAddrOrInvalid(fx, quint32(ch.fineOffset)));
+        }
     }
 
-    return map;
+    return fk;
 }
 
-// Map from ChannelMap channel_index to absolute DMX address.
-// The channel_index layout matches how bindings are built in buildGDTFKinematics:
-//   pan MSB, [pan LSB], tilt MSB, [tilt LSB]
-static std::vector<quint32> buildChannelAddrs(const PanTiltChannelMap &map)
-{
-    std::vector<quint32> addrs;
-    if (map.hasPan())
-    {
-        addrs.push_back(map.panMSBAddr);
-        if (map.panLSBAddr != QLCChannel::invalid())
-            addrs.push_back(map.panLSBAddr);
-    }
-    if (map.hasTilt())
-    {
-        addrs.push_back(map.tiltMSBAddr);
-        if (map.tiltLSBAddr != QLCChannel::invalid())
-            addrs.push_back(map.tiltLSBAddr);
-    }
-    return addrs;
-}
+// ---------------------------------------------------------------------------
+// DMX conversion
+// ---------------------------------------------------------------------------
 
-std::vector<FocusDmxWrite> anglesToDmxWrites(const PanTiltChannelMap &map,
-                                              double panDeg, double tiltDeg)
+std::vector<FocusDmxWrite> anglesToDmxWrites(const FixtureKinematics &fk,
+                                              const std::vector<double> &dofs)
 {
     std::vector<FocusDmxWrite> writes;
-    if (!map.isMovingHead() || !map.channelMap)
+    if (!fk.channelMap || dofs.empty())
         return writes;
 
-    std::vector<double> dofs = {panDeg, tiltDeg};
-    std::vector<uint8_t> bytes = map.channelMap->angles_to_dmx(dofs);
+    std::vector<uint8_t> bytes = fk.channelMap->angles_to_dmx(dofs);
 
-    std::vector<quint32> addrs = buildChannelAddrs(map);
-
-    for (size_t i = 0; i < bytes.size() && i < addrs.size(); i++)
-        writes.push_back({addrs[i], bytes[i]});
+    for (size_t i = 0; i < bytes.size() && i < fk.dmxAddresses.size(); i++)
+    {
+        if (fk.dmxAddresses[i] != QLCChannel::invalid())
+            writes.push_back({fk.dmxAddresses[i], bytes[i]});
+    }
 
     return writes;
 }
 
-static std::vector<uint8_t> extractBytes(const PanTiltChannelMap &map,
-                                          const QByteArray &snap)
+std::vector<double> dmxSnapshotToDofs(const FixtureKinematics &fk,
+                                       const QByteArray &universeSnapshot)
 {
-    std::vector<quint32> addrs = buildChannelAddrs(map);
+    if (!fk.channelMap || fk.dmxAddresses.empty())
+        return {};
+
+    // Extract DMX bytes from the snapshot at the known absolute addresses
     std::vector<uint8_t> bytes;
-    bytes.reserve(addrs.size());
-    for (quint32 absAddr : addrs)
+    bytes.reserve(fk.dmxAddresses.size());
+    for (quint32 absAddr : fk.dmxAddresses)
     {
         const int rel = static_cast<int>(absAddr & 0x1FF);
-        if (rel >= 0 && rel < snap.size())
-            bytes.push_back(static_cast<uint8_t>(snap.at(rel)));
+        if (rel >= 0 && rel < universeSnapshot.size())
+            bytes.push_back(static_cast<uint8_t>(universeSnapshot.at(rel)));
         else
             bytes.push_back(0);
     }
-    return bytes;
-}
 
-PanTiltAngles dmxSnapshotToAngles(const PanTiltChannelMap &map,
-                                   const QByteArray &universeSnapshot)
-{
-    PanTiltAngles out;
-    if (!map.channelMap)
-        return out;
-
-    std::vector<uint8_t> bytes = extractBytes(map, universeSnapshot);
-    int numDofs = (map.hasPan() ? 1 : 0) + (map.hasTilt() ? 1 : 0);
-    std::vector<double> dofs = map.channelMap->dmx_to_angles(bytes, numDofs);
-
-    if (map.hasPan() && dofs.size() > 0)
-    {
-        out.panDeg = dofs[0];
-        out.hasPan = true;
-    }
-    if (map.hasTilt())
-    {
-        int tiltIdx = map.hasPan() ? 1 : 0;
-        if (tiltIdx < (int)dofs.size())
-        {
-            out.tiltDeg = dofs[tiltIdx];
-            out.hasTilt = true;
-        }
-    }
-    return out;
+    return fk.channelMap->dmx_to_angles(bytes, fk.dofCount());
 }

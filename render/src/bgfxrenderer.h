@@ -3,7 +3,6 @@
 #include "spatialrenderer.h"
 #include "orbitcamera.h"
 #include "meshgen.h"
-#include "meshloader.h"
 #include "primitivegen.h"
 #include "fixturescenegraph.h"
 #include "gizmo.h"
@@ -90,7 +89,6 @@ public:
     BgfxCallback& callback() { return m_callback; }
     const std::vector<RenderFixture>& fixtures() const { return m_fixtures; }
 
-    void setMeshBasePath(const std::string &path) override { m_meshBasePath = path; }
     void setObservationLines(const std::vector<RenderLine>& lines) override;
     void setBeamCones(const std::vector<RenderBeamCone>& cones) override;
     void setFocusAimMarker(bool visible, const float pos[3]) override;
@@ -124,10 +122,6 @@ private:
     // Sphere mesh (for ellipsoid overlays)
     bgfx::VertexBufferHandle m_sphereVbh = BGFX_INVALID_HANDLE;
     bgfx::IndexBufferHandle m_sphereIbh = BGFX_INVALID_HANDLE;
-
-    // Fixture mesh loader + cache
-    MeshLoader m_meshLoader;
-    std::string m_meshBasePath;
 
     // GDTF primitive mesh generator
     PrimitiveGen m_primitiveGen;

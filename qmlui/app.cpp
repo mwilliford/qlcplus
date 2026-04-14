@@ -18,6 +18,7 @@
 */
 
 #include <QQuickItemGrabResult>
+#include <QStandardPaths>
 #include <QXmlStreamReader>
 #include <QXmlStreamWriter>
 #include <QCoreApplication>
@@ -556,6 +557,13 @@ void App::initDoc()
     /* Load user fixtures first so that they override system fixtures */
     m_doc->fixtureDefCache()->load(QLCFixtureDefCache::userDefinitionDirectory());
     m_doc->fixtureDefCache()->loadMap(QLCFixtureDefCache::systemDefinitionDirectory());
+
+    /* Load GDTF fixtures from download cache (gdtf-share.com) */
+    {
+        QString gdtfCacheDir = QStandardPaths::writableLocation(QStandardPaths::AppDataLocation)
+                               + QStringLiteral("/gdtf-cache");
+        m_doc->fixtureDefCache()->loadGDTFCache(gdtfCacheDir);
+    }
 
     /* Load channel modifiers templates */
     m_doc->modifiersCache()->load(QLCModifiersCache::systemTemplateDirectory(), true);
