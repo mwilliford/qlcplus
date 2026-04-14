@@ -133,7 +133,7 @@ void GDTFKinematics_Test::movingHead_standardIdentityRotation()
     mode.channels.append(makePanChannel(0));
     mode.channels.append(makeTiltChannel(1));
 
-    GDTFKinematicsResult r = buildGDTFKinematics(geo, mode);
+    GDTFKinematicsResult r = buildGDTFKinematics(geo.root, mode);
 
     QVERIFY(r.chain != nullptr);
     QCOMPARE(r.dofCount, 2);
@@ -174,7 +174,7 @@ void GDTFKinematics_Test::movingHead_wellAuthoredRotation()
     mode.channels.append(makePanChannel(0));
     mode.channels.append(makeTiltChannel(1));
 
-    GDTFKinematicsResult r = buildGDTFKinematics(geo, mode);
+    GDTFKinematicsResult r = buildGDTFKinematics(geo.root, mode);
 
     QVERIFY(r.chain != nullptr);
     QCOMPARE(r.dofCount, 2);
@@ -206,7 +206,7 @@ void GDTFKinematics_Test::movingHead_identityVsWellAuthored_equivalence()
     mode.channels.append(makePanChannel(0, -1, -270, 270));
     mode.channels.append(makeTiltChannel(1, -1, -135, 135));
 
-    auto rId = buildGDTFKinematics(geoId, mode);
+    auto rId = buildGDTFKinematics(geoId.root, mode);
 
     // Factory version (the "truth")
     auto factory = rigmath::KinematicChain::moving_head(540.0, 270.0);
@@ -248,7 +248,7 @@ void GDTFKinematics_Test::movingMirror_identityRotation()
     mode.channels.append(makePanChannel(0, -1, 90, -90, "Yoke"));
     mode.channels.append(makeTiltChannel(1, -1, 55, -55, "Head"));
 
-    auto r = buildGDTFKinematics(geo, mode);
+    auto r = buildGDTFKinematics(geo.root, mode);
 
     QVERIFY(r.chain != nullptr);
     QCOMPARE(r.dofCount, 2);
@@ -280,7 +280,7 @@ void GDTFKinematics_Test::movingMirror_wellAuthoredRotation()
     mode.channels.append(makePanChannel(0, -1, -90, 90, "Yoke"));
     mode.channels.append(makeTiltChannel(1, -1, -55, 55, "Head"));
 
-    auto r = buildGDTFKinematics(geo, mode);
+    auto r = buildGDTFKinematics(geo.root, mode);
 
     QVERIFY(r.chain != nullptr);
     QCOMPARE(r.dofCount, 2);
@@ -301,7 +301,7 @@ void GDTFKinematics_Test::tiltOnly()
     mode.modeName = "30CH";
     mode.channels.append(makeTiltChannel(28, -1, 120, -120, "Head"));
 
-    auto r = buildGDTFKinematics(geo, mode);
+    auto r = buildGDTFKinematics(geo.root, mode);
 
     QVERIFY(r.chain != nullptr);
     QCOMPARE(r.dofCount, 1);
@@ -329,7 +329,7 @@ void GDTFKinematics_Test::panOnly()
     mode.modeName = "Std";
     mode.channels.append(makePanChannel(0, -1, -180, 180));
 
-    auto r = buildGDTFKinematics(geo, mode);
+    auto r = buildGDTFKinematics(geo.root, mode);
 
     QVERIFY(r.chain != nullptr);
     QCOMPARE(r.dofCount, 1);
@@ -345,7 +345,7 @@ void GDTFKinematics_Test::fixedFixture()
     GDTFDmxModeInfo mode;
     mode.modeName = "Std";
 
-    auto r = buildGDTFKinematics(geo, mode);
+    auto r = buildGDTFKinematics(geo.root, mode);
 
     QVERIFY(r.chain != nullptr);
     QCOMPARE(r.dofCount, 0);
@@ -381,7 +381,7 @@ void GDTFKinematics_Test::multiBeam_ledBar()
     mode.modeName = "30CH";
     mode.channels.append(makeTiltChannel(28, -1, -120, 120, "Head"));
 
-    auto r = buildGDTFKinematics(geo, mode);
+    auto r = buildGDTFKinematics(geo.root, mode);
 
     QVERIFY(r.chain != nullptr);
     QCOMPARE(r.dofCount, 1);
@@ -415,7 +415,7 @@ void GDTFKinematics_Test::invertedPhysicalRange()
     mode.channels.append(makePanChannel(0, -1, 270, -270));
     mode.channels.append(makeTiltChannel(1, -1, 135, -135));
 
-    auto r = buildGDTFKinematics(geo, mode);
+    auto r = buildGDTFKinematics(geo.root, mode);
 
     QVERIFY(r.chain != nullptr);
     QVERIFY(r.channelMap != nullptr);
@@ -444,7 +444,7 @@ void GDTFKinematics_Test::sixteenBitChannels()
     mode.channels.append(makePanChannel(0, 1, -270, 270));  // coarse=0, fine=1
     mode.channels.append(makeTiltChannel(2, 3, -135, 135));  // coarse=2, fine=3
 
-    auto r = buildGDTFKinematics(geo, mode);
+    auto r = buildGDTFKinematics(geo.root, mode);
 
     QVERIFY(r.chain != nullptr);
     QVERIFY(r.channelMap != nullptr);
@@ -491,7 +491,7 @@ void GDTFKinematics_Test::missingDmxChannel()
     // Current behavior: both axes can match the same channel.
     // This is a known limitation — the matching doesn't track "used" channels.
 
-    auto r = buildGDTFKinematics(geo, mode);
+    auto r = buildGDTFKinematics(geo.root, mode);
 
     QVERIFY(r.chain != nullptr);
     // The second axis finds Pan via fallback → both get a DOF.
@@ -585,7 +585,7 @@ void GDTFKinematics_Test::pipeline_qxfToKinematics_matchesFactory()
     synthesizeGDTFFromQXF(true, true, 540, 270, false,
                            0, -1, 1, -1, 0, 25.0, geo, mode);
 
-    auto r = buildGDTFKinematics(geo, mode);
+    auto r = buildGDTFKinematics(geo.root, mode);
     auto factory = rigmath::KinematicChain::moving_head(540, 270);
 
     QVERIFY(r.chain != nullptr);
@@ -613,7 +613,7 @@ void GDTFKinematics_Test::pipeline_forwardInverseRoundTrip()
     GDTFDmxModeInfo mode;
     synthesizeGDTFFromQXF(true, true, 540, 270, false,
                            0, -1, 1, -1, 0, 25.0, geo, mode);
-    auto r = buildGDTFKinematics(geo, mode);
+    auto r = buildGDTFKinematics(geo.root, mode);
 
     // Pick a target point, do IK, then FK, verify ray passes through target
     double tx = 2.0, ty = 1.0, tz = -3.0;
@@ -653,7 +653,7 @@ void GDTFKinematics_Test::pipeline_multiBeamForwardAll()
     mode.modeName = "Std";
     mode.channels.append(makeTiltChannel(0, -1, -120, 120, "Head"));
 
-    auto r = buildGDTFKinematics(geo, mode);
+    auto r = buildGDTFKinematics(geo.root, mode);
     QCOMPARE(r.chain->beam_count(), 3);
 
     // Tilt 45°: all beams point same direction but from different origins
@@ -687,7 +687,7 @@ void GDTFKinematics_Test::pipeline_channelMapRoundTrip()
     mode.channels.append(makePanChannel(0, 1, -270, 270));
     mode.channels.append(makeTiltChannel(2, 3, -135, 135));
 
-    auto r = buildGDTFKinematics(geo, mode);
+    auto r = buildGDTFKinematics(geo.root, mode);
 
     std::vector<double> original = {42.7, -18.3};
     auto dmx = r.channelMap->angles_to_dmx(original);

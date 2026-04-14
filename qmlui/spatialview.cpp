@@ -817,7 +817,7 @@ void SpatialView::rebuildFixtures()
                         mi = &geoData->dmxModes.first();
                         modeName = mi->modeName;
                     }
-                    GDTFKinematicsResult kinResult = buildGDTFKinematics(*geoData, *mi);
+                    GDTFKinematicsResult kinResult = buildGDTFKinematics(geoData->rootForMode(modeName), *mi);
                     axisTags = std::move(kinResult.axisTags);
                 }
                 sg = getOrBuildSceneGraph(mfg, mdl, modeName, geoData, axisTags);
@@ -1254,7 +1254,10 @@ const qlcrender::FixtureSceneGraph *SpatialView::getOrBuildSceneGraph(
 
     static std::unordered_map<std::string, qlcrender::LoadedMesh> s_gltfMeshCache;
 
-    buildSceneNode(geoData->root, graph.root, geoData->meshData,
+    // Use the mode-specific root geometry (handles multi-root GDTF fixtures
+    // where different modes use different geometry trees).
+    const GDTFGeometryNode &geoRoot = geoData->rootForMode(modeName);
+    buildSceneNode(geoRoot, graph.root, geoData->meshData,
                    s_primGen, s_gltfMeshCache, axisTags);
     graph.valid = true;
 

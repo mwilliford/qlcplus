@@ -418,8 +418,6 @@ bool GDTFParser::loadGDTF(const QString &path, QLCFixtureDef *fixtureDef)
     gdtf->GetGeometryCount(geomCount);
     if (geomCount > 0)
     {
-        // GDTF fixtures typically have a single root geometry.
-        // If multiple, wrap them under the root node.
         if (geomCount == 1)
         {
             IGdtfGeometry *rootGeom = nullptr;
@@ -431,15 +429,20 @@ bool GDTFParser::loadGDTF(const QString &path, QLCFixtureDef *fixtureDef)
         }
         else
         {
-            m_geometryData->root.name = QStringLiteral("Root");
+            // Multiple root geometries: each is a named tree (one per mode
+            // or shared definitions for GeometryReference). Store all by name;
+            // the first one becomes the default root.
             for (size_t i = 0; i < geomCount; i++)
             {
                 IGdtfGeometry *geom = nullptr;
                 if (gdtf->GetGeometryAt(i, &geom) == kVCOMError_NoError && geom)
                 {
-                    m_geometryData->root.children.append(GDTFGeometryNode());
-                    extractGeometryNode(geom, m_geometryData->root.children.last(),
-                                        m_geometryData->meshData);
+                    QString name = QString::fromUtf8(geom->GetName());
+                    GDTFGeometryNode node;
+                    extractGeometryNode(geom, node, m_geometryData->meshData);
+                    m_geometryData->namedRoots.insert(name, node);
+                    if (i == 0)
+                        m_geometryData->root = node;  // default fallback
                     geom->Release();
                 }
             }
@@ -467,6 +470,16 @@ bool GDTFParser::loadGDTF(const QString &path, QLCFixtureDef *fixtureDef)
 
         GDTFDmxModeInfo modeInfo;
         modeInfo.modeName = QString::fromUtf8(gdtfMode->GetName());
+
+        // Store which root geometry tree this mode uses
+        {
+            IGdtfGeometry *modeGeom = nullptr;
+            if (gdtfMode->GetGeometry(&modeGeom) == kVCOMError_NoError && modeGeom)
+            {
+                modeInfo.rootGeometryName = QString::fromUtf8(modeGeom->GetName());
+                modeGeom->Release();
+            }
+        }
 
         // Track per-mode physical ranges for Pan/Tilt
         double panPhysicalRange = 0.0;
