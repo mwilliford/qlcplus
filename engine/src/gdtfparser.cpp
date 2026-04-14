@@ -114,10 +114,10 @@ static void convertTransform(const STransformMatrix &src, float dst[16])
     dst[10] = static_cast<float>(src.wz);
     dst[11] = 0.0f;
 
-    // Column 3 (translation — mm to meters)
-    dst[12] = static_cast<float>(src.ox * 0.001);
-    dst[13] = static_cast<float>(src.oy * 0.001);
-    dst[14] = static_cast<float>(src.oz * 0.001);
+    // Column 3 (translation — meters per DIN SPEC 15800)
+    dst[12] = static_cast<float>(src.ox);
+    dst[13] = static_cast<float>(src.oy);
+    dst[14] = static_cast<float>(src.oz);
     dst[15] = 1.0f;
 }
 

@@ -1160,12 +1160,10 @@ static void buildSceneNode(const GDTFGeometryNode &geoNode,
             qlcrender::LoadedMesh mesh;
             if (geoNode.meshRef.endsWith(QStringLiteral(".3ds"), Qt::CaseInsensitive))
             {
-                // Pass largest GDTF model dimension as target extent for auto-scaling
-                float targetExtent = std::max({geoNode.modelLength, geoNode.modelWidth,
-                                               geoNode.modelHeight});
                 mesh = qlcrender::TdsLoader::loadFromMemory(
                     reinterpret_cast<const unsigned char *>(rawData.constData()),
-                    rawData.size(), key, targetExtent);
+                    rawData.size(), key,
+                    geoNode.modelLength, geoNode.modelWidth, geoNode.modelHeight);
             }
             else
             {
@@ -1180,7 +1178,49 @@ static void buildSceneNode(const GDTFGeometryNode &geoNode,
     }
 
     if (!sceneNode.mesh && geoNode.primitiveType > 0)
+    {
         sceneNode.mesh = primGen.getPrimitive(geoNode.primitiveType);
+
+        // Scale primitive to GDTF model dimensions (Length→X, Width→Y, Height→Z).
+        // Each PrimitiveGen mesh has its own default size; compute the ratio
+        // to scale it to the GDTF-specified dimensions.
+        if (sceneNode.mesh && geoNode.modelLength > 0.001f
+            && geoNode.modelWidth > 0.001f && geoNode.modelHeight > 0.001f)
+        {
+            // Get the primitive's default extent from its built-in size
+            static const std::unordered_map<int, std::array<float, 3>> primExtents = {
+                {PrimitiveCube,           {0.2f,  0.2f,  0.2f}},
+                {PrimitiveCylinder,       {0.2f,  0.2f,  0.3f}},  // diameter × diameter × height
+                {PrimitiveSphere,         {0.2f,  0.2f,  0.2f}},
+                {PrimitiveBase,           {0.3f,  0.05f, 0.3f}},
+                {PrimitiveYoke,           {0.25f, 0.25f, 0.08f}},
+                {PrimitiveHead,           {0.18f, 0.12f, 0.2f}},
+                {PrimitiveScanner,        {0.3f,  0.1f,  0.15f}},
+                {PrimitiveConventional,   {0.3f,  0.3f,  0.35f}},
+                {PrimitivePigtail,        {0.02f, 0.02f, 0.1f}},
+                {PrimitiveBase1_1,        {0.3f,  0.05f, 0.3f}},
+                {PrimitiveScanner1_1,     {0.3f,  0.1f,  0.15f}},
+                {PrimitiveConventional1_1,{0.3f,  0.3f,  0.35f}},
+            };
+            auto it2 = primExtents.find(geoNode.primitiveType);
+            if (it2 != primExtents.end())
+            {
+                float sx = geoNode.modelLength / it2->second[0];
+                float sy = geoNode.modelWidth  / it2->second[1];
+                float sz = geoNode.modelHeight / it2->second[2];
+                // Bake scale into localTransform columns (column-major)
+                sceneNode.localTransform[0]  *= sx;
+                sceneNode.localTransform[1]  *= sx;
+                sceneNode.localTransform[2]  *= sx;
+                sceneNode.localTransform[4]  *= sy;
+                sceneNode.localTransform[5]  *= sy;
+                sceneNode.localTransform[6]  *= sy;
+                sceneNode.localTransform[8]  *= sz;
+                sceneNode.localTransform[9]  *= sz;
+                sceneNode.localTransform[10] *= sz;
+            }
+        }
+    }
 
     for (const auto &childGeo : geoNode.children)
     {

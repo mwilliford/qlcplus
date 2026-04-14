@@ -151,7 +151,8 @@ static void parseChunk(const unsigned char *data, size_t offset, size_t end,
 
 LoadedMesh TdsLoader::loadFromMemory(const unsigned char *data, size_t length,
                                       const std::string &debugName,
-                                      float targetExtent)
+                                      float targetLength, float targetWidth,
+                                      float targetHeight)
 {
     LoadedMesh result;
     result.vbh = BGFX_INVALID_HANDLE;
@@ -184,7 +185,9 @@ LoadedMesh TdsLoader::loadFromMemory(const unsigned char *data, size_t length,
         return result;
     }
 
-    // Compute bounding box extent for scaling check.
+    // Compute bounding box for per-axis scaling.
+    // Following BlenderDMX: scale each axis so mesh extent matches the
+    // GDTF Model dimensions (Length→X, Width→Y, Height→Z).
     float bboxMin[3] = { 1e30f,  1e30f,  1e30f};
     float bboxMax[3] = {-1e30f, -1e30f, -1e30f};
     for (size_t i = 0; i < numRawVerts; i++)
@@ -196,33 +199,45 @@ LoadedMesh TdsLoader::loadFromMemory(const unsigned char *data, size_t length,
             if (v > bboxMax[a]) bboxMax[a] = v;
         }
     }
-    float extentX = bboxMax[0] - bboxMin[0];
-    float extentY = bboxMax[1] - bboxMin[1];
-    float extentZ = bboxMax[2] - bboxMin[2];
-    float maxExtent = std::max({extentX, extentY, extentZ});
+    float extents[3] = {
+        bboxMax[0] - bboxMin[0],
+        bboxMax[1] - bboxMin[1],
+        bboxMax[2] - bboxMin[2]
+    };
+    float targets[3] = { targetLength, targetWidth, targetHeight };
 
-    // Auto-scale oversized models to fit the GDTF model dimensions.
-    // If targetExtent is provided and the model is larger than 2m, scale
-    // uniformly so the largest axis matches targetExtent.
-    float scale = 1.0f;
-    if (targetExtent > 0.0f && maxExtent > 2.0f)
+    // Per-axis scale: target / mesh_extent. Skip axes with zero extent.
+    float scaleFactors[3] = {1.0f, 1.0f, 1.0f};
+    bool needsScale = false;
+    for (int a = 0; a < 3; a++)
     {
-        scale = targetExtent / maxExtent;
-        fprintf(stderr, "TdsLoader: '%s' auto-scaling %.1f → %.3fm (factor %.4f)\n",
-                debugName.c_str(), maxExtent, targetExtent, scale);
+        if (targets[a] > 1e-6f && extents[a] > 1e-6f)
+        {
+            scaleFactors[a] = targets[a] / extents[a];
+            if (std::abs(scaleFactors[a] - 1.0f) > 0.01f)
+                needsScale = true;
+        }
     }
-    if (scale != 1.0f)
+
+    if (needsScale)
     {
-        // Center at origin and scale
-        float cx = (bboxMin[0] + bboxMax[0]) * 0.5f;
-        float cy = (bboxMin[1] + bboxMax[1]) * 0.5f;
-        float cz = (bboxMin[2] + bboxMax[2]) * 0.5f;
+        // Center at origin, then scale per-axis
+        float center[3] = {
+            (bboxMin[0] + bboxMax[0]) * 0.5f,
+            (bboxMin[1] + bboxMax[1]) * 0.5f,
+            (bboxMin[2] + bboxMax[2]) * 0.5f
+        };
         for (size_t i = 0; i < rawVerts.size(); i += 3)
         {
-            rawVerts[i + 0] = (rawVerts[i + 0] - cx) * scale;
-            rawVerts[i + 1] = (rawVerts[i + 1] - cy) * scale;
-            rawVerts[i + 2] = (rawVerts[i + 2] - cz) * scale;
+            rawVerts[i + 0] = (rawVerts[i + 0] - center[0]) * scaleFactors[0];
+            rawVerts[i + 1] = (rawVerts[i + 1] - center[1]) * scaleFactors[1];
+            rawVerts[i + 2] = (rawVerts[i + 2] - center[2]) * scaleFactors[2];
         }
+        fprintf(stderr, "TdsLoader: '%s' scaled per-axis (%.3f, %.3f, %.3f) "
+                "mesh(%.3f,%.3f,%.3f) → target(%.3f,%.3f,%.3f)\n",
+                debugName.c_str(), scaleFactors[0], scaleFactors[1], scaleFactors[2],
+                extents[0], extents[1], extents[2],
+                targets[0], targets[1], targets[2]);
     }
 
     // Build PosNormalVertex array with smooth (area-weighted) vertex normals.

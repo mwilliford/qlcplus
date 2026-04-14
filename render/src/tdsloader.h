@@ -37,13 +37,16 @@ class TdsLoader
 public:
     /**
      * Load a .3ds binary from memory into a LoadedMesh.
-     * If targetExtent > 0, oversized models are uniformly scaled so the
-     * largest bounding box axis matches targetExtent (meters).
+     * If targetL/W/H are provided (>0), vertices are scaled per-axis so
+     * the mesh bounding box matches the GDTF Model dimensions (meters).
+     * GDTF convention: Length→X, Width→Y, Height→Z.
      * Returns an invalid mesh on failure.
      */
     static LoadedMesh loadFromMemory(const unsigned char *data, size_t length,
                                      const std::string &debugName = "",
-                                     float targetExtent = 0.0f);
+                                     float targetLength = 0.0f,
+                                     float targetWidth = 0.0f,
+                                     float targetHeight = 0.0f);
 };
 
 } // namespace qlcrender
