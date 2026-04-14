@@ -118,20 +118,22 @@ FixtureKinematics buildFixtureKinematics(const Fixture *fx)
     fk.channelMap = kinResult.channelMap;
 
     // Build the absolute DMX address list matching the ChannelMap's
-    // channel_index layout. The GDTFDmxChannelInfo entries in modeInfo
-    // are in the same order as the ChannelMap bindings were created.
+    // channel_index layout. Use the QLC mode's channel lookup (not the
+    // raw GDTF offset) because GeometryReference expansion may compress
+    // the channel footprint, making GDTF offsets and QLC indices diverge.
     for (const auto &ch : modeInfo.channels)
     {
-        // Only include channels that drive DOFs (Pan, Tilt, etc.)
-        // Skip non-motion channels (Dimmer, Color, etc.)
         if (ch.attributeName.startsWith(QStringLiteral("Pan")) ||
             ch.attributeName.startsWith(QStringLiteral("Tilt")))
         {
-            quint32 coarseAddr = absAddrOrInvalid(fx, ch.coarseOffset >= 0
-                                                     ? quint32(ch.coarseOffset) : QLCChannel::invalid());
-            fk.dmxAddresses.push_back(coarseAddr);
-            if (ch.fineOffset >= 0)
-                fk.dmxAddresses.push_back(absAddrOrInvalid(fx, quint32(ch.fineOffset)));
+            QLCChannel::Group grp = ch.attributeName.startsWith(QStringLiteral("Pan"))
+                                        ? QLCChannel::Pan : QLCChannel::Tilt;
+            quint32 msb = mode->channelNumber(grp, QLCChannel::MSB);
+            fk.dmxAddresses.push_back(absAddrOrInvalid(fx, msb));
+
+            quint32 lsb = mode->channelNumber(grp, QLCChannel::LSB);
+            if (lsb != QLCChannel::invalid())
+                fk.dmxAddresses.push_back(absAddrOrInvalid(fx, lsb));
         }
     }
 

@@ -15,10 +15,25 @@
 #define GDTFKINEMATICS_H
 
 #include <memory>
+#include <vector>
+
+#include <QString>
 
 namespace rigmath { class KinematicChain; class ChannelMap; }
 struct GDTFGeometryData;
 struct GDTFDmxModeInfo;
+
+/**
+ * Per-axis DOF metadata extracted alongside kinematics.
+ * Used by the render layer to tag SceneNode DOF fields without
+ * duplicating axis-inference logic.
+ */
+struct AxisDofTag
+{
+    QString geometryName;   ///< axis node name (matches GDTFGeometryNode::name)
+    int dofIndex = -1;      ///< -1 if no DMX channel drives this axis
+    float axis[3] = {};     ///< rotation axis in node-local space (unit vector)
+};
 
 /**
  * @brief Result of building kinematics from GDTF geometry data.
@@ -31,6 +46,7 @@ struct GDTFKinematicsResult
     std::shared_ptr<rigmath::KinematicChain> chain;
     std::shared_ptr<rigmath::ChannelMap> channelMap;
     int dofCount = 0;       ///< number of active DOFs in the chain
+    std::vector<AxisDofTag> axisTags;  ///< one per GeometryAxis node (DFS order)
 };
 
 /**

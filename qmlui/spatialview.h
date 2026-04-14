@@ -33,6 +33,7 @@ class SpatialModel;
 class Doc;
 class QLCFixtureDefCache;
 struct GDTFGeometryData;
+struct AxisDofTag;
 
 /**
  * @brief QWindow hosting the bgfx-based 3D spatial viewport.
@@ -118,12 +119,15 @@ protected:
 private:
     void initBgfx();
     void rebuildFixtures();
+    void rebuildFixtureDofs();
     void rebuildEllipsoids();
     void rebuildTrusses();
     void rebuildObservationLines();
     const qlcrender::FixtureSceneGraph *getOrBuildSceneGraph(
         const QString &manufacturer, const QString &model,
-        const GDTFGeometryData *geoData);
+        const QString &modeName,
+        const GDTFGeometryData *geoData,
+        const std::vector<AxisDofTag> &axisTags);
 
     /** Convert mouse position to device-pixel coordinates for renderer. */
     void mouseToViewport(const QPoint &pos, float &mx, float &my,

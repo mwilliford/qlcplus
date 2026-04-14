@@ -23,6 +23,7 @@
 #include "gizmo.h"
 #include "raypick.h"
 #include "gltfloader.h"
+#include "tdsloader.h"
 #include "primitivegen.h"
 #include "spatialmodel.h"
 #include "calibrationmodel.h"
@@ -699,7 +700,10 @@ void SpatialView::onUniverseWritten(quint32 universeId, const QByteArray &data)
     // Only rebuild cones in modes that care about live DMX. Layout mode
     // uses home-position forward kinematics and is unaffected.
     if (m_liveDmxModeCallback && m_liveDmxModeCallback())
+    {
+        rebuildFixtureDofs();
         rebuildBeamCones();
+    }
 }
 
 static void addFixtureEntry(std::vector<qlcrender::RenderFixture> &out,
@@ -791,7 +795,33 @@ void SpatialView::rebuildFixtures()
             }
 
             if (geoData)
-                sg = getOrBuildSceneGraph(mfg, mdl, geoData);
+            {
+                // Look up mode info and build axisTags for DOF tagging
+                QString modeName;
+                std::vector<AxisDofTag> axisTags;
+                const QLCFixtureMode *mode = fxi->fixtureMode();
+                if (mode && !geoData->dmxModes.isEmpty())
+                {
+                    modeName = mode->name();
+                    const GDTFDmxModeInfo *mi = nullptr;
+                    for (const auto &m : geoData->dmxModes)
+                    {
+                        if (m.modeName == modeName)
+                        {
+                            mi = &m;
+                            break;
+                        }
+                    }
+                    if (!mi)
+                    {
+                        mi = &geoData->dmxModes.first();
+                        modeName = mi->modeName;
+                    }
+                    GDTFKinematicsResult kinResult = buildGDTFKinematics(*geoData, *mi);
+                    axisTags = std::move(kinResult.axisTags);
+                }
+                sg = getOrBuildSceneGraph(mfg, mdl, modeName, geoData, axisTags);
+            }
         }
 
         // Committed (solid)
@@ -964,6 +994,39 @@ void SpatialView::rebuildObservationLines()
     m_renderer->setObservationLines(lines);
 }
 
+void SpatialView::rebuildFixtureDofs()
+{
+    if (!m_bgfxReady)
+        return;
+
+    SpatialModel *sm = m_doc->spatialModel();
+
+    for (const QString &id : sm->fixtureIds())
+    {
+        Fixture *fxi = m_doc->fixture(id.toUInt());
+        if (!fxi)
+            continue;
+
+        FixtureKinematics fk = buildFixtureKinematics(fxi);
+        if (!fk.chain || !fk.channelMap || fk.dofCount() == 0)
+            continue;
+
+        int numDofs = fk.dofCount();
+        std::vector<double> dofs(numDofs, 0.0);
+
+        auto it = m_universeSnapshots.find(fk.universeId);
+        if (it != m_universeSnapshots.end())
+            dofs = dmxSnapshotToDofs(fk, it.value());
+
+        // Convert double → float for the render layer
+        std::vector<float> angles(numDofs);
+        for (int i = 0; i < numDofs; i++)
+            angles[i] = static_cast<float>(dofs[i]);
+
+        m_renderer->updateFixtureDofAngles(id.toUInt(), angles);
+    }
+}
+
 void SpatialView::rebuildBeamCones()
 {
     if (!m_bgfxReady)
@@ -1058,10 +1121,34 @@ static void buildSceneNode(const GDTFGeometryNode &geoNode,
                            qlcrender::SceneNode &sceneNode,
                            const QMap<QString, QByteArray> &meshData,
                            qlcrender::PrimitiveGen &primGen,
-                           std::unordered_map<std::string, qlcrender::LoadedMesh> &meshCache)
+                           std::unordered_map<std::string, qlcrender::LoadedMesh> &meshCache,
+                           const std::vector<AxisDofTag> &axisTags)
 {
     for (int i = 0; i < 16; i++)
         sceneNode.localTransform[i] = geoNode.localTransform[i];
+
+    // Tag GeometryAxis nodes with DOF info from kinematics
+    if (geoNode.type == GeometryAxis)
+    {
+        for (const auto &tag : axisTags)
+        {
+            if (tag.geometryName == geoNode.name)
+            {
+                sceneNode.dofIndex = tag.dofIndex;
+                sceneNode.dofAxis[0] = tag.axis[0];
+                sceneNode.dofAxis[1] = tag.axis[1];
+                sceneNode.dofAxis[2] = tag.axis[2];
+                break;
+            }
+        }
+    }
+
+    // Tag beam nodes (Lamp/Laser) for future scene-graph-based beam walking
+    if (geoNode.type == GeometryLamp || geoNode.type == GeometryLaser)
+    {
+        sceneNode.isBeamNode = true;
+        sceneNode.beamAngle = geoNode.beamAngle;
+    }
 
     if (!geoNode.meshRef.isEmpty() && meshData.contains(geoNode.meshRef))
     {
@@ -1069,10 +1156,20 @@ static void buildSceneNode(const GDTFGeometryNode &geoNode,
         auto it = meshCache.find(key);
         if (it == meshCache.end())
         {
-            const QByteArray &glbData = meshData[geoNode.meshRef];
-            auto mesh = qlcrender::GltfLoader::loadFromMemory(
-                reinterpret_cast<const unsigned char *>(glbData.constData()),
-                glbData.size(), key);
+            const QByteArray &rawData = meshData[geoNode.meshRef];
+            qlcrender::LoadedMesh mesh;
+            if (geoNode.meshRef.endsWith(QStringLiteral(".3ds"), Qt::CaseInsensitive))
+            {
+                mesh = qlcrender::TdsLoader::loadFromMemory(
+                    reinterpret_cast<const unsigned char *>(rawData.constData()),
+                    rawData.size(), key);
+            }
+            else
+            {
+                mesh = qlcrender::GltfLoader::loadFromMemory(
+                    reinterpret_cast<const unsigned char *>(rawData.constData()),
+                    rawData.size(), key);
+            }
             it = meshCache.emplace(key, mesh).first;
         }
         if (it->second.isValid())
@@ -1085,15 +1182,19 @@ static void buildSceneNode(const GDTFGeometryNode &geoNode,
     for (const auto &childGeo : geoNode.children)
     {
         sceneNode.children.emplace_back();
-        buildSceneNode(childGeo, sceneNode.children.back(), meshData, primGen, meshCache);
+        buildSceneNode(childGeo, sceneNode.children.back(), meshData, primGen, meshCache,
+                       axisTags);
     }
 }
 
 const qlcrender::FixtureSceneGraph *SpatialView::getOrBuildSceneGraph(
     const QString &manufacturer, const QString &model,
-    const GDTFGeometryData *geoData)
+    const QString &modeName,
+    const GDTFGeometryData *geoData,
+    const std::vector<AxisDofTag> &axisTags)
 {
-    std::string key = manufacturer.toStdString() + '\0' + model.toStdString();
+    std::string key = manufacturer.toStdString() + '\0' + model.toStdString()
+                      + '\0' + modeName.toStdString();
     auto it = m_sceneGraphCache.find(key);
     if (it != m_sceneGraphCache.end())
         return &it->second;
@@ -1111,7 +1212,7 @@ const qlcrender::FixtureSceneGraph *SpatialView::getOrBuildSceneGraph(
     static std::unordered_map<std::string, qlcrender::LoadedMesh> s_gltfMeshCache;
 
     buildSceneNode(geoData->root, graph.root, geoData->meshData,
-                   s_primGen, s_gltfMeshCache);
+                   s_primGen, s_gltfMeshCache, axisTags);
     graph.valid = true;
 
     auto result = m_sceneGraphCache.emplace(key, std::move(graph));

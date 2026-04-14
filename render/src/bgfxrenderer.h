@@ -93,6 +93,9 @@ public:
     void setBeamCones(const std::vector<RenderBeamCone>& cones) override;
     void setFocusAimMarker(bool visible, const float pos[3]) override;
 
+    /** Update DOF angles for a single fixture (called per DMX tick). */
+    void updateFixtureDofAngles(uint32_t fixtureId, const std::vector<float> &angles) override;
+
 private:
     void renderGrid();
     void renderFixtures();
@@ -104,7 +107,8 @@ private:
     void renderFocusAimMarker();
     void renderLabels();
     void renderSceneGraph(const SceneNode &node, const float parentTransform[16],
-                          const float color[4]);
+                          const float color[4],
+                          const float *dofAngles, int dofCount);
 
     bool m_initialized = false;
     uint32_t m_width = 0;

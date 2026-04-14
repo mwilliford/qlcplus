@@ -215,6 +215,15 @@ GDTFKinematicsResult buildGDTFKinematics(const GDTFGeometryData &geoData,
             j.dof_index = -1;
         }
 
+        // Capture axis DOF tag for the render layer
+        AxisDofTag tag;
+        tag.geometryName = axisNode->name;
+        tag.dofIndex = j.dof_index;
+        tag.axis[0] = static_cast<float>(j.axis.x);
+        tag.axis[1] = static_cast<float>(j.axis.y);
+        tag.axis[2] = static_cast<float>(j.axis.z);
+        result.axisTags.push_back(tag);
+
         joints.push_back(j);
     }
 
@@ -352,4 +361,8 @@ void synthesizeGDTFFromQXF(bool hasPan, bool hasTilt,
     lampNode.beamAngle = static_cast<float>(beamAngle);
     lampNode.fieldAngle = static_cast<float>(fieldAngle);
     current->children.append(lampNode);
+
+    // Store mode info inside geoData so downstream code can find it
+    // without needing the separate outModeInfo parameter.
+    outGeoData.dmxModes.append(outModeInfo);
 }
