@@ -150,7 +150,8 @@ static void parseChunk(const unsigned char *data, size_t offset, size_t end,
 }
 
 LoadedMesh TdsLoader::loadFromMemory(const unsigned char *data, size_t length,
-                                      const std::string &debugName)
+                                      const std::string &debugName,
+                                      float targetExtent)
 {
     LoadedMesh result;
     result.vbh = BGFX_INVALID_HANDLE;
@@ -183,8 +184,48 @@ LoadedMesh TdsLoader::loadFromMemory(const unsigned char *data, size_t length,
         return result;
     }
 
+    // Compute bounding box extent for scaling check.
+    float bboxMin[3] = { 1e30f,  1e30f,  1e30f};
+    float bboxMax[3] = {-1e30f, -1e30f, -1e30f};
+    for (size_t i = 0; i < numRawVerts; i++)
+    {
+        for (int a = 0; a < 3; a++)
+        {
+            float v = rawVerts[i * 3 + a];
+            if (v < bboxMin[a]) bboxMin[a] = v;
+            if (v > bboxMax[a]) bboxMax[a] = v;
+        }
+    }
+    float extentX = bboxMax[0] - bboxMin[0];
+    float extentY = bboxMax[1] - bboxMin[1];
+    float extentZ = bboxMax[2] - bboxMin[2];
+    float maxExtent = std::max({extentX, extentY, extentZ});
+
+    // Auto-scale oversized models to fit the GDTF model dimensions.
+    // If targetExtent is provided and the model is larger than 2m, scale
+    // uniformly so the largest axis matches targetExtent.
+    float scale = 1.0f;
+    if (targetExtent > 0.0f && maxExtent > 2.0f)
+    {
+        scale = targetExtent / maxExtent;
+        fprintf(stderr, "TdsLoader: '%s' auto-scaling %.1f → %.3fm (factor %.4f)\n",
+                debugName.c_str(), maxExtent, targetExtent, scale);
+    }
+    if (scale != 1.0f)
+    {
+        // Center at origin and scale
+        float cx = (bboxMin[0] + bboxMax[0]) * 0.5f;
+        float cy = (bboxMin[1] + bboxMax[1]) * 0.5f;
+        float cz = (bboxMin[2] + bboxMax[2]) * 0.5f;
+        for (size_t i = 0; i < rawVerts.size(); i += 3)
+        {
+            rawVerts[i + 0] = (rawVerts[i + 0] - cx) * scale;
+            rawVerts[i + 1] = (rawVerts[i + 1] - cy) * scale;
+            rawVerts[i + 2] = (rawVerts[i + 2] - cz) * scale;
+        }
+    }
+
     // Build PosNormalVertex array with smooth (area-weighted) vertex normals.
-    // First accumulate face normals onto each vertex, then normalize.
     std::vector<PosNormalVertex> vertices(numRawVerts);
     for (size_t i = 0; i < numRawVerts; i++)
     {
@@ -239,15 +280,6 @@ LoadedMesh TdsLoader::loadFromMemory(const unsigned char *data, size_t length,
         return result;
     }
 
-    // Cap at 65535 vertices for now — bgfx 32-bit index buffers may cause
-    // state corruption on some backends. Fall back to primitive rendering.
-    if (vertices.size() > 65535)
-    {
-        fprintf(stderr, "TdsLoader: '%s' too large (%zu verts), skipping — will use primitive fallback\n",
-                debugName.c_str(), vertices.size());
-        return result;
-    }
-
     result.numVertices = static_cast<uint32_t>(vertices.size());
     result.numIndices = static_cast<uint32_t>(indices.size());
 
@@ -271,8 +303,8 @@ LoadedMesh TdsLoader::loadFromMemory(const unsigned char *data, size_t length,
         result.ibh = bgfx::createIndexBuffer(ibMem);
     }
 
-    fprintf(stderr, "TdsLoader: '%s' loaded %u verts, %u indices (%zu raw verts, %zu tris)\n",
-            debugName.c_str(), result.numVertices, result.numIndices, numRawVerts, numTris);
+    fprintf(stderr, "TdsLoader: '%s' loaded %u verts, %u indices (bbox max %.2fm)\n",
+            debugName.c_str(), result.numVertices, result.numIndices, bboxMax);
 
     return result;
 }

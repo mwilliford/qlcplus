@@ -219,14 +219,14 @@ static void extractModelProperties(IGdtfGeometry *geom, GDTFGeometryNode &node,
     if (geom->GetModel(&model) != kVCOMError_NoError || model == nullptr)
         return;
 
-    // Dimensions (mm → meters)
+    // Dimensions — GDTF Model dimensions are in meters per DIN SPEC 15800
     double l = 0, w = 0, h = 0;
     model->GetLength(l);
     model->GetWidth(w);
     model->GetHeight(h);
-    node.modelLength = static_cast<float>(l * 0.001);
-    node.modelWidth  = static_cast<float>(w * 0.001);
-    node.modelHeight = static_cast<float>(h * 0.001);
+    node.modelLength = static_cast<float>(l);
+    node.modelWidth  = static_cast<float>(w);
+    node.modelHeight = static_cast<float>(h);
 
     // Primitive type
     EGdtfModel_PrimitiveType primType;
@@ -247,8 +247,9 @@ static void extractModelProperties(IGdtfGeometry *geom, GDTFGeometryNode &node,
             meshData.insert(meshName, QByteArray(static_cast<const char *>(buffer), bufLen));
     }
 
-    // 3DS model data — temporarily disabled for debugging orange screen
-    if (false && node.meshRef.isEmpty())
+    // 3DS model data (fallback — most GDTF fixtures on gdtf-share only have .3ds)
+    // Use file path approach only — GetBuffer3DS() has known bugs in libMVRgdtf.
+    if (node.meshRef.isEmpty())
     {
         QString filePath = QString::fromUtf8(model->GetGeometryFile_3DS_FullPath());
         if (!filePath.isEmpty())
