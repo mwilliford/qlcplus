@@ -535,31 +535,11 @@ void BgfxRenderer::renderSceneGraph(const SceneNode &node,
     float worldTransform[16];
     bx::mtxMul(worldTransform, node.localTransform, parentTransform);
 
-    // Render this node's mesh if it has one
-    if (node.mesh && node.mesh->isValid())
-    {
-        bgfx::setTransform(worldTransform);
-        bgfx::setVertexBuffer(0, node.mesh->vbh);
-        bgfx::setIndexBuffer(node.mesh->ibh);
-        bgfx::setUniform(m_u_color, color);
-
-        uint64_t state = BGFX_STATE_WRITE_RGB | BGFX_STATE_WRITE_A
-                         | BGFX_STATE_WRITE_Z | BGFX_STATE_DEPTH_TEST_LESS;
-        if (color[3] < 0.99f)
-            state |= BGFX_STATE_BLEND_ALPHA;
-        bgfx::setState(state);
-
-        if (bgfx::isValid(m_litProgram))
-            bgfx::submit(0, m_litProgram);
-        else
-            bgfx::discard();
-    }
-
-    // If this is a DOF joint node, apply the articulation rotation for children.
-    // The DOF axis is stored in node-local space; transform it to world space
-    // using the upper-3x3 columns of worldTransform, then build a Rodrigues
-    // rotation around that world-space axis.
-    const float *childParent = worldTransform;
+    // If this is a DOF joint node, apply the articulation rotation.
+    // In GDTF, a GeometryAxis node's own model IS the moving part (e.g.,
+    // the Head mesh tilts). Both the node's mesh and its children get
+    // the DOF rotation.
+    const float *renderTransform = worldTransform;
     float articulatedTransform[16];
     if (node.dofIndex >= 0 && dofAngles && node.dofIndex < dofCount)
     {
@@ -582,12 +562,32 @@ void BgfxRenderer::renderSceneGraph(const SceneNode &node,
         mtxRotateAroundAxis(dofRot, wax, way, waz,
                             bx::toRad(dofAngles[node.dofIndex]));
         bx::mtxMul(articulatedTransform, dofRot, worldTransform);
-        childParent = articulatedTransform;
+        renderTransform = articulatedTransform;
     }
 
-    // Recurse into children
+    // Render this node's mesh (with DOF rotation if applicable)
+    if (node.mesh && node.mesh->isValid())
+    {
+        bgfx::setTransform(renderTransform);
+        bgfx::setVertexBuffer(0, node.mesh->vbh);
+        bgfx::setIndexBuffer(node.mesh->ibh);
+        bgfx::setUniform(m_u_color, color);
+
+        uint64_t state = BGFX_STATE_WRITE_RGB | BGFX_STATE_WRITE_A
+                         | BGFX_STATE_WRITE_Z | BGFX_STATE_DEPTH_TEST_LESS;
+        if (color[3] < 0.99f)
+            state |= BGFX_STATE_BLEND_ALPHA;
+        bgfx::setState(state);
+
+        if (bgfx::isValid(m_litProgram))
+            bgfx::submit(0, m_litProgram);
+        else
+            bgfx::discard();
+    }
+
+    // Recurse into children (same articulatedTransform)
     for (const auto &child : node.children)
-        renderSceneGraph(child, childParent, color, dofAngles, dofCount);
+        renderSceneGraph(child, renderTransform, color, dofAngles, dofCount);
 }
 
 void BgfxRenderer::setCalibrationOverlays(const std::vector<RenderEllipsoid>& ellipsoids)
