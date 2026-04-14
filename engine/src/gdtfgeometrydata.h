@@ -134,6 +134,7 @@ struct GDTFDmxChannelInfo
 struct GDTFDmxModeInfo
 {
     QString modeName;
+    QString rootGeometryName;   ///< Which top-level geometry tree this mode uses
     QVector<GDTFDmxChannelInfo> channels;
 };
 
@@ -147,12 +148,33 @@ struct GDTFGeometryData
 {
     GDTFGeometryNode root;
 
+    /** Named root-level geometry trees (one per top-level geometry in the GDTF).
+     *  Each DMX mode references one of these by name via rootGeometryName.
+     *  For single-root fixtures, this is empty and `root` is used directly. */
+    QMap<QString, GDTFGeometryNode> namedRoots;
+
     /** Raw 3D model data extracted from the GDTF archive.
      *  Key = mesh reference name (e.g., "body.glb"), Value = raw glb bytes */
     QMap<QString, QByteArray> meshData;
 
     /** Per-mode DMX channel metadata with physical ranges from GDTF channel functions. */
     QVector<GDTFDmxModeInfo> dmxModes;
+
+    /** Get the root geometry node for a given mode name.
+     *  Falls back to the default root if no named root matches. */
+    const GDTFGeometryNode &rootForMode(const QString &modeName) const
+    {
+        for (const auto &mode : dmxModes)
+        {
+            if (mode.modeName == modeName && !mode.rootGeometryName.isEmpty())
+            {
+                auto it = namedRoots.find(mode.rootGeometryName);
+                if (it != namedRoots.end())
+                    return it.value();
+            }
+        }
+        return root;
+    }
 };
 
 /** @} */

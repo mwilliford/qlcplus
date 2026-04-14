@@ -20,6 +20,7 @@
 #include <QString>
 
 namespace rigmath { class KinematicChain; class ChannelMap; }
+struct GDTFGeometryNode;
 struct GDTFGeometryData;
 struct GDTFDmxModeInfo;
 
@@ -61,11 +62,11 @@ struct GDTFKinematicsResult
  * which encodes both range and direction (inverted when From > To). This
  * replaces all invertPan/invertTilt logic.
  *
- * @param geoData   Geometry tree (must not be null)
+ * @param geoRoot   Root geometry node for the mode's geometry tree
  * @param modeInfo  DMX mode metadata with physical ranges
  * @return Result with chain + channelMap. chain is null if no axes found.
  */
-GDTFKinematicsResult buildGDTFKinematics(const GDTFGeometryData &geoData,
+GDTFKinematicsResult buildGDTFKinematics(const GDTFGeometryNode &geoRoot,
                                           const GDTFDmxModeInfo &modeInfo);
 
 /**

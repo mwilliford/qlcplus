@@ -113,7 +113,7 @@ FixtureKinematics buildFixtureKinematics(const Fixture *fx)
     }
 
     // Build kinematics from GDTF data (single code path)
-    GDTFKinematicsResult kinResult = buildGDTFKinematics(*geoData, modeInfo);
+    GDTFKinematicsResult kinResult = buildGDTFKinematics(geoData->rootForMode(mode->name()), modeInfo);
     fk.chain = kinResult.chain;
     fk.channelMap = kinResult.channelMap;
 

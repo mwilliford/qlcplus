@@ -349,7 +349,7 @@ CalibrationModel::buildKinematicChain(quint32 fixtureId) const
         geoData = &synthesized;
     }
 
-    GDTFKinematicsResult result = buildGDTFKinematics(*geoData, modeInfo);
+    GDTFKinematicsResult result = buildGDTFKinematics(geoData->rootForMode(mode->name()), modeInfo);
     if (result.chain)
         return std::make_unique<rigmath::KinematicChain>(*result.chain);
     return nullptr;

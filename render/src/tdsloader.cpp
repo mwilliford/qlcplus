@@ -221,17 +221,13 @@ LoadedMesh TdsLoader::loadFromMemory(const unsigned char *data, size_t length,
 
     if (needsScale)
     {
-        // Center at origin, then scale per-axis
-        float center[3] = {
-            (bboxMin[0] + bboxMax[0]) * 0.5f,
-            (bboxMin[1] + bboxMax[1]) * 0.5f,
-            (bboxMin[2] + bboxMax[2]) * 0.5f
-        };
+        // Scale per-axis without centering — the 3DS model's baked-in
+        // offset is intentional (matches BlenderDMX behavior).
         for (size_t i = 0; i < rawVerts.size(); i += 3)
         {
-            rawVerts[i + 0] = (rawVerts[i + 0] - center[0]) * scaleFactors[0];
-            rawVerts[i + 1] = (rawVerts[i + 1] - center[1]) * scaleFactors[1];
-            rawVerts[i + 2] = (rawVerts[i + 2] - center[2]) * scaleFactors[2];
+            rawVerts[i + 0] *= scaleFactors[0];
+            rawVerts[i + 1] *= scaleFactors[1];
+            rawVerts[i + 2] *= scaleFactors[2];
         }
         fprintf(stderr, "TdsLoader: '%s' scaled per-axis (%.3f, %.3f, %.3f) "
                 "mesh(%.3f,%.3f,%.3f) → target(%.3f,%.3f,%.3f)\n",

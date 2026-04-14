@@ -79,14 +79,14 @@ static void collectAxes(const GDTFGeometryNode &node,
         collectAxes(child, axes);
 }
 
-GDTFKinematicsResult buildGDTFKinematics(const GDTFGeometryData &geoData,
+GDTFKinematicsResult buildGDTFKinematics(const GDTFGeometryNode &geoRoot,
                                           const GDTFDmxModeInfo &modeInfo)
 {
     GDTFKinematicsResult result;
 
     // Collect axis nodes from the geometry tree
     std::vector<const GDTFGeometryNode *> axes;
-    collectAxes(geoData.root, axes);
+    collectAxes(geoRoot, axes);
 
     if (axes.empty())
     {
