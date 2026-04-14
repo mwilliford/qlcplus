@@ -66,6 +66,31 @@
 ### Virtual Console — TODO
 - [ ] **VC serializer for v5**: v5 has its own VirtualConsole implementation. May need adapted vcserializer/vccommandhandler or new approach using v5's VC API.
 
+## SV-5: Live Mode + Venue Import
+
+### Passive DMX Visualizer Mode
+
+Receive Art-Net/sACN from an external console and render the 3D result — no show programming needed. Nearly free since all pieces exist.
+
+- [ ] **Visualizer mode toggle in SpatialController**: `setVisualizerMode(bool)` — when true, stop engine playback and set all universes to passthrough
+- [ ] **Universe passthrough wiring**: `Universe::setPassthrough(true)` already exists. Add UI flow: "Listen on Universe N" → configure artnet/E1.31 input plugin + enable passthrough for that universe
+- [ ] **SpatialView Live mode reads universe buffer**: on each frame, read `Universe::postGMValues()` → translate DMX bytes → update fixture geometry via kinematic chain
+- [ ] **No fixture engine changes needed**: passthrough + existing input plugins is sufficient
+
+### MVR Non-Fixture Elements
+
+When importing an MVR, beyond Fixture nodes:
+
+- [ ] **FocusPoint** — required. Fixture nodes reference FocusPoints by UUID (`<Focus>` field). Parse and resolve UUIDs; store in SpatialModel. Render as a small marker in SpatialView.
+- [ ] **GroupObject** — parse for hierarchy traversal; nothing to render. Needed for scene graph reconstruction.
+- [ ] **Truss / Support / SceneObject** — static 3D geometry. Each references an embedded 3D model file (glTF/3DS in the MVR ZIP). Extract from ZIP, load via MeshLoader, add to bgfx scene as non-interactive static mesh. Skip if glTF-only for now (defer 3DS/OBJ venue geometry to later).
+- [ ] **VideoScreen / Projector** — ignore for now.
+
+### MVR Test Files
+
+- [ ] **Synthetic test MVR**: write a generator using libMVRgdtf write API (see `build-v5/_deps/libmvrgdtf-src/unittest/MvrUnittest.cpp` for pattern). Creates 2-3 GDTF fixtures + 1 FocusPoint + 1 truss SceneObject.
+- [ ] **Real-world test MVR**: export from grandMA3 onPC (free download) or grab from BlenderDMX GitHub repo sample scenes.
+
 ## Bugs: Chat panel
 
 - [x] **Input disabled during streaming**: Fixed in v5 QML — input always enabled, send during streaming does implicit cancel.
