@@ -18,6 +18,7 @@
 */
 
 #include <QDebug>
+#include <QFile>
 #include <algorithm>
 
 #include "Include/VectorworksMVR.h"
@@ -210,6 +211,84 @@ static QLCFixtureDef::FixtureType guessFixtureType(const GDTFGeometryData &geo)
 // Geometry tree extraction
 // ---------------------------------------------------------------------------
 
+/** Extract model properties (mesh, primitive, dimensions) from a libMVRgdtf geometry. */
+static void extractModelProperties(IGdtfGeometry *geom, GDTFGeometryNode &node,
+                                    QMap<QString, QByteArray> &meshData)
+{
+    IGdtfModel *model = nullptr;
+    if (geom->GetModel(&model) != kVCOMError_NoError || model == nullptr)
+        return;
+
+    // Dimensions (mm → meters)
+    double l = 0, w = 0, h = 0;
+    model->GetLength(l);
+    model->GetWidth(w);
+    model->GetHeight(h);
+    node.modelLength = static_cast<float>(l * 0.001);
+    node.modelWidth  = static_cast<float>(w * 0.001);
+    node.modelHeight = static_cast<float>(h * 0.001);
+
+    // Primitive type
+    EGdtfModel_PrimitiveType primType;
+    if (model->GetPrimitiveType(primType) == kVCOMError_NoError)
+        node.primitiveType = mapPrimitiveType(primType);
+
+    // glTF model data (preferred)
+    void *buffer = nullptr;
+    size_t bufLen = 0;
+    if (model->GetBufferGLTF(&buffer, bufLen) == kVCOMError_NoError &&
+        buffer != nullptr && bufLen > 0)
+    {
+        QString meshName = QString::fromUtf8(model->GetGeometryFileName());
+        if (meshName.isEmpty())
+            meshName = node.name + QStringLiteral(".glb");
+        node.meshRef = meshName;
+        if (!meshData.contains(meshName))
+            meshData.insert(meshName, QByteArray(static_cast<const char *>(buffer), bufLen));
+    }
+
+    // 3DS model data — temporarily disabled for debugging orange screen
+    if (false && node.meshRef.isEmpty())
+    {
+        QString filePath = QString::fromUtf8(model->GetGeometryFile_3DS_FullPath());
+        if (!filePath.isEmpty())
+        {
+            QFile f(filePath);
+            if (f.open(QIODevice::ReadOnly))
+            {
+                QByteArray data = f.readAll();
+                if (!data.isEmpty())
+                {
+                    QString meshName = QString::fromUtf8(model->GetGeometryFileName());
+                    if (meshName.isEmpty())
+                        meshName = node.name + QStringLiteral(".3ds");
+                    else if (!meshName.endsWith(QStringLiteral(".3ds"), Qt::CaseInsensitive))
+                        meshName += QStringLiteral(".3ds");
+                    node.meshRef = meshName;
+                    if (!meshData.contains(meshName))
+                        meshData.insert(meshName, data);
+                }
+            }
+        }
+    }
+
+    model->Release();
+}
+
+/** Extract beam properties (angle, flux, color temp) from a Lamp/Laser/Beam geometry. */
+static void extractBeamProperties(IGdtfGeometry *geom, GDTFGeometryNode &node)
+{
+    double val = 0;
+    if (geom->GetBeamAngle(val) == kVCOMError_NoError)
+        node.beamAngle = static_cast<float>(val);
+    if (geom->GetFieldAngle(val) == kVCOMError_NoError)
+        node.fieldAngle = static_cast<float>(val);
+    if (geom->GetLuminousIntensity(val) == kVCOMError_NoError)
+        node.luminousIntensity = static_cast<float>(val);
+    if (geom->GetColorTemperature(val) == kVCOMError_NoError)
+        node.colorTemperature = static_cast<float>(val);
+}
+
 static void extractGeometryNode(IGdtfGeometry *geom, GDTFGeometryNode &node,
                                 QMap<QString, QByteArray> &meshData)
 {
@@ -226,55 +305,56 @@ static void extractGeometryNode(IGdtfGeometry *geom, GDTFGeometryNode &node,
         convertTransform(mat, node.localTransform);
 
     // Model (mesh, primitive, dimensions)
-    IGdtfModel *model = nullptr;
-    if (geom->GetModel(&model) == kVCOMError_NoError && model != nullptr)
-    {
-        // Dimensions (mm → meters)
-        double l = 0, w = 0, h = 0;
-        model->GetLength(l);
-        model->GetWidth(w);
-        model->GetHeight(h);
-        node.modelLength = static_cast<float>(l * 0.001);
-        node.modelWidth  = static_cast<float>(w * 0.001);
-        node.modelHeight = static_cast<float>(h * 0.001);
-
-        // Primitive type
-        EGdtfModel_PrimitiveType primType;
-        if (model->GetPrimitiveType(primType) == kVCOMError_NoError)
-            node.primitiveType = mapPrimitiveType(primType);
-
-        // glTF model data
-        void *buffer = nullptr;
-        size_t bufLen = 0;
-        if (model->GetBufferGLTF(&buffer, bufLen) == kVCOMError_NoError &&
-            buffer != nullptr && bufLen > 0)
-        {
-            QString meshName = QString::fromUtf8(model->GetGeometryFileName());
-            if (meshName.isEmpty())
-                meshName = node.name + QStringLiteral(".glb");
-            node.meshRef = meshName;
-            if (!meshData.contains(meshName))
-                meshData.insert(meshName, QByteArray(static_cast<const char *>(buffer), bufLen));
-        }
-
-        model->Release();
-    }
+    extractModelProperties(geom, node, meshData);
 
     // Beam properties (for Lamp/Laser geometry types)
     if (node.type == GeometryLamp || node.type == GeometryLaser)
+        extractBeamProperties(geom, node);
+
+    // GeometryReference: resolve the referenced geometry and copy its
+    // model + beam properties into this node. The reference node keeps
+    // its own localTransform (position offset) and name, but gains the
+    // target's visual and beam data so it renders correctly.
+    if (node.type == GeometryReference)
     {
-        double val = 0;
-        if (geom->GetBeamAngle(val) == kVCOMError_NoError)
-            node.beamAngle = static_cast<float>(val);
-        if (geom->GetFieldAngle(val) == kVCOMError_NoError)
-            node.fieldAngle = static_cast<float>(val);
-        if (geom->GetLuminousIntensity(val) == kVCOMError_NoError)
-            node.luminousIntensity = static_cast<float>(val);
-        if (geom->GetColorTemperature(val) == kVCOMError_NoError)
-            node.colorTemperature = static_cast<float>(val);
+        IGdtfGeometry *refedGeom = nullptr;
+        if (geom->GetGeometryReference(&refedGeom) == kVCOMError_NoError && refedGeom)
+        {
+            // Copy model from referenced geometry if this node has none
+            if (node.meshRef.isEmpty() && node.primitiveType == PrimitiveUndefined)
+                extractModelProperties(refedGeom, node, meshData);
+
+            // Copy beam properties from referenced geometry
+            EGdtfObjectType refType;
+            if (refedGeom->GetGeometryType(refType) == kVCOMError_NoError)
+            {
+                if (refType == eGdtfGeometryLamp ||
+                    refType == eGdtfGeometryLaser)
+                {
+                    extractBeamProperties(refedGeom, node);
+                }
+            }
+
+            // Recursively extract children of the referenced geometry
+            size_t refChildCount = 0;
+            refedGeom->GetInternalGeometryCount(refChildCount);
+            for (size_t i = 0; i < refChildCount; i++)
+            {
+                IGdtfGeometry *refChild = nullptr;
+                if (refedGeom->GetInternalGeometryAt(i, &refChild) == kVCOMError_NoError &&
+                    refChild != nullptr)
+                {
+                    node.children.append(GDTFGeometryNode());
+                    extractGeometryNode(refChild, node.children.last(), meshData);
+                    refChild->Release();
+                }
+            }
+
+            refedGeom->Release();
+        }
     }
 
-    // Children
+    // Children (of the node itself, not the referenced geometry)
     size_t childCount = 0;
     geom->GetInternalGeometryCount(childCount);
     for (size_t i = 0; i < childCount; i++)

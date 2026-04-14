@@ -82,6 +82,10 @@ public:
     // --- Focus aim marker (visible in Focus mode when an aim point is set) ---
     virtual void setFocusAimMarker(bool visible, const float pos[3]) { (void)visible; (void)pos; }
 
+    // --- DOF articulation (updated per DMX tick) ---
+    virtual void updateFixtureDofAngles(uint32_t fixtureId,
+                                        const std::vector<float> &angles) { (void)fixtureId; (void)angles; }
+
 protected:
     std::set<int32_t> m_selectedIds;
     int m_gizmoMode = 0;

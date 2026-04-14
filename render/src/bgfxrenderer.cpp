@@ -345,6 +345,19 @@ void BgfxRenderer::setFixtures(const std::vector<RenderFixture>& fixtures)
     }
 }
 
+void BgfxRenderer::updateFixtureDofAngles(uint32_t fixtureId,
+                                           const std::vector<float> &angles)
+{
+    for (auto &f : m_fixtures)
+    {
+        if (f.id == fixtureId)
+        {
+            f.dofAngles = angles;
+            return;
+        }
+    }
+}
+
 int32_t BgfxRenderer::hitTest(float mouseX, float mouseY,
                                uint32_t viewportW, uint32_t viewportH)
 {
@@ -454,6 +467,22 @@ void BgfxRenderer::renderGrid()
         bgfx::discard();
 }
 
+/**
+ * Build a 4x4 column-major rotation matrix around an arbitrary unit axis
+ * using Rodrigues' formula.
+ */
+static void mtxRotateAroundAxis(float *out16, float ax, float ay, float az, float radians)
+{
+    float s = std::sin(radians);
+    float c = std::cos(radians);
+    float t = 1.0f - c;
+    // Column-major storage
+    out16[0]  = t*ax*ax + c;       out16[1]  = t*ax*ay + az*s;  out16[2]  = t*ax*az - ay*s;  out16[3]  = 0.0f;
+    out16[4]  = t*ax*ay - az*s;    out16[5]  = t*ay*ay + c;     out16[6]  = t*ay*az + ax*s;  out16[7]  = 0.0f;
+    out16[8]  = t*ax*az + ay*s;    out16[9]  = t*ay*az - ax*s;  out16[10] = t*az*az + c;     out16[11] = 0.0f;
+    out16[12] = 0.0f;              out16[13] = 0.0f;            out16[14] = 0.0f;            out16[15] = 1.0f;
+}
+
 void BgfxRenderer::renderFixtures()
 {
     static const float selectColor[4] = { 1.0f, 1.0f, 1.0f, 1.0f };  // white highlight
@@ -471,7 +500,9 @@ void BgfxRenderer::renderFixtures()
         // QXF fixtures get synthesized scene graphs in SpatialView.
         if (fixture.sceneGraph && fixture.sceneGraph->valid)
         {
-            renderSceneGraph(fixture.sceneGraph->root, fixture.transform, color);
+            renderSceneGraph(fixture.sceneGraph->root, fixture.transform, color,
+                            fixture.dofAngles.data(),
+                            static_cast<int>(fixture.dofAngles.size()));
         }
         else
         {
@@ -497,7 +528,8 @@ void BgfxRenderer::renderFixtures()
 
 void BgfxRenderer::renderSceneGraph(const SceneNode &node,
                                      const float parentTransform[16],
-                                     const float color[4])
+                                     const float color[4],
+                                     const float *dofAngles, int dofCount)
 {
     // Compute world transform: parent * local
     float worldTransform[16];
@@ -523,9 +555,39 @@ void BgfxRenderer::renderSceneGraph(const SceneNode &node,
             bgfx::discard();
     }
 
+    // If this is a DOF joint node, apply the articulation rotation for children.
+    // The DOF axis is stored in node-local space; transform it to world space
+    // using the upper-3x3 columns of worldTransform, then build a Rodrigues
+    // rotation around that world-space axis.
+    const float *childParent = worldTransform;
+    float articulatedTransform[16];
+    if (node.dofIndex >= 0 && dofAngles && node.dofIndex < dofCount)
+    {
+        // Transform local DOF axis to world space via worldTransform's 3x3 columns
+        float wax = node.dofAxis[0] * worldTransform[0]
+                   + node.dofAxis[1] * worldTransform[4]
+                   + node.dofAxis[2] * worldTransform[8];
+        float way = node.dofAxis[0] * worldTransform[1]
+                   + node.dofAxis[1] * worldTransform[5]
+                   + node.dofAxis[2] * worldTransform[9];
+        float waz = node.dofAxis[0] * worldTransform[2]
+                   + node.dofAxis[1] * worldTransform[6]
+                   + node.dofAxis[2] * worldTransform[10];
+
+        // Normalize (world transform may include scale from parent chain)
+        float len = std::sqrt(wax*wax + way*way + waz*waz);
+        if (len > 1e-6f) { wax /= len; way /= len; waz /= len; }
+
+        float dofRot[16];
+        mtxRotateAroundAxis(dofRot, wax, way, waz,
+                            bx::toRad(dofAngles[node.dofIndex]));
+        bx::mtxMul(articulatedTransform, dofRot, worldTransform);
+        childParent = articulatedTransform;
+    }
+
     // Recurse into children
     for (const auto &child : node.children)
-        renderSceneGraph(child, worldTransform, color);
+        renderSceneGraph(child, childParent, color, dofAngles, dofCount);
 }
 
 void BgfxRenderer::setCalibrationOverlays(const std::vector<RenderEllipsoid>& ellipsoids)

@@ -16,6 +16,7 @@ struct RenderFixture
     float color[4];       // RGBA
     std::string name;     // fixture display name for labels
     const FixtureSceneGraph *sceneGraph = nullptr;  // null = legacy single-mesh path
+    std::vector<float> dofAngles;  // per-DOF rotation in degrees, indexed by SceneNode::dofIndex
 };
 
 struct RenderEllipsoid
