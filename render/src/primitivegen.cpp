@@ -34,6 +34,10 @@ enum
     PrimitiveHead_ = 6,
     PrimitiveScanner_ = 7,
     PrimitiveConventional_ = 8,
+    PrimitivePigtail_ = 9,
+    PrimitiveBase1_1_ = 10,
+    PrimitiveScanner1_1_ = 11,
+    PrimitiveConventional1_1_ = 12,
 };
 
 namespace qlcrender {
@@ -219,6 +223,14 @@ void PrimitiveGen::init()
 
     // Conventional: cylinder (PAR can / laser housing shape)
     m_meshes[PrimitiveConventional_] = makeCylinder(0.15f, 0.35f, 16);
+
+    // Pigtail: small cylinder
+    m_meshes[PrimitivePigtail_] = makeCylinder(0.01f, 0.1f, 8);
+
+    // 1.1 variants: generate their own meshes (same shapes as 1.0 counterparts)
+    m_meshes[PrimitiveBase1_1_] = makeCube(0.3f, 0.05f, 0.3f);
+    m_meshes[PrimitiveScanner1_1_] = makeCube(0.3f, 0.1f, 0.15f);
+    m_meshes[PrimitiveConventional1_1_] = makeCylinder(0.15f, 0.35f, 16);
 }
 
 const LoadedMesh *PrimitiveGen::getPrimitive(int primitiveType) const

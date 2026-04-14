@@ -34,7 +34,6 @@ public:
 
     // --- Scene data (set once, updated on change) ---
     virtual void setFixtures(const std::vector<RenderFixture>& fixtures) = 0;
-    virtual void setMeshBasePath(const std::string& path) { (void)path; }
 
     // --- Gizmo mode ---
     void setGizmoMode(int mode) { m_gizmoMode = mode; }  // 0=Translate, 1=Rotate

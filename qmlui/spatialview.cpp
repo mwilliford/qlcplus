@@ -29,7 +29,7 @@
 #include "tardis/tardis.h"
 #include "doc.h"
 #include "fixture.h"
-#include "fixturepantilt.h"
+#include "fixturekinematics.h"
 #include "inputoutputmap.h"
 #include "qlcfixturedef.h"
 #include "qlcfixturedefcache.h"
@@ -37,6 +37,7 @@
 #include "qlcphysical.h"
 #include "qlcchannel.h"
 #include "gdtfgeometrydata.h"
+#include "gdtfkinematics.h"
 #include "qlcfile.h"
 #include "qlcconfig.h"
 
@@ -166,12 +167,6 @@ void SpatialView::initBgfx()
     if (m_renderer->init(nwh, w, h))
     {
         m_bgfxReady = true;
-
-        QString meshPath = QLCFile::systemDirectory(MESHESDIR).path()
-                           + QDir::separator() + "fixtures"
-                           + QDir::separator() + "bgfx" + QDir::separator();
-        m_renderer->setMeshBasePath(meshPath.toStdString());
-        qDebug() << "[SpatialView] Mesh path:" << meshPath;
 
         m_renderer->setCameraOrbit(m_cameraYaw, m_cameraPitch, m_cameraDistance);
         rebuildFixtures();
@@ -746,13 +741,55 @@ void SpatialView::rebuildFixtures()
         uint32_t fxId = id.toUInt();
         std::string fxName = fxi ? fxi->name().toStdString() : ("Fixture " + id.toStdString());
 
-        // Look up GDTF scene graph for this fixture
+        // Look up GDTF scene graph for this fixture.
+        // Every fixture gets a scene graph — GDTF fixtures from real geometry,
+        // QXF fixtures from synthesized GDTF data.
         const qlcrender::FixtureSceneGraph *sg = nullptr;
         if (fxi && fxi->fixtureDef())
         {
             const QString &mfg = fxi->fixtureDef()->manufacturer();
             const QString &mdl = fxi->fixtureDef()->model();
             const GDTFGeometryData *geoData = defCache->gdtfGeometry(mfg, mdl);
+
+            // QXF fixture without GDTF data — synthesize and cache
+            if (!geoData)
+            {
+                std::string cacheKey = mfg.toStdString() + '\0' + mdl.toStdString();
+                auto it = m_synthesizedGeoCache.find(cacheKey);
+                if (it == m_synthesizedGeoCache.end())
+                {
+                    const QLCFixtureMode *mode = fxi->fixtureMode();
+                    if (mode)
+                    {
+                        QLCPhysical phy = mode->physical();
+                        double panRange = phy.focusPanMax() > 0 ? phy.focusPanMax() : 540.0;
+                        double tiltRange = phy.focusTiltMax() > 0 ? phy.focusTiltMax() : 270.0;
+                        bool isMirror = phy.focusType().compare(
+                            QStringLiteral("Mirror"), Qt::CaseInsensitive) == 0;
+                        quint32 panMSB = mode->channelNumber(QLCChannel::Pan, QLCChannel::MSB);
+                        quint32 panLSB = mode->channelNumber(QLCChannel::Pan, QLCChannel::LSB);
+                        quint32 tiltMSB = mode->channelNumber(QLCChannel::Tilt, QLCChannel::MSB);
+                        quint32 tiltLSB = mode->channelNumber(QLCChannel::Tilt, QLCChannel::LSB);
+
+                        auto synth = std::make_unique<GDTFGeometryData>();
+                        GDTFDmxModeInfo modeInfo;
+                        synthesizeGDTFFromQXF(
+                            panMSB != QLCChannel::invalid(),
+                            tiltMSB != QLCChannel::invalid(),
+                            panRange, tiltRange, isMirror,
+                            panMSB != QLCChannel::invalid() ? int(panMSB) : -1,
+                            panLSB != QLCChannel::invalid() ? int(panLSB) : -1,
+                            tiltMSB != QLCChannel::invalid() ? int(tiltMSB) : -1,
+                            tiltLSB != QLCChannel::invalid() ? int(tiltLSB) : -1,
+                            phy.lensDegreesMin(), phy.lensDegreesMax(),
+                            *synth, modeInfo);
+                        it = m_synthesizedGeoCache.emplace(cacheKey, std::move(synth)).first;
+                    }
+                }
+                if (it != m_synthesizedGeoCache.end())
+                    geoData = it->second.get();
+            }
+
             if (geoData)
                 sg = getOrBuildSceneGraph(mfg, mdl, geoData);
         }
@@ -948,84 +985,66 @@ void SpatialView::rebuildBeamCones()
         if (!mode)
             continue;
 
-        // Detect kinematics: pan + tilt MSB channels
-        bool hasPan = false, hasTilt = false;
-        for (int i = 0; i < (int)mode->channels().size(); i++)
+        // Build the channel map — this gives us kinematics chain + ChannelMap
+        // for ANY fixture type (GDTF or synthesized QXF). No manual channel
+        // detection needed.
+        FixtureKinematics fk = buildFixtureKinematics(fxi);
+        if (!fk.chain || !fk.channelMap)
+            continue;
+
+        int numDofs = fk.dofCount();
+
+        // Get DOF angles: from live DMX in Calibrate/Focus, or home (all zeros)
+        // in Layout. The ChannelMap handles all DOF combinations generically.
+        std::vector<double> dofs(numDofs, 0.0);
+        if (useLiveDmx && numDofs > 0)
         {
-            const QLCChannel *ch = mode->channel(i);
-            if (!ch)
-                continue;
-            if (ch->group() == QLCChannel::Pan && ch->controlByte() == QLCChannel::MSB)
-                hasPan = true;
-            if (ch->group() == QLCChannel::Tilt && ch->controlByte() == QLCChannel::MSB)
-                hasTilt = true;
+            auto it = m_universeSnapshots.find(fk.universeId);
+            if (it != m_universeSnapshots.end())
+                dofs = dmxSnapshotToDofs(fk, it.value());
         }
 
         QLCPhysical phy = mode->physical();
-        double panRange = phy.focusPanMax() > 0 ? phy.focusPanMax() : 540.0;
-        double tiltRange = phy.focusTiltMax() > 0 ? phy.focusTiltMax() : 270.0;
-
-        // Angle source: live DMX in Calibrate/Focus, home (0,0) in Layout.
-        PanTiltChannelMap map = buildPanTiltChannelMap(fxi);
-        if (!map.kinematics)
-            continue;
-
-        double panDeg = 0.0, tiltDeg = 0.0;
-        if (useLiveDmx && (hasPan || hasTilt))
-        {
-            auto it = m_universeSnapshots.find(map.universeId);
-            if (it != m_universeSnapshots.end())
-            {
-                PanTiltAngles live = dmxSnapshotToAngles(map, it.value());
-                if (live.hasPan)  panDeg = live.panDeg;
-                if (live.hasTilt) tiltDeg = live.tiltDeg;
-            }
-            // Else: no snapshot yet (DMX hasn't ticked) → fall back to home.
-        }
-
-        // Build the angle vector matching the kinematics DOF, then let the
-        // polymorphic kinematics do the rest — including the world transform.
-        std::vector<double> angles;
-        if (hasPan && hasTilt)      angles = {panDeg, tiltDeg};
-        else if (hasPan)            angles = {panDeg};
-        // else (fixed): empty vector
-
-        rigmath::RigidTransform t = sm->fixtureTransform(QString::number(fid));
-        rigmath::Ray worldRay = map.kinematics->forward_world(t, angles);
+        rigmath::RigidTransform xf = sm->fixtureTransform(QString::number(fid));
 
         // Beam half-angle (use widest end of zoom range, default 5°)
         double halfAngle = phy.lensDegreesMax() > 0
                              ? phy.lensDegreesMax() / 2.0
                              : 5.0;
 
-        // Clip the beam length at the Z=0 floor plane when the ray points
-        // down from above the floor. Lets the magenta center rod tip land
-        // exactly on whatever aim target is on the floor, so "centered on
-        // click" is visually obvious. Fall back to 10m if the beam is
-        // horizontal/upward or the fixture is at floor level.
-        float beamLength = 10.0f;
-        if (worldRay.oz > 0.05 && worldRay.dz < -1e-3)
-        {
-            double t = -worldRay.oz / worldRay.dz;
-            // Cap at 15m so very shallow tilts don't produce absurdly long cones.
-            beamLength = float(std::min(t, 15.0));
-        }
+        // Emit one cone per beam emitter in the chain.
+        int numBeams = fk.beamCount();
+        if (numBeams == 0)
+            numBeams = 1;
 
-        qlcrender::RenderBeamCone cone;
-        cone.fixtureId = uint32_t(fid);
-        cone.origin[0] = float(worldRay.ox);
-        cone.origin[1] = float(worldRay.oy);
-        cone.origin[2] = float(worldRay.oz);
-        cone.direction[0] = float(worldRay.dx);
-        cone.direction[1] = float(worldRay.dy);
-        cone.direction[2] = float(worldRay.dz);
-        cone.halfAngleDeg = float(halfAngle);
-        cone.length = beamLength;
-        cone.color[0] = 0.3f;
-        cone.color[1] = 0.9f;
-        cone.color[2] = 1.0f;
-        cone.color[3] = 0.7f;  // cyan translucent
-        cones.push_back(cone);
+        for (int bi = 0; bi < numBeams; bi++)
+        {
+            rigmath::Ray worldRay = fk.chain->forward_world(xf, dofs, bi);
+
+            // Clip beam length at the Z=0 floor plane
+            float beamLength = 10.0f;
+            if (worldRay.oz > 0.05 && worldRay.dz < -1e-3)
+            {
+                double tFloor = -worldRay.oz / worldRay.dz;
+                beamLength = float(std::min(tFloor, 15.0));
+            }
+
+            qlcrender::RenderBeamCone cone;
+            cone.fixtureId = uint32_t(fid);
+            cone.origin[0] = float(worldRay.ox);
+            cone.origin[1] = float(worldRay.oy);
+            cone.origin[2] = float(worldRay.oz);
+            cone.direction[0] = float(worldRay.dx);
+            cone.direction[1] = float(worldRay.dy);
+            cone.direction[2] = float(worldRay.dz);
+            cone.halfAngleDeg = float(halfAngle);
+            cone.length = beamLength;
+            cone.color[0] = 0.3f;
+            cone.color[1] = 0.9f;
+            cone.color[2] = 1.0f;
+            cone.color[3] = 0.7f;
+            cones.push_back(cone);
+        }
     }
 
     m_renderer->setBeamCones(cones);

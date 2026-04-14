@@ -49,7 +49,7 @@ set(SRC_FILES
     spatialcontroller.cpp spatialcontroller.h
     spatialview.cpp spatialview.h
     spatialviewwindow.cpp spatialviewwindow.h
-    fixturepantilt.cpp fixturepantilt.h
+    fixturekinematics.cpp fixturekinematics.h
     $<$<PLATFORM_ID:Darwin>:spatialview_macos.mm>
     mainviewdmx.cpp mainviewdmx.h
     modelselector.cpp modelselector.h

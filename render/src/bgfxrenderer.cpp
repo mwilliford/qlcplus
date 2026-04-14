@@ -173,7 +173,7 @@ void BgfxRenderer::shutdown()
     if (!m_initialized)
         return;
 
-    m_meshLoader.shutdown();
+    // (meshLoader removed — all fixtures render through GDTF scene graph path)
     m_primitiveGen.shutdown();
     destroyCubeMesh(m_cubeVbh, m_cubeIbh);
     destroySphereMesh(m_sphereVbh, m_sphereIbh);
@@ -467,79 +467,31 @@ void BgfxRenderer::renderFixtures()
             color = selectColor;
         }
 
-        // If fixture has a GDTF scene graph, render hierarchically
+        // All fixtures render through the GDTF scene graph path.
+        // QXF fixtures get synthesized scene graphs in SpatialView.
         if (fixture.sceneGraph && fixture.sceneGraph->valid)
         {
             renderSceneGraph(fixture.sceneGraph->root, fixture.transform, color);
-            continue;
-        }
-
-        // Legacy single-mesh path (QXF fixtures)
-        const LoadedMesh *mesh = nullptr;
-        const char *meshFile = MeshLoader::meshFileForFixtureType(fixture.fixtureType);
-        if (meshFile && !m_meshBasePath.empty())
-        {
-            std::string fullPath = m_meshBasePath + meshFile;
-            mesh = m_meshLoader.getMesh(fullPath);
-        }
-
-        bool useLitShader = false;
-
-        if (mesh && mesh->isValid())
-        {
-            bgfx::setTransform(fixture.transform);
-            bgfx::setVertexBuffer(0, mesh->vbh);
-            bgfx::setIndexBuffer(mesh->ibh);
-            useLitShader = true;
         }
         else
         {
-            // Fallback: use GDTF primitive based on fixture type
-            int primType = 1; // PrimitiveCube default
-            switch (fixture.fixtureType)
-            {
-            case 6:  // Laser
-            case 0:  // ColorChanger
-            case 1:  // Dimmer
-                primType = 8; // PrimitiveConventional (cylinder)
-                break;
-            case 2:  // Effect
-            case 3:  // Fan
-            case 4:  // Flower
-            case 10: // Other
-                primType = 1; // PrimitiveCube
-                break;
-            }
-            const LoadedMesh *prim = m_primitiveGen.getPrimitive(primType);
+            // Fallback: render a cube for fixtures without a scene graph
+            // (e.g., missing fixture definitions)
+            const LoadedMesh *prim = m_primitiveGen.getPrimitive(1); // PrimitiveCube
             if (prim && prim->isValid())
             {
                 bgfx::setTransform(fixture.transform);
                 bgfx::setVertexBuffer(0, prim->vbh);
                 bgfx::setIndexBuffer(prim->ibh);
-                useLitShader = true;
-            }
-            else
-            {
-                continue;
+                bgfx::setUniform(m_u_color, color);
+                uint64_t state = BGFX_STATE_WRITE_RGB | BGFX_STATE_WRITE_A
+                                 | BGFX_STATE_WRITE_Z | BGFX_STATE_DEPTH_TEST_LESS;
+                if (color[3] < 0.99f)
+                    state |= BGFX_STATE_BLEND_ALPHA;
+                bgfx::setState(state);
+                bgfx::submit(0, bgfx::isValid(m_litProgram) ? m_litProgram : m_colorProgram);
             }
         }
-
-        bgfx::setUniform(m_u_color, color);
-
-        uint64_t state = BGFX_STATE_WRITE_RGB | BGFX_STATE_WRITE_A
-                         | BGFX_STATE_WRITE_Z | BGFX_STATE_DEPTH_TEST_LESS;
-        if (color[3] < 0.99f)
-            state |= BGFX_STATE_BLEND_ALPHA;
-
-        bgfx::setState(state);
-
-        bgfx::ProgramHandle prog = (useLitShader && bgfx::isValid(m_litProgram))
-            ? m_litProgram : m_colorProgram;
-
-        if (bgfx::isValid(prog))
-            bgfx::submit(0, prog);
-        else
-            bgfx::discard();
     }
 }
 

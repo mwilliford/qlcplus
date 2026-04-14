@@ -185,6 +185,9 @@ private:
 
     // GDTF scene graph cache: one per fixture def (manufacturer+model)
     std::unordered_map<std::string, qlcrender::FixtureSceneGraph> m_sceneGraphCache;
+
+    // Synthesized GDTF geometry for QXF fixtures (no real GDTF data)
+    std::unordered_map<std::string, std::unique_ptr<GDTFGeometryData>> m_synthesizedGeoCache;
 };
 
 #endif // SPATIALVIEW_H

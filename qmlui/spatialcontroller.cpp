@@ -17,7 +17,7 @@
 #include "tardis/tardis.h"
 #include "doc.h"
 #include "fixture.h"
-#include "fixturepantilt.h"
+#include "fixturekinematics.h"
 
 #include <rigmath/kinematic_chain.hpp>
 #include <rigmath/rigid_transform.hpp>
@@ -423,22 +423,19 @@ void SpatialController::setFocusAim(double wx, double wy, double wz)
         if (!fxi)
             continue;
 
-        PanTiltChannelMap map = buildPanTiltChannelMap(fxi);
-        if (!map.isMovingHead() || !map.kinematics)
-            continue;  // fixed or pan-only — skip aim in v1
+        FixtureKinematics fk = buildFixtureKinematics(fxi);
+        if (!fk.chain || fk.dofCount() == 0)
+            continue;  // fixed fixture — no motion DOFs
 
-        // Single polymorphic call: world → local + inverse_local in one step.
+        // IK: find DOF values that aim the primary beam at the target.
         rigmath::RigidTransform xf = sm->fixtureTransform(QString::number(fid));
-        rigmath::AngleResult result = map.kinematics->inverse_world(xf, wx, wy, wz);
+        rigmath::AngleResult result = fk.chain->inverse_world(xf, wx, wy, wz);
 
-        // Clamp to reachable via the kinematics' own logic (per-axis for
-        // moving head / moving mirror; fancier for future subclasses).
-        std::vector<double> clamped = map.kinematics->clamp_to_reachable(result.angles);
-        double panDeg  = clamped[0];
-        double tiltDeg = clamped[1];
+        // Clamp to reachable range per DOF.
+        std::vector<double> clamped = fk.chain->clamp_to_reachable(result.angles);
 
-        std::vector<FocusDmxWrite> writes =
-            anglesToDmxWrites(map, panDeg, tiltDeg);
+        // Convert physical angles to DMX writes.
+        std::vector<FocusDmxWrite> writes = anglesToDmxWrites(fk, clamped);
         for (const FocusDmxWrite &w : writes)
         {
             emit focusDmxWrite(w.absAddr, w.value);
