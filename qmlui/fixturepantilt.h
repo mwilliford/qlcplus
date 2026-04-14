@@ -21,7 +21,7 @@
 
 #include "qlcchannel.h"
 
-namespace rigmath { class Kinematics; }
+namespace rigmath { class KinematicChain; class ChannelMap; }
 class Fixture;
 
 /**
@@ -30,17 +30,21 @@ class Fixture;
  * Used by Focus mode to:
  *   - Flow A: convert IK angle results into DMX writes to send to SimpleDesk.
  *   - Flow B: convert the current live DMX state back into physical angles
- *     that rigmath::Kinematics::forward_local can consume for beam-cone rendering.
+ *     that rigmath::KinematicChain::forward_local can consume for beam-cone rendering.
  *
  * Addresses are absolute universe addresses (`(universe << 9) + address`).
  * An LSB address of QLCChannel::invalid() means the fixture uses only an
  * 8-bit pan or tilt channel.
  *
- * `kinematics` holds the concrete rigmath kinematics subclass for this
- * fixture (MovingHead, MovingMirror, PanOnly, or Fixed), picked based on
- * the channel layout and `<Focus Type>` from the fixture definition. All
- * downstream code dispatches through this polymorphic pointer rather than
- * branching on fixture type.
+ * `kinematics` holds the rigmath KinematicChain for this fixture, built via
+ * factory methods (moving_head, moving_mirror, pan_only, fixed_beam).
+ * All downstream code dispatches through this pointer rather than branching
+ * on fixture type.
+ *
+ * `channelMap` holds the rigmath ChannelMap that maps between physical DOF
+ * angles and DMX bytes. Signed physical_from/physical_to in ChannelBinding
+ * handles axis inversion (e.g. Chauvet Intimidator Scan 360) — no separate
+ * invertPan/invertTilt flags needed.
  */
 struct PanTiltChannelMap
 {
@@ -52,13 +56,13 @@ struct PanTiltChannelMap
     double panRange = 540.0;
     double tiltRange = 270.0;
 
-    // Per-axis polarity flags (retained for future per-fixture calibration).
-    bool invertPan = false;
-    bool invertTilt = false;
-
     // Concrete kinematics for this fixture. Null if the fixture couldn't
     // be classified (no fixture mode, etc.).
-    std::shared_ptr<rigmath::Kinematics> kinematics;
+    std::shared_ptr<rigmath::KinematicChain> kinematics;
+
+    // DMX ↔ DOF angle conversion. Handles axis inversion via signed
+    // physical_from/physical_to ranges (replaces invertPan/invertTilt).
+    std::shared_ptr<rigmath::ChannelMap> channelMap;
 
     bool hasPan() const { return panMSBAddr != QLCChannel::invalid(); }
     bool hasTilt() const { return tiltMSBAddr != QLCChannel::invalid(); }
@@ -79,7 +83,9 @@ struct FocusDmxWrite
  * @brief Flow A: convert physical pan/tilt angles (degrees) into DMX writes.
  *
  * Angles are in rigmath convention: [-range/2, +range/2] around center.
- * 16-bit channels emit MSB + LSB. 8-bit channels emit MSB only.
+ * Uses the map's ChannelMap for conversion (handles axis inversion via
+ * signed physical_from/physical_to). 16-bit channels emit MSB + LSB.
+ * 8-bit channels emit MSB only.
  *
  * Returns an empty vector if the map has no pan or no tilt (e.g. a fixed
  * fixture or a pan-only wash that shouldn't be aimed in v1).

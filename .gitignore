@@ -47,6 +47,9 @@ coverage/
 *.gcda
 *.gcno
 
+# Local environment (credentials, never committed)
+.env
+
 # Development IDEs
 .vscode/
 

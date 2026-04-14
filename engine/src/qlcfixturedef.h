@@ -48,6 +48,7 @@
 #define KXMLQLCFixtureAddress   QStringLiteral("Address")
 
 class QXmlStreamReader;
+struct GDTFGeometryData;
 class QLCFixtureMode;
 class QLCFixtureDef;
 class QLCChannel;
@@ -235,6 +236,19 @@ public:
 
 protected:
     AgentContext m_agentContext;
+
+    /*********************************************************************
+     * GDTF Geometry Data
+     *********************************************************************/
+public:
+    /** Non-owning pointer to GDTF geometry data (owned by QLCFixtureDefCache).
+     *  Non-null for GDTF-loaded fixtures. Null for QXF fixtures (use
+     *  synthesizeGDTFFromQXF() to create approximate GDTF data at point of use). */
+    const GDTFGeometryData *gdtfGeometryData() const { return m_gdtfGeoData; }
+    void setGdtfGeometryData(const GDTFGeometryData *data) { m_gdtfGeoData = data; }
+
+private:
+    const GDTFGeometryData *m_gdtfGeoData = nullptr;
 
     /*********************************************************************
      * Load & Save

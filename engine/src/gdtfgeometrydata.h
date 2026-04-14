@@ -113,6 +113,31 @@ struct GDTFGeometryNode
 };
 
 /**
+ * DMX channel metadata extracted from a GDTF DMX mode.
+ * Preserves the raw PhysicalFrom/PhysicalTo values from GDTF channel functions,
+ * which encode both the physical range and axis direction (signed pair).
+ *
+ * This data feeds into rigmath::ChannelMap construction (Phase 3) and also
+ * populates QLCPhysical panMax/tiltMax for the existing pipeline (Phase 1).
+ */
+struct GDTFDmxChannelInfo
+{
+    QString attributeName;          ///< GDTF attribute name (e.g., "Pan", "Tilt", "Dimmer")
+    int coarseOffset = -1;          ///< DMX offset for coarse byte (0-based)
+    int fineOffset = -1;            ///< DMX offset for fine byte (-1 if 8-bit)
+    double physicalFrom = 0.0;      ///< Physical value at DMX 0 (degrees for rotation)
+    double physicalTo = 0.0;        ///< Physical value at DMX max
+    QString geometryRef;            ///< Geometry node name this channel controls
+};
+
+/** DMX mode metadata — one per GDTF DMX mode. */
+struct GDTFDmxModeInfo
+{
+    QString modeName;
+    QVector<GDTFDmxChannelInfo> channels;
+};
+
+/**
  * Complete geometry data extracted from a GDTF file.
  *
  * This struct is a plain data container with no libMVRgdtf types,
@@ -125,6 +150,9 @@ struct GDTFGeometryData
     /** Raw 3D model data extracted from the GDTF archive.
      *  Key = mesh reference name (e.g., "body.glb"), Value = raw glb bytes */
     QMap<QString, QByteArray> meshData;
+
+    /** Per-mode DMX channel metadata with physical ranges from GDTF channel functions. */
+    QVector<GDTFDmxModeInfo> dmxModes;
 };
 
 /** @} */

@@ -32,6 +32,7 @@
 #include <vector>
 
 #include <rigmath/covariance.hpp>
+#include <rigmath/kinematic_chain.hpp>
 #include <rigmath/rigid_transform.hpp>
 #include <rigmath/solver/CalibrationProblem.h>
 
@@ -264,10 +265,8 @@ signals:
     void tolerancesChanged(const QString &fixtureId);
 
 private:
-    /** Build ChannelSpec + KinematicsType for a QLC+ fixture ID. */
-    bool buildFixtureSpec(quint32 fixtureId,
-                          std::vector<rigmath::solver::ChannelSpec> &channels,
-                          rigmath::solver::KinematicsType &kinType) const;
+    /** Build a KinematicChain for a QLC+ fixture ID. */
+    std::unique_ptr<rigmath::KinematicChain> buildKinematicChain(quint32 fixtureId) const;
 
     Doc *m_doc = nullptr;
     SpatialModel *m_spatialModel = nullptr;

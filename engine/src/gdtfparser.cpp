@@ -384,6 +384,13 @@ bool GDTFParser::loadGDTF(const QString &path, QLCFixtureDef *fixtureDef)
         struct ChanEntry { int offset; QLCChannel *chan; };
         QVector<ChanEntry> chanEntries;
 
+        GDTFDmxModeInfo modeInfo;
+        modeInfo.modeName = QString::fromUtf8(gdtfMode->GetName());
+
+        // Track per-mode physical ranges for Pan/Tilt
+        double panPhysicalRange = 0.0;
+        double tiltPhysicalRange = 0.0;
+
         size_t chanCount = 0;
         gdtfMode->GetDmxChannelCount(chanCount);
         for (size_t c = 0; c < chanCount; c++)
@@ -400,9 +407,24 @@ bool GDTFParser::loadGDTF(const QString &path, QLCFixtureDef *fixtureDef)
                 continue;
             }
 
-            // Determine channel name and group from the first logical channel's attribute
+            // Get geometry reference for this channel (for Phase 3 kinematics)
+            QString geoRef;
+            {
+                IGdtfGeometry *geo = nullptr;
+                if (gdtfChan->GetGeometry(&geo) == kVCOMError_NoError && geo)
+                {
+                    geoRef = QString::fromUtf8(geo->GetName());
+                    geo->Release();
+                }
+            }
+
+            // Determine channel name and group from the first logical channel's attribute.
+            // Also descend into channel functions for PhysicalStart/PhysicalEnd.
             QString chanName = QString::fromUtf8(gdtfChan->GetName());
             QLCChannel::Group group = QLCChannel::Nothing;
+            QString attrName;
+            double physFrom = 0.0, physTo = 0.0;
+            bool hasPhysical = false;
 
             size_t logCount = 0;
             gdtfChan->GetLogicalChannelCount(logCount);
@@ -414,7 +436,7 @@ bool GDTFParser::loadGDTF(const QString &path, QLCFixtureDef *fixtureDef)
                     IGdtfAttribute *attr = nullptr;
                     if (logChan->GetAttribute(&attr) == kVCOMError_NoError && attr)
                     {
-                        QString attrName = QString::fromUtf8(attr->GetName());
+                        attrName = QString::fromUtf8(attr->GetName());
                         if (chanName.isEmpty())
                             chanName = QString::fromUtf8(attr->GetPrettyName());
                         if (chanName.isEmpty())
@@ -422,6 +444,25 @@ bool GDTFParser::loadGDTF(const QString &path, QLCFixtureDef *fixtureDef)
                         group = attributeNameToGroup(attrName);
                         attr->Release();
                     }
+
+                    // Descend into channel functions for physical range data.
+                    // The first function typically carries the main physical range
+                    // (e.g., Pan 0→540°). Additional functions are sub-ranges
+                    // (e.g., Pan fine trim) which we skip.
+                    size_t funcCount = 0;
+                    logChan->GetDmxFunctionCount(funcCount);
+                    if (funcCount > 0)
+                    {
+                        IGdtfDmxChannelFunction *chanFunc = nullptr;
+                        if (logChan->GetDmxFunctionAt(0, &chanFunc) == kVCOMError_NoError && chanFunc)
+                        {
+                            chanFunc->GetPhysicalStart(physFrom);
+                            chanFunc->GetPhysicalEnd(physTo);
+                            hasPhysical = true;
+                            chanFunc->Release();
+                        }
+                    }
+
                     logChan->Release();
                 }
             }
@@ -478,6 +519,29 @@ bool GDTFParser::loadGDTF(const QString &path, QLCFixtureDef *fixtureDef)
                 chanEntries.append({fine, fineChan});
             }
 
+            // Collect DMX channel metadata for Phase 3 (GDTF-native kinematics)
+            if (!attrName.isEmpty())
+            {
+                GDTFDmxChannelInfo info;
+                info.attributeName = attrName;
+                info.coarseOffset = coarse;
+                info.fineOffset = fine;
+                info.physicalFrom = physFrom;
+                info.physicalTo = physTo;
+                info.geometryRef = geoRef;
+                modeInfo.channels.append(info);
+
+                // Track physical ranges for Pan/Tilt to populate QLCPhysical
+                if (hasPhysical)
+                {
+                    double range = std::abs(physTo - physFrom);
+                    if (attrName.startsWith(QStringLiteral("Pan")) && range > panPhysicalRange)
+                        panPhysicalRange = range;
+                    if (attrName.startsWith(QStringLiteral("Tilt")) && range > tiltPhysicalRange)
+                        tiltPhysicalRange = range;
+                }
+            }
+
             gdtfChan->Release();
         }
 
@@ -508,7 +572,21 @@ bool GDTFParser::loadGDTF(const QString &path, QLCFixtureDef *fixtureDef)
             physical.setBulbLumens(static_cast<int>(lamp->luminousIntensity));
             physical.setBulbColourTemperature(static_cast<int>(lamp->colorTemperature));
         }
+
+        // Set pan/tilt ranges from GDTF PhysicalStart/PhysicalEnd.
+        // This populates the legacy QLCPhysical scalars so the existing
+        // pipeline works (Phase 1 stopgap). Phase 3 bypasses QLCPhysical
+        // entirely and builds KinematicChain + ChannelMap from the raw
+        // signed pair stored in GDTFDmxModeInfo.
+        if (panPhysicalRange > 0)
+            physical.setFocusPanMax(static_cast<int>(panPhysicalRange));
+        if (tiltPhysicalRange > 0)
+            physical.setFocusTiltMax(static_cast<int>(tiltPhysicalRange));
+
         mode->setPhysical(physical);
+
+        // Store DMX mode metadata for Phase 3 (GDTF-native kinematics)
+        m_geometryData->dmxModes.append(modeInfo);
 
         fixtureDef->addMode(mode);
         gdtfMode->Release();

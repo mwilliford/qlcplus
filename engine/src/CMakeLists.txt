@@ -8,7 +8,7 @@ set(RIGMATH_BUILD_SOLVER ON CACHE BOOL "" FORCE)
 FetchContent_Declare(
     rigmath
     GIT_REPOSITORY git@github.com:mwilliford/rigmath-core.git
-    GIT_TAG        v0.9.0
+    GIT_TAG        v1.0.0
 )
 FetchContent_MakeAvailable(rigmath)
 
@@ -36,7 +36,9 @@ add_library(${module_name} SHARED
     agentsession.cpp agentsession.h
     avolitesd4parser.cpp avolitesd4parser.h
     gdtfgeometrydata.h
+    gdtfkinematics.cpp gdtfkinematics.h
     gdtfparser.cpp gdtfparser.h
+    gdtfshareclient.cpp gdtfshareclient.h
     bus.cpp bus.h
     channelmodifier.cpp channelmodifier.h
     channelsgroup.cpp channelsgroup.h
