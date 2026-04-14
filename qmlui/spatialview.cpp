@@ -1160,9 +1160,12 @@ static void buildSceneNode(const GDTFGeometryNode &geoNode,
             qlcrender::LoadedMesh mesh;
             if (geoNode.meshRef.endsWith(QStringLiteral(".3ds"), Qt::CaseInsensitive))
             {
+                // Pass largest GDTF model dimension as target extent for auto-scaling
+                float targetExtent = std::max({geoNode.modelLength, geoNode.modelWidth,
+                                               geoNode.modelHeight});
                 mesh = qlcrender::TdsLoader::loadFromMemory(
                     reinterpret_cast<const unsigned char *>(rawData.constData()),
-                    rawData.size(), key);
+                    rawData.size(), key, targetExtent);
             }
             else
             {

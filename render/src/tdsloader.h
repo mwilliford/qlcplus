@@ -37,10 +37,13 @@ class TdsLoader
 public:
     /**
      * Load a .3ds binary from memory into a LoadedMesh.
+     * If targetExtent > 0, oversized models are uniformly scaled so the
+     * largest bounding box axis matches targetExtent (meters).
      * Returns an invalid mesh on failure.
      */
     static LoadedMesh loadFromMemory(const unsigned char *data, size_t length,
-                                     const std::string &debugName = "");
+                                     const std::string &debugName = "",
+                                     float targetExtent = 0.0f);
 };
 
 } // namespace qlcrender
