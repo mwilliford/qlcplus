@@ -19,7 +19,7 @@
 #include "fixture.h"
 #include "fixturepantilt.h"
 
-#include <rigmath/kinematics.hpp>
+#include <rigmath/kinematic_chain.hpp>
 #include <rigmath/rigid_transform.hpp>
 
 #include <cmath>

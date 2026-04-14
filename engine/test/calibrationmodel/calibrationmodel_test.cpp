@@ -27,8 +27,8 @@
 #include "qlcchannel.h"
 #include "../common/resource_paths.h"
 
-#include <rigmath/moving_head.hpp>
-#include <rigmath/channel_transform.hpp>
+#include <rigmath/kinematic_chain.hpp>
+#include <rigmath/channel_binding.hpp>
 
 // --- Helpers ---
 
@@ -88,12 +88,14 @@ static std::vector<double> computeAimDmx(
     double tx, double ty, double tz)
 {
     double lx = tx - fx, ly = ty - fy, lz = tz - fz;
-    rigmath::MovingHeadKinematics kin(panRange, tiltRange);
-    auto result = kin.inverse_local(lx, ly, lz);
-    rigmath::LinearTransform panXform(panRange);
-    rigmath::LinearTransform tiltXform(tiltRange);
-    return {panXform.from_physical(result.angles[0]),
-            tiltXform.from_physical(result.angles[1])};
+    rigmath::KinematicChain chain = rigmath::KinematicChain::moving_head(panRange, tiltRange);
+    auto result = chain.inverse_local(lx, ly, lz);
+    // Convert physical angles to normalized [0,1] for solver's dmxNormalized format.
+    double panNorm = rigmath::ChannelMap::physical_to_normalized(
+        result.angles[0], -panRange / 2.0, panRange / 2.0);
+    double tiltNorm = rigmath::ChannelMap::physical_to_normalized(
+        result.angles[1], -tiltRange / 2.0, tiltRange / 2.0);
+    return {panNorm, tiltNorm};
 }
 
 // --- Tests ---

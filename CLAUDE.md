@@ -87,6 +87,26 @@ Agent(subagent_type="qlcplus-ui-test", prompt="Build, launch, and verify <what y
 ```
 The agent launches QLC+, takes screenshots via the embedded MCP server, and reports what it sees. It works in the background — no need for manual testing or app focus.
 
+## Environment Variables
+
+| Variable | Purpose | Default |
+|----------|---------|---------|
+| `AGENT_API_TOKEN` | Static auth token, bypasses macOS keychain dialog | Set to `dev-token-change-me` by `scripts/launch.sh` |
+| `AGENT_SERVER_URL` | WebSocket server URL override | `ws://localhost:8000/ws/agent` |
+| `GDTF_SHARE_USER` | GDTF-share.com username for auto-login | (none — manual login required) |
+| `GDTF_SHARE_PASSWORD` | GDTF-share.com password for auto-login | (none — manual login required) |
+
+`scripts/launch.sh` sets `AGENT_API_TOKEN` and passes through `GDTF_SHARE_USER`/`GDTF_SHARE_PASSWORD` if set. For automated testing with the `qlcplus-ui-test` agent, export the GDTF-share credentials before launching.
+
+## GDTF as Primary Fixture Format
+
+GDTF is the native internal data model. QXF is read-only legacy, converted to approximate GDTF at load time.
+
+- **GDTF fixtures**: loaded from `~/Library/Application Support/QLC+/Fixtures/*.gdtf` or downloaded via GDTF-share browser
+- **QXF fixtures**: loaded from system/user fixture directories, synthesized to GDTF-shaped data internally
+- **Kinematics pipeline**: all fixtures go through `buildGDTFKinematics()` in `gdtfkinematics.cpp` — single code path
+- **GDTF axis convention**: most GDTF files have identity rotation on axis Position matrices; axis direction is inferred from attribute name (Pan→Z, Tilt→X). See `docs/rigmath-v1-spec.md` §"GDTF axis direction: spec vs reality"
+
 ## Related Docs
 
 - **`TECH_SPEC.md`** — Architecture, code layout, engine APIs used (AI quick reference)

@@ -491,10 +491,36 @@ bool QLCFixtureDefCache::loadGDTF(const QString& path)
     else if (geoData != nullptr)
     {
         m_gdtfGeometry.insert(geoKey, geoData);
+        fxi->setGdtfGeometryData(geoData);
     }
     fxi = NULL;
 
     return true;
+}
+
+int QLCFixtureDefCache::loadGDTFCache(const QString &cacheDir)
+{
+    QDir dir(cacheDir);
+    if (!dir.exists())
+        return 0;
+
+    int loaded = 0;
+    QStringList filters;
+    filters << QStringLiteral("*.gdtf");
+    QStringList entries = dir.entryList(filters, QDir::Files);
+
+    for (const QString &entry : entries)
+    {
+        QString path = dir.absoluteFilePath(entry);
+        if (loadGDTF(path))
+            loaded++;
+    }
+
+    if (loaded > 0)
+        qDebug() << "[QLCFixtureDefCache] Loaded" << loaded
+                 << "GDTF fixtures from cache:" << cacheDir;
+
+    return loaded;
 }
 
 const GDTFGeometryData *QLCFixtureDefCache::gdtfGeometry(

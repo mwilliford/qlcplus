@@ -21,8 +21,11 @@
 #include <QQuickItem>
 #include <QQmlContext>
 #include <QDebug>
+#include <QTimer>
 
 #include "fixturebrowser.h"
+#include "gdtfshareclient.h"
+#include "qlcfixturedefcache.h"
 #include "qlcfixturemode.h"
 #include "qlcfixturedef.h"
 #include "treemodelitem.h"
@@ -50,6 +53,75 @@ FixtureBrowser::FixtureBrowser(QQuickView *view, Doc *doc, QObject *parent)
     m_searchTree = new TreeModel(this);
     QQmlEngine::setObjectOwnership(m_searchTree, QQmlEngine::CppOwnership);
     m_searchTree->enableSorting(true);
+
+    // GDTF-share client
+    m_gdtfShareClient = new GDTFShareClient(this);
+    connect(m_gdtfShareClient, &GDTFShareClient::loginSucceeded, this, [this]() {
+        m_gdtfShareLoggedIn = true;
+        m_gdtfShareError.clear();
+        emit gdtfShareLoggedInChanged();
+        emit gdtfShareErrorChanged();
+        gdtfShareFetchList();
+    });
+    connect(m_gdtfShareClient, &GDTFShareClient::loginFailed, this, [this](const QString &err) {
+        m_gdtfShareLoggedIn = false;
+        m_gdtfShareError = err;
+        m_gdtfShareLoading = false;
+        emit gdtfShareLoggedInChanged();
+        emit gdtfShareErrorChanged();
+        emit gdtfShareLoadingChanged();
+    });
+    connect(m_gdtfShareClient, &GDTFShareClient::loginRequired, this, [this]() {
+        m_gdtfShareLoggedIn = false;
+        m_gdtfShareError = tr("Session expired. Please log in again.");
+        emit gdtfShareLoggedInChanged();
+        emit gdtfShareErrorChanged();
+    });
+    connect(m_gdtfShareClient, &GDTFShareClient::listReady, this, [this](const QVariantList &fixtures) {
+        m_gdtfShareAll = fixtures;
+        m_gdtfShareLoading = false;
+        applyGdtfShareFilter();
+        emit gdtfShareLoadingChanged();
+    });
+    connect(m_gdtfShareClient, &GDTFShareClient::listFailed, this, [this](const QString &err) {
+        m_gdtfShareError = err;
+        m_gdtfShareLoading = false;
+        emit gdtfShareErrorChanged();
+        emit gdtfShareLoadingChanged();
+    });
+    connect(m_gdtfShareClient, &GDTFShareClient::downloadComplete, this, [this](const QString &path) {
+        m_gdtfShareLoading = false;
+        emit gdtfShareLoadingChanged();
+
+        // Load the downloaded fixture into the cache
+        if (m_doc->fixtureDefCache()->loadGDTF(path))
+        {
+            // Refresh our local cache map
+            m_defCache = m_doc->fixtureDefCache()->fixtureCache();
+
+            // Switch to local view and select the downloaded fixture
+            // (the fixture is now in the local cache)
+            m_gdtfShareSource = false;
+            emit gdtfShareSourceChanged();
+        }
+    });
+    connect(m_gdtfShareClient, &GDTFShareClient::downloadFailed, this, [this](const QString &err) {
+        m_gdtfShareError = err;
+        m_gdtfShareLoading = false;
+        emit gdtfShareErrorChanged();
+        emit gdtfShareLoadingChanged();
+    });
+
+    // If GDTF_SHARE_USER/PASSWORD env vars are set, auto-switch to GDTF-share
+    // source and trigger fetch (which auto-logs in via env creds).
+    if (m_gdtfShareClient->hasEnvCredentials())
+    {
+        m_gdtfShareSource = true;
+        // Defer the fetch to after QML is initialized (use a single-shot timer)
+        QTimer::singleShot(500, this, [this]() {
+            gdtfShareFetchList();
+        });
+    }
 }
 
 FixtureBrowser::~FixtureBrowser()
@@ -348,8 +420,15 @@ void FixtureBrowser::setSearchFilter(QString searchFilter)
 
     m_searchFilter = searchFilter;
 
-    if (searchFilter.length() >= SEARCH_MIN_CHARS)
+    // Single search bar drives both local and GDTF-share filtering
+    if (m_gdtfShareSource)
+    {
+        setGdtfShareFilter(searchFilter);
+    }
+    else if (searchFilter.length() >= SEARCH_MIN_CHARS)
+    {
         updateSearchTree();
+    }
     else
     {
         m_searchTree->clear();
@@ -399,5 +478,75 @@ void FixtureBrowser::updateSearchTree()
 QLCFixtureDef *FixtureBrowser::fixtureDefinition() const
 {
     return m_doc->fixtureDefCache()->fixtureDef(m_selectedManufacturer, m_selectedModel);
+}
+
+// ---------------------------------------------------------------------------
+// GDTF-share
+// ---------------------------------------------------------------------------
+
+void FixtureBrowser::setGdtfShareSource(bool source)
+{
+    if (m_gdtfShareSource == source)
+        return;
+    m_gdtfShareSource = source;
+    emit gdtfShareSourceChanged();
+}
+
+void FixtureBrowser::setGdtfShareFilter(const QString &filter)
+{
+    if (m_gdtfShareFilter == filter)
+        return;
+    m_gdtfShareFilter = filter;
+    applyGdtfShareFilter();
+    emit gdtfShareFilterChanged();
+}
+
+void FixtureBrowser::gdtfShareLogin(const QString &user, const QString &pass)
+{
+    m_gdtfShareError.clear();
+    m_gdtfShareLoading = true;
+    emit gdtfShareErrorChanged();
+    emit gdtfShareLoadingChanged();
+    m_gdtfShareClient->login(user, pass);
+}
+
+void FixtureBrowser::gdtfShareFetchList()
+{
+    m_gdtfShareLoading = true;
+    emit gdtfShareLoadingChanged();
+    m_gdtfShareClient->fetchList();
+}
+
+void FixtureBrowser::gdtfShareDownload(const QString &rid,
+                                        const QString &manufacturer,
+                                        const QString &model)
+{
+    m_gdtfShareLoading = true;
+    m_gdtfShareError.clear();
+    emit gdtfShareLoadingChanged();
+    emit gdtfShareErrorChanged();
+    m_gdtfShareClient->download(rid, manufacturer, model);
+}
+
+void FixtureBrowser::applyGdtfShareFilter()
+{
+    if (m_gdtfShareFilter.length() < 2)
+    {
+        m_gdtfShareFiltered = m_gdtfShareAll;
+    }
+    else
+    {
+        QString lower = m_gdtfShareFilter.toLower();
+        m_gdtfShareFiltered.clear();
+        for (const QVariant &v : m_gdtfShareAll)
+        {
+            QVariantMap entry = v.toMap();
+            QString mfg = entry.value(QStringLiteral("manufacturer")).toString().toLower();
+            QString name = entry.value(QStringLiteral("name")).toString().toLower();
+            if (mfg.contains(lower) || name.contains(lower))
+                m_gdtfShareFiltered.append(v);
+        }
+    }
+    emit gdtfShareFixturesChanged();
 }
 

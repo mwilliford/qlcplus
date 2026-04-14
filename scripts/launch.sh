@@ -12,6 +12,13 @@ REPO_DIR="$(cd "$CLIENT_DIR/../.." && pwd)"
 WORKSPACE="${1:-$REPO_DIR/proj1.qxw}"
 LOG="/tmp/qlcplus-test.log"
 
+# Source .env if present (credentials, not committed)
+if [ -f "$CLIENT_DIR/.env" ]; then
+    set -a
+    source "$CLIENT_DIR/.env"
+    set +a
+fi
+
 # Kill any existing instance
 "$SCRIPT_DIR/kill.sh"
 
@@ -21,9 +28,14 @@ if [ ! -f "$CLIENT_DIR/build-v5/qmlui/qlcplus-qml.app/Contents/MacOS/qlcplus-qml
     exit 1
 fi
 
-# Launch
+# Launch with test env vars:
+# - AGENT_API_TOKEN: bypasses macOS keychain dialog
+# - GDTF_SHARE_USER/PASSWORD: passed through for auto-login if set
 cd "$CLIENT_DIR"
-AGENT_API_TOKEN=dev-token-change-me ./run.sh "$WORKSPACE" &>"$LOG" &
+AGENT_API_TOKEN=dev-token-change-me \
+    GDTF_SHARE_USER="${GDTF_SHARE_USER:-}" \
+    GDTF_SHARE_PASSWORD="${GDTF_SHARE_PASSWORD:-}" \
+    ./run.sh "$WORKSPACE" &>"$LOG" &
 QLC_PID=$!
 echo "QLC+ PID: $QLC_PID (log: $LOG)"
 

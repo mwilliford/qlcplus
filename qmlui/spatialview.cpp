@@ -40,9 +40,7 @@
 #include "qlcfile.h"
 #include "qlcconfig.h"
 
-#include <rigmath/moving_head.hpp>
-#include <rigmath/pan_only.hpp>
-#include <rigmath/fixed.hpp>
+#include <rigmath/kinematic_chain.hpp>
 
 #ifdef Q_OS_MACOS
 extern void *setupMetalLayerForView(void *nativeHandle);

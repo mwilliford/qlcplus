@@ -21,9 +21,11 @@
 #define FIXTUREBROWSER_H
 
 #include <QQuickView>
+#include <QVariantList>
 
 class QLCFixtureMode;
 class QLCFixtureDef;
+class GDTFShareClient;
 class TreeModel;
 class Doc;
 
@@ -47,6 +49,14 @@ class FixtureBrowser final : public QObject
     Q_PROPERTY(QVariant modeChannelList READ modeChannelList NOTIFY modeChannelListChanged)
 
     Q_PROPERTY(QString fixtureName READ fixtureName WRITE setFixtureName NOTIFY fixtureNameChanged)
+
+    // GDTF-share properties
+    Q_PROPERTY(bool gdtfShareSource READ gdtfShareSource WRITE setGdtfShareSource NOTIFY gdtfShareSourceChanged)
+    Q_PROPERTY(bool gdtfShareLoggedIn READ gdtfShareLoggedIn NOTIFY gdtfShareLoggedInChanged)
+    Q_PROPERTY(bool gdtfShareLoading READ gdtfShareLoading NOTIFY gdtfShareLoadingChanged)
+    Q_PROPERTY(QString gdtfShareError READ gdtfShareError NOTIFY gdtfShareErrorChanged)
+    Q_PROPERTY(QVariantList gdtfShareFixtures READ gdtfShareFixtures NOTIFY gdtfShareFixturesChanged)
+    Q_PROPERTY(QString gdtfShareFilter READ gdtfShareFilter WRITE setGdtfShareFilter NOTIFY gdtfShareFilterChanged)
 
 public:
     FixtureBrowser(QQuickView *view, Doc *doc, QObject *parent = 0);
@@ -98,6 +108,27 @@ public:
 
     QVariant searchTreeModel() const;
 
+    // -----------------------------------------------------------------------
+    // GDTF-share
+    // -----------------------------------------------------------------------
+
+    bool gdtfShareSource() const { return m_gdtfShareSource; }
+    void setGdtfShareSource(bool source);
+
+    bool gdtfShareLoggedIn() const { return m_gdtfShareLoggedIn; }
+    bool gdtfShareLoading() const { return m_gdtfShareLoading; }
+    QString gdtfShareError() const { return m_gdtfShareError; }
+    QVariantList gdtfShareFixtures() const { return m_gdtfShareFiltered; }
+
+    QString gdtfShareFilter() const { return m_gdtfShareFilter; }
+    void setGdtfShareFilter(const QString &filter);
+
+    Q_INVOKABLE void gdtfShareLogin(const QString &user, const QString &pass);
+    Q_INVOKABLE void gdtfShareFetchList();
+    Q_INVOKABLE void gdtfShareDownload(const QString &rid,
+                                        const QString &manufacturer,
+                                        const QString &model);
+
 signals:
     void manufacturerIndexChanged(int manufacturerIndex);
     void selectedManufacturerChanged(QString selectedManufacturer);
@@ -116,9 +147,18 @@ signals:
 
     void fixtureNameChanged(QString fixtureName);
 
+    // GDTF-share signals
+    void gdtfShareSourceChanged();
+    void gdtfShareLoggedInChanged();
+    void gdtfShareLoadingChanged();
+    void gdtfShareErrorChanged();
+    void gdtfShareFixturesChanged();
+    void gdtfShareFilterChanged();
+
 private:
     void updateSearchTree();
     QLCFixtureDef *fixtureDefinition() const;
+    void applyGdtfShareFilter();
 
 private:
     Doc *m_doc;
@@ -145,6 +185,16 @@ private:
     TreeModel *m_searchTree;
     /** A string holding the search keyword */
     QString m_searchFilter;
+
+    // GDTF-share state
+    GDTFShareClient *m_gdtfShareClient;
+    bool m_gdtfShareSource = false;       ///< false=local, true=gdtf-share
+    bool m_gdtfShareLoggedIn = false;
+    bool m_gdtfShareLoading = false;
+    QString m_gdtfShareError;
+    QVariantList m_gdtfShareAll;          ///< full fixture list from API
+    QVariantList m_gdtfShareFiltered;     ///< filtered by search string
+    QString m_gdtfShareFilter;
 };
 
 #endif // FIXTUREBROWSER_H

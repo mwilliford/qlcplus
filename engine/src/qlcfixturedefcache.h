@@ -190,6 +190,10 @@ public:
     /** Load a GDTF fixture definition from the file specified in $path */
     bool loadGDTF(const QString& path);
 
+    /** Scan a directory for cached .gdtf files and load each one.
+     *  Used at startup to pick up fixtures downloaded from gdtf-share.com. */
+    int loadGDTFCache(const QString& cacheDir);
+
     /**
      * Get GDTF geometry data for a fixture definition (if loaded from .gdtf).
      * Returns nullptr for QXF/D4 fixtures.

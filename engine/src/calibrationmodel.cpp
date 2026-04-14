@@ -21,6 +21,8 @@
 #include <cmath>
 
 #include "calibrationmodel.h"
+#include "gdtfgeometrydata.h"
+#include "gdtfkinematics.h"
 #include "spatialmodel.h"
 #include "doc.h"
 #include "fixture.h"
@@ -278,60 +280,79 @@ void CalibrationModel::resetTolerances(const QString &fixture)
 }
 
 // ---------------------------------------------------------------------------
-// Build fixture spec from QLC+ fixture data
+// Build KinematicChain from QLC+ fixture data
 // ---------------------------------------------------------------------------
 
-bool CalibrationModel::buildFixtureSpec(quint32 fixtureId,
-                                         std::vector<ChannelSpec> &channels,
-                                         KinematicsType &kinType) const
+std::unique_ptr<rigmath::KinematicChain>
+CalibrationModel::buildKinematicChain(quint32 fixtureId) const
 {
     if (!m_doc)
-        return false;
+        return nullptr;
 
     Fixture *fixture = m_doc->fixture(fixtureId);
     if (!fixture)
-        return false;
+        return nullptr;
 
     const QLCFixtureMode *mode = fixture->fixtureMode();
     if (!mode)
-        return false;
+        return nullptr;
 
-    const QLCPhysical phy = mode->physical();
-    double panRange = phy.focusPanMax();
-    double tiltRange = phy.focusTiltMax();
+    // Get GDTF geometry data (real for GDTF fixtures, synthesize for QXF)
+    const QLCFixtureDef *def = fixture->fixtureDef();
+    const GDTFGeometryData *geoData = def ? def->gdtfGeometryData() : nullptr;
 
-    // Detect kinematics type from channel groups
-    bool hasPan = false, hasTilt = false;
-    for (int i = 0; i < (int)mode->channels().size(); i++)
+    GDTFGeometryData synthesized;
+    GDTFDmxModeInfo modeInfo;
+
+    if (geoData && !geoData->dmxModes.isEmpty())
     {
-        const QLCChannel *ch = mode->channel(i);
-        if (!ch)
-            continue;
-        if (ch->group() == QLCChannel::Pan && ch->controlByte() == QLCChannel::MSB)
-            hasPan = true;
-        if (ch->group() == QLCChannel::Tilt && ch->controlByte() == QLCChannel::MSB)
-            hasTilt = true;
-    }
-
-    channels.clear();
-
-    if (hasPan && hasTilt)
-    {
-        kinType = KinematicsType::MovingHead;
-        channels.push_back({"pan", panRange > 0 ? panRange : 540.0});
-        channels.push_back({"tilt", tiltRange > 0 ? tiltRange : 270.0});
-    }
-    else if (hasPan)
-    {
-        kinType = KinematicsType::PanOnly;
-        channels.push_back({"pan", panRange > 0 ? panRange : 540.0});
+        // GDTF fixture — find matching mode
+        QString modeName = mode->name();
+        for (const auto &mi : geoData->dmxModes)
+        {
+            if (mi.modeName == modeName)
+            {
+                modeInfo = mi;
+                break;
+            }
+        }
+        if (modeInfo.channels.isEmpty() && !geoData->dmxModes.isEmpty())
+            modeInfo = geoData->dmxModes.first();
     }
     else
     {
-        kinType = KinematicsType::Fixed;
+        // QXF fixture — synthesize approximate GDTF data
+        const QLCPhysical phy = mode->physical();
+        double panRange  = phy.focusPanMax()  > 0 ? phy.focusPanMax()  : 540.0;
+        double tiltRange = phy.focusTiltMax() > 0 ? phy.focusTiltMax() : 270.0;
+        bool isMirror = phy.focusType().compare(
+            QStringLiteral("Mirror"), Qt::CaseInsensitive) == 0;
+
+        bool hasPan = false, hasTilt = false;
+        quint32 panMSB = QLCChannel::invalid(), panLSB = QLCChannel::invalid();
+        quint32 tiltMSB = QLCChannel::invalid(), tiltLSB = QLCChannel::invalid();
+        panMSB  = mode->channelNumber(QLCChannel::Pan,  QLCChannel::MSB);
+        panLSB  = mode->channelNumber(QLCChannel::Pan,  QLCChannel::LSB);
+        tiltMSB = mode->channelNumber(QLCChannel::Tilt, QLCChannel::MSB);
+        tiltLSB = mode->channelNumber(QLCChannel::Tilt, QLCChannel::LSB);
+        hasPan  = (panMSB != QLCChannel::invalid());
+        hasTilt = (tiltMSB != QLCChannel::invalid());
+
+        synthesizeGDTFFromQXF(
+            hasPan, hasTilt, panRange, tiltRange, isMirror,
+            panMSB != QLCChannel::invalid() ? static_cast<int>(panMSB) : -1,
+            panLSB != QLCChannel::invalid() ? static_cast<int>(panLSB) : -1,
+            tiltMSB != QLCChannel::invalid() ? static_cast<int>(tiltMSB) : -1,
+            tiltLSB != QLCChannel::invalid() ? static_cast<int>(tiltLSB) : -1,
+            phy.lensDegreesMin(), phy.lensDegreesMax(),
+            synthesized, modeInfo);
+        geoData = &synthesized;
     }
 
-    return true;
+    GDTFKinematicsResult result = buildGDTFKinematics(*geoData, modeInfo);
+    if (result.chain)
+        return std::make_unique<rigmath::KinematicChain>(*result.chain);
+    return nullptr;
 }
 
 // ---------------------------------------------------------------------------
@@ -390,23 +411,23 @@ bool CalibrationModel::solve()
         return false;
     }
 
-    // Register fixtures with the solver
+    // Build KinematicChains and register fixtures with the solver.
+    // Chains must outlive the CalibrationProblem (solver holds raw pointers).
+    std::vector<std::unique_ptr<rigmath::KinematicChain>> chains;
     for (const QString &fid : referencedFixtures)
     {
         quint32 qfid = fid.toUInt();
-        std::vector<ChannelSpec> channels;
-        KinematicsType kinType;
-
-        if (!buildFixtureSpec(qfid, channels, kinType))
+        auto chain = buildKinematicChain(qfid);
+        if (!chain)
         {
-            qWarning() << "[CalibrationModel] Cannot build spec for fixture" << fid;
+            qWarning() << "[CalibrationModel] Cannot build chain for fixture" << fid;
             continue;
         }
 
-        // Initial pose from SpatialModel's committed transform (or identity)
         rigmath::RigidTransform initialPose = m_spatialModel->renderTransform(fid);
         std::string sid = fid.toStdString();
-        prob.addFixture(sid, initialPose, channels, kinType);
+        prob.addFixture(sid, initialPose, chain.get());
+        chains.push_back(std::move(chain));
     }
 
     // Auto-add layout priors (soft constraints from committed positions + tolerances)
@@ -482,13 +503,10 @@ bool CalibrationModel::solve()
             }
             else if constexpr (std::is_same_v<T, CrossingObs>)
             {
-                // CrossingObservation has no Sigma variant in v0.8.0;
-                // pass certainty through legacy path (v0.8.0 treats it as inv_sigma).
                 std::vector<std::string> fids;
                 for (const auto &f : o.fixtures) fids.push_back(f.toStdString());
-                double legacy_certainty = (o.sigma > 0) ? 1.0 / o.sigma : 0.01;
-                prob.addCrossingObservation(fids, o.dmxValues,
-                                            o.axis, o.value, legacy_certainty);
+                prob.addCrossingObservationSigma(fids, o.dmxValues,
+                                                  o.axis, o.value, o.sigma);
             }
             else if constexpr (std::is_same_v<T, PositionObs>)
             {
@@ -504,14 +522,12 @@ bool CalibrationModel::solve()
             }
             else if constexpr (std::is_same_v<T, BeamDirectionObs>)
             {
-                // Legacy path — no Sigma variant in v0.8.0 for beam direction.
-                // BeamDirection sigma is degrees; legacy certainty = 1/sigma_rad.
+                // BeamDirection sigma is degrees; solver wants radians.
                 double sigma_rad = o.sigma * (M_PI / 180.0);
-                double legacy_certainty = (sigma_rad > 0) ? 1.0 / sigma_rad : 0.01;
-                prob.addBeamDirectionObservation(
+                prob.addBeamDirectionObservationSigma(
                     o.fixture.toStdString(), o.dmxNormalized,
                     o.elevationDeg, o.azimuthDeg,
-                    o.hasElevation, o.hasAzimuth, legacy_certainty);
+                    o.hasElevation, o.hasAzimuth, sigma_rad);
             }
             else if constexpr (std::is_same_v<T, DistanceObs>)
             {
