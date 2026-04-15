@@ -364,7 +364,10 @@ LoadedMesh GltfLoader::loadFromMemory(const unsigned char *data, size_t length,
         return result;
     }
 
-    // Scale to GDTF target dimensions if provided
+    // Scale to GDTF target dimensions if provided.
+    // This handles both unit correction and axis remapping — some GDTF
+    // models are authored with a different axis convention than L→X, W→Y,
+    // H→Z, and the dimension scaling implicitly reorients the mesh.
     if (targetLength > 0.001f && targetWidth > 0.001f && targetHeight > 0.001f)
     {
         // Compute bounding box
