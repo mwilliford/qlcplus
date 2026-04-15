@@ -127,8 +127,8 @@ private:
     bgfx::VertexBufferHandle m_sphereVbh = BGFX_INVALID_HANDLE;
     bgfx::IndexBufferHandle m_sphereIbh = BGFX_INVALID_HANDLE;
 
-    // GDTF primitive mesh generator
-    PrimitiveGen m_primitiveGen;
+    // Fallback cube mesh for fixtures without a GDTF scene graph
+    LoadedMesh m_fallbackCube;
 
     // Per-fixture local AABBs (indexed same as m_fixtures)
     std::vector<AABB> m_localAABBs;

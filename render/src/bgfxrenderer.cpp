@@ -161,8 +161,8 @@ bool BgfxRenderer::init(void* nativeWindowHandle, uint32_t width, uint32_t heigh
     // Enable debug text for initial verification
     bgfx::setDebug(BGFX_DEBUG_TEXT);
 
-    // Initialize GDTF primitive mesh generator
-    m_primitiveGen.init();
+    // Create fallback cube for fixtures without a GDTF scene graph
+    m_fallbackCube = PrimitiveGen::generate(1, 0.2f, 0.2f, 0.2f); // PrimitiveCube
 
     m_initialized = true;
     return true;
@@ -174,7 +174,7 @@ void BgfxRenderer::shutdown()
         return;
 
     // (meshLoader removed — all fixtures render through GDTF scene graph path)
-    m_primitiveGen.shutdown();
+    m_fallbackCube.destroy();
     destroyCubeMesh(m_cubeVbh, m_cubeIbh);
     destroySphereMesh(m_sphereVbh, m_sphereIbh);
 
@@ -508,12 +508,11 @@ void BgfxRenderer::renderFixtures()
         {
             // Fallback: render a cube for fixtures without a scene graph
             // (e.g., missing fixture definitions)
-            const LoadedMesh *prim = m_primitiveGen.getPrimitive(1); // PrimitiveCube
-            if (prim && prim->isValid())
+            if (m_fallbackCube.isValid())
             {
                 bgfx::setTransform(fixture.transform);
-                bgfx::setVertexBuffer(0, prim->vbh);
-                bgfx::setIndexBuffer(prim->ibh);
+                bgfx::setVertexBuffer(0, m_fallbackCube.vbh);
+                bgfx::setIndexBuffer(m_fallbackCube.ibh);
                 bgfx::setUniform(m_u_color, color);
                 uint64_t state = BGFX_STATE_WRITE_RGB | BGFX_STATE_WRITE_A
                                  | BGFX_STATE_WRITE_Z | BGFX_STATE_DEPTH_TEST_LESS;
