@@ -1120,10 +1120,11 @@ void SpatialView::rebuildBeamCones()
 static void buildSceneNode(const GDTFGeometryNode &geoNode,
                            qlcrender::SceneNode &sceneNode,
                            const QMap<QString, QByteArray> &meshData,
-                           qlcrender::PrimitiveGen &primGen,
                            std::unordered_map<std::string, qlcrender::LoadedMesh> &meshCache,
                            const std::vector<AxisDofTag> &axisTags)
 {
+    // localTransform = GDTF Position matrix ONLY — never modified after this.
+    // All mesh sizing is baked into vertex data at load time.
     for (int i = 0; i < 16; i++)
         sceneNode.localTransform[i] = geoNode.localTransform[i];
 
@@ -1150,9 +1151,16 @@ static void buildSceneNode(const GDTFGeometryNode &geoNode,
         sceneNode.beamAngle = geoNode.beamAngle;
     }
 
+    // Load mesh from embedded GDTF model files (3DS or glTF).
+    // Both loaders scale vertices to GDTF dimensions at load time.
+    // Cache key includes dimensions to avoid collisions across fixtures.
     if (!geoNode.meshRef.isEmpty() && meshData.contains(geoNode.meshRef))
     {
-        std::string key = geoNode.meshRef.toStdString();
+        char dimSuffix[64] = "";
+        snprintf(dimSuffix, sizeof(dimSuffix), ":%.4f:%.4f:%.4f",
+                 geoNode.modelLength, geoNode.modelWidth, geoNode.modelHeight);
+        std::string key = geoNode.meshRef.toStdString() + dimSuffix;
+
         auto it = meshCache.find(key);
         if (it == meshCache.end())
         {
@@ -1169,7 +1177,8 @@ static void buildSceneNode(const GDTFGeometryNode &geoNode,
             {
                 mesh = qlcrender::GltfLoader::loadFromMemory(
                     reinterpret_cast<const unsigned char *>(rawData.constData()),
-                    rawData.size(), key);
+                    rawData.size(), key,
+                    geoNode.modelLength, geoNode.modelWidth, geoNode.modelHeight);
             }
             it = meshCache.emplace(key, mesh).first;
         }
@@ -1177,55 +1186,32 @@ static void buildSceneNode(const GDTFGeometryNode &geoNode,
             sceneNode.mesh = &it->second;
     }
 
+    // Fallback: generate primitive mesh at GDTF dimensions.
+    // Vertices are pre-sized — no localTransform modification needed.
     if (!sceneNode.mesh && geoNode.primitiveType > 0)
     {
-        sceneNode.mesh = primGen.getPrimitive(geoNode.primitiveType);
+        char primKey[128];
+        snprintf(primKey, sizeof(primKey), "__prim:%d:%.4f:%.4f:%.4f",
+                 geoNode.primitiveType,
+                 geoNode.modelLength, geoNode.modelWidth, geoNode.modelHeight);
+        std::string key(primKey);
 
-        // Scale primitive to GDTF model dimensions (Length→X, Width→Y, Height→Z).
-        // Each PrimitiveGen mesh has its own default size; compute the ratio
-        // to scale it to the GDTF-specified dimensions.
-        if (sceneNode.mesh && geoNode.modelLength > 0.001f
-            && geoNode.modelWidth > 0.001f && geoNode.modelHeight > 0.001f)
+        auto it = meshCache.find(key);
+        if (it == meshCache.end())
         {
-            // Get the primitive's default extent from its built-in size
-            static const std::unordered_map<int, std::array<float, 3>> primExtents = {
-                {PrimitiveCube,           {0.2f,  0.2f,  0.2f}},
-                {PrimitiveCylinder,       {0.2f,  0.2f,  0.3f}},  // diameter × diameter × height
-                {PrimitiveSphere,         {0.2f,  0.2f,  0.2f}},
-                {PrimitiveBase,           {0.3f,  0.05f, 0.3f}},
-                {PrimitiveYoke,           {0.25f, 0.25f, 0.08f}},
-                {PrimitiveHead,           {0.18f, 0.12f, 0.2f}},
-                {PrimitiveScanner,        {0.3f,  0.1f,  0.15f}},
-                {PrimitiveConventional,   {0.3f,  0.3f,  0.35f}},
-                {PrimitivePigtail,        {0.02f, 0.02f, 0.1f}},
-                {PrimitiveBase1_1,        {0.3f,  0.05f, 0.3f}},
-                {PrimitiveScanner1_1,     {0.3f,  0.1f,  0.15f}},
-                {PrimitiveConventional1_1,{0.3f,  0.3f,  0.35f}},
-            };
-            auto it2 = primExtents.find(geoNode.primitiveType);
-            if (it2 != primExtents.end())
-            {
-                float sx = geoNode.modelLength / it2->second[0];
-                float sy = geoNode.modelWidth  / it2->second[1];
-                float sz = geoNode.modelHeight / it2->second[2];
-                // Bake scale into localTransform columns (column-major)
-                sceneNode.localTransform[0]  *= sx;
-                sceneNode.localTransform[1]  *= sx;
-                sceneNode.localTransform[2]  *= sx;
-                sceneNode.localTransform[4]  *= sy;
-                sceneNode.localTransform[5]  *= sy;
-                sceneNode.localTransform[6]  *= sy;
-                sceneNode.localTransform[8]  *= sz;
-                sceneNode.localTransform[9]  *= sz;
-                sceneNode.localTransform[10] *= sz;
-            }
+            qlcrender::LoadedMesh mesh = qlcrender::PrimitiveGen::generate(
+                geoNode.primitiveType,
+                geoNode.modelLength, geoNode.modelWidth, geoNode.modelHeight);
+            it = meshCache.emplace(key, mesh).first;
         }
+        if (it->second.isValid())
+            sceneNode.mesh = &it->second;
     }
 
     for (const auto &childGeo : geoNode.children)
     {
         sceneNode.children.emplace_back();
-        buildSceneNode(childGeo, sceneNode.children.back(), meshData, primGen, meshCache,
+        buildSceneNode(childGeo, sceneNode.children.back(), meshData, meshCache,
                        axisTags);
     }
 }
@@ -1244,21 +1230,15 @@ const qlcrender::FixtureSceneGraph *SpatialView::getOrBuildSceneGraph(
 
     qlcrender::FixtureSceneGraph graph;
 
-    static qlcrender::PrimitiveGen s_primGen;
-    static bool s_primInit = false;
-    if (!s_primInit)
-    {
-        s_primGen.init();
-        s_primInit = true;
-    }
-
-    static std::unordered_map<std::string, qlcrender::LoadedMesh> s_gltfMeshCache;
+    // Unified mesh cache: stores 3DS, glTF, and primitive meshes.
+    // Keys include dimensions to avoid collisions.
+    static std::unordered_map<std::string, qlcrender::LoadedMesh> s_meshCache;
 
     // Use the mode-specific root geometry (handles multi-root GDTF fixtures
     // where different modes use different geometry trees).
     const GDTFGeometryNode &geoRoot = geoData->rootForMode(modeName);
     buildSceneNode(geoRoot, graph.root, geoData->meshData,
-                   s_primGen, s_gltfMeshCache, axisTags);
+                   s_meshCache, axisTags);
     graph.valid = true;
 
     auto result = m_sceneGraphCache.emplace(key, std::move(graph));

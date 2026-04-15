@@ -35,10 +35,15 @@ class GltfLoader
 public:
     /**
      * Load a glb binary from memory into a LoadedMesh.
+     * Applies glTF node transforms (scale/rotation/translation) to vertices.
+     * If target dimensions are provided (> 0), scales the result to fit.
      * Returns an invalid mesh on failure.
      */
     static LoadedMesh loadFromMemory(const unsigned char *data, size_t length,
-                                     const std::string &debugName = "");
+                                     const std::string &debugName = "",
+                                     float targetLength = 0.0f,
+                                     float targetWidth = 0.0f,
+                                     float targetHeight = 0.0f);
 };
 
 } // namespace qlcrender
