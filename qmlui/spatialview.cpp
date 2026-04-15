@@ -1128,19 +1128,19 @@ static void buildSceneNode(const GDTFGeometryNode &geoNode,
     for (int i = 0; i < 16; i++)
         sceneNode.localTransform[i] = geoNode.localTransform[i];
 
-    // Tag GeometryAxis nodes with DOF info from kinematics
-    if (geoNode.type == GeometryAxis)
+    // Tag articulated nodes with DOF info from kinematics.
+    // Matches both GeometryAxis nodes and GeometryGeneral nodes that
+    // have Pan/Tilt channels (some GDTF authors use <Geometry> instead
+    // of <Axis> for moving parts).
+    for (const auto &tag : axisTags)
     {
-        for (const auto &tag : axisTags)
+        if (tag.geometryName == geoNode.name)
         {
-            if (tag.geometryName == geoNode.name)
-            {
-                sceneNode.dofIndex = tag.dofIndex;
-                sceneNode.dofAxis[0] = tag.axis[0];
-                sceneNode.dofAxis[1] = tag.axis[1];
-                sceneNode.dofAxis[2] = tag.axis[2];
-                break;
-            }
+            sceneNode.dofIndex = tag.dofIndex;
+            sceneNode.dofAxis[0] = tag.axis[0];
+            sceneNode.dofAxis[1] = tag.axis[1];
+            sceneNode.dofAxis[2] = tag.axis[2];
+            break;
         }
     }
 

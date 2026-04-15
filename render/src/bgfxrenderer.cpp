@@ -535,30 +535,25 @@ void BgfxRenderer::renderSceneGraph(const SceneNode &node,
     bx::mtxMul(worldTransform, node.localTransform, parentTransform);
 
     // If this is a DOF joint node, apply the articulation rotation.
-    // In GDTF, a GeometryAxis node's own model IS the moving part (e.g.,
-    // the Head mesh tilts). Both the node's mesh and its children get
-    // the DOF rotation.
+    //
+    // The multiplication chain in bgfx (row-vector convention) is:
+    //   v_world = v_local * articulatedTransform
+    //           = v_local * dofRot * localTransform * parentTransform
+    //
+    // dofRot is applied BEFORE localTransform, so it operates in the
+    // node's own local frame. The DOF axis must be in local coordinates
+    // (not world-transformed). The localTransform (GDTF Position matrix)
+    // then maps the rotated result into the parent frame, and the parent
+    // chain propagates it to world space. This ensures child nodes
+    // (e.g., head under yoke) rotate WITH their parent's DOF.
     const float *renderTransform = worldTransform;
     float articulatedTransform[16];
     if (node.dofIndex >= 0 && dofAngles && node.dofIndex < dofCount)
     {
-        // Transform local DOF axis to world space via worldTransform's 3x3 columns
-        float wax = node.dofAxis[0] * worldTransform[0]
-                   + node.dofAxis[1] * worldTransform[4]
-                   + node.dofAxis[2] * worldTransform[8];
-        float way = node.dofAxis[0] * worldTransform[1]
-                   + node.dofAxis[1] * worldTransform[5]
-                   + node.dofAxis[2] * worldTransform[9];
-        float waz = node.dofAxis[0] * worldTransform[2]
-                   + node.dofAxis[1] * worldTransform[6]
-                   + node.dofAxis[2] * worldTransform[10];
-
-        // Normalize (world transform may include scale from parent chain)
-        float len = std::sqrt(wax*wax + way*way + waz*waz);
-        if (len > 1e-6f) { wax /= len; way /= len; waz /= len; }
-
+        // Build rotation around the LOCAL DOF axis (not world-transformed)
         float dofRot[16];
-        mtxRotateAroundAxis(dofRot, wax, way, waz,
+        mtxRotateAroundAxis(dofRot,
+                            node.dofAxis[0], node.dofAxis[1], node.dofAxis[2],
                             bx::toRad(dofAngles[node.dofIndex]));
         bx::mtxMul(articulatedTransform, dofRot, worldTransform);
         renderTransform = articulatedTransform;
