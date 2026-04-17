@@ -79,6 +79,8 @@
 - [x] End-to-end visual test verified through MCP: sphere renders, selection highlights, `[N]` assignment badge, beam visibly swings to target, DMX channels written
 
 ### Phase 2: Focus panel UI + mouse interaction — TODO
+**Start here**: `docs/handoff-sv4-phase2.md` — self-contained briefing with file-level plan, patterns to copy, and gotchas.
+
 - [ ] QML Focus panel (mode === 2) — list, create, rename, delete, fixture assignment UI
 - [ ] Click-to-select in Spatial View (wire `hitTestFocusPoint` from BgfxRenderer)
 - [ ] Drag selected focus point to move (Focus mode)
