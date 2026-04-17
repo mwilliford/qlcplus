@@ -143,6 +143,22 @@ public:
         m_spatialView->setSelectedFocusPointCallback([this]() {
             return m_controller->selectedFocusPointId();
         });
+        m_spatialView->setSelectFocusPointCallback([this](const QString &id) {
+            m_controller->setSelectedFocusPointId(id);
+        });
+        m_spatialView->setMoveFocusPointCallback([this](const QString &id, double x, double y, double z) {
+            m_controller->moveFocusPoint(id, x, y, z);
+        });
+        m_spatialView->setCreateFocusPointCallback([this](double x, double y, double z) {
+            // Spawn at the clicked floor point. If a focus point is currently
+            // selected, inherit its z so repeated shift-clicks stay on-plane.
+            double zAbove = z;
+            SpatialModel *sm = m_doc->spatialModel();
+            const auto *selFp = sm->focusPoint(m_controller->selectedFocusPointId());
+            if (selFp) zAbove = selFp->position[2];
+            QString newId = m_controller->createFocusPoint(x, y, zAbove);
+            m_controller->setSelectedFocusPointId(newId);
+        });
 
         // Selected focus point changed → re-send render data so the highlight updates.
         connect(m_controller, &SpatialController::selectedFocusPointChanged, this, [this]() {

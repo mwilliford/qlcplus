@@ -235,17 +235,27 @@ void SpatialView::mousePressEvent(QMouseEvent *event)
         int gizmoMode = m_gizmoModeCallback ? m_gizmoModeCallback() : 0;
         auto *bgfxR = dynamic_cast<qlcrender::BgfxRenderer *>(m_renderer.get());
 
-        // Focus mode: left-click either selects a fixture (if the click hits
-        // a fixture body) or commits an aim point on the floor (if it misses
-        // all fixtures). Checked BEFORE gizmo hit-tests so camera orbit
-        // doesn't fight the aim.
+        // Focus mode: pick order is focus-point → fixture → empty space
+        // (Shift=create, plain=ephemeral aim). Checked BEFORE gizmo hit-tests
+        // so camera orbit doesn't fight interaction.
         if (m_focusModeCallback && m_focusModeCallback() && bgfxR)
         {
-            // Hit-test fixture AABBs first. If we hit one, fall through to
-            // the normal click-release path so mouseReleaseEvent's existing
-            // selection logic can handle it (same as Layout mode). Don't set
-            // m_orbiting — stop here so dragging on a fixture is a no-op
-            // rather than rotating the camera.
+            // 1. Focus point hit-test — wins over fixtures so the user can
+            //    drag a focus point that sits in front of one.
+            std::string fpHit = m_renderer->hitTestFocusPoint(mx, my, vw, vh);
+            if (!fpHit.empty())
+            {
+                QString fpId = QString::fromStdString(fpHit);
+                if (m_selectFocusPointCallback)
+                    m_selectFocusPointCallback(fpId);
+                m_focusPointDragging = true;
+                m_draggedFocusPointId = fpId;
+                m_orbiting = false;
+                return;
+            }
+
+            // 2. Fixture hit-test — fall through to release-path selection
+            //    so behavior matches Layout mode (click vs drag detection).
             int32_t hitId = m_renderer->hitTest(mx, my, vw, vh);
             if (hitId >= 0)
             {
@@ -253,8 +263,8 @@ void SpatialView::mousePressEvent(QMouseEvent *event)
                 return;
             }
 
-            // Missed all fixtures — aim click. Commit immediately and enter
-            // drag mode so mouseMoveEvent sweeps the aim.
+            // 3. Missed everything — need the floor-plane intersection for
+            //    either Shift+create or ephemeral aim.
             float view[16], proj[16];
             bgfxR->camera().viewMatrix(view);
             float aspect = float(vw) / float(vh);
@@ -264,6 +274,12 @@ void SpatialView::mousePressEvent(QMouseEvent *event)
             float hit[3];
             if (qlcrender::rayIntersectsPlaneZ(ray, 0.0f, hit))
             {
+                if ((event->modifiers() & Qt::ShiftModifier) && m_createFocusPointCallback)
+                {
+                    m_createFocusPointCallback(double(hit[0]), double(hit[1]), double(hit[2]));
+                    m_orbiting = false;
+                    return;
+                }
                 m_focusDragging = true;
                 m_orbiting = false;
                 if (m_focusAimCallback)
@@ -351,6 +367,41 @@ void SpatialView::mouseMoveEvent(QMouseEvent *event)
 {
     QPoint delta = event->pos() - m_lastMousePos;
     m_lastMousePos = event->pos();
+
+    if (m_focusPointDragging && m_bgfxReady && !m_draggedFocusPointId.isEmpty())
+    {
+        auto *bgfxR = dynamic_cast<qlcrender::BgfxRenderer *>(m_renderer.get());
+        if (!bgfxR)
+            return;
+
+        float mx, my;
+        uint32_t vw, vh;
+        mouseToViewport(event->pos(), mx, my, vw, vh);
+
+        float view[16], proj[16];
+        bgfxR->camera().viewMatrix(view);
+        float aspect = float(vw) / float(vh);
+        bgfxR->camera().projMatrix(proj, aspect, true);
+        qlcrender::Ray ray = qlcrender::screenToRay(mx, my, vw, vh, view, proj);
+
+        // Drag on the focus point's current z-plane rather than the floor so
+        // moving a point at z=1.5m doesn't snap it to the floor on the first
+        // mousemove. SpatialModel is the source of truth for the point's z.
+        SpatialModel *sm = m_doc->spatialModel();
+        const auto *fp = sm->focusPoint(m_draggedFocusPointId);
+        double zPlane = fp ? fp->position[2] : 0.0;
+
+        float hit[3];
+        if (qlcrender::rayIntersectsPlaneZ(ray, float(zPlane), hit))
+        {
+            double nx = double(hit[0]), ny = double(hit[1]), nz = double(hit[2]);
+            if (m_snapCallback)
+                m_snapCallback(nx, ny, nz);
+            if (m_moveFocusPointCallback)
+                m_moveFocusPointCallback(m_draggedFocusPointId, nx, ny, nz);
+        }
+        return;
+    }
 
     if (m_focusDragging && m_bgfxReady)
     {
@@ -504,6 +555,13 @@ void SpatialView::mouseMoveEvent(QMouseEvent *event)
 
 void SpatialView::mouseReleaseEvent(QMouseEvent *event)
 {
+    if (event->button() == Qt::LeftButton && m_focusPointDragging)
+    {
+        m_focusPointDragging = false;
+        m_draggedFocusPointId.clear();
+        return;
+    }
+
     if (event->button() == Qt::LeftButton && m_focusDragging)
     {
         m_focusDragging = false;

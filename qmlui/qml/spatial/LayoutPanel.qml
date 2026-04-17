@@ -1164,6 +1164,285 @@ Rectangle
         } // end Calibrate mode ColumnLayout
         } // end ScrollView wrapping Calibrate
 
+        // ===============================================================
+        // FOCUS MODE (mode === 2)
+        // ===============================================================
+        ScrollView
+        {
+            id: focusScroll
+            visible: spatialController.mode === 2
+            Layout.fillWidth: true
+            Layout.fillHeight: true
+            clip: true
+            contentWidth: availableWidth
+            ScrollBar.horizontal.policy: ScrollBar.AlwaysOff
+            ScrollBar.vertical.policy: ScrollBar.AsNeeded
+
+        ColumnLayout
+        {
+            id: focusPanel
+            width: focusScroll.availableWidth
+            spacing: 6
+
+            // --- Header row ---
+            RowLayout
+            {
+                Layout.fillWidth: true
+                Text { text: "Focus Points"; color: "#ccc"; font.pixelSize: 13; font.bold: true
+                       Layout.fillWidth: true }
+                Text {
+                    text: spatialController.focusPoints.length
+                    color: "#888"; font.pixelSize: 11
+                }
+            }
+
+            // --- Add button ---
+            // Shift+click in the 3D view also creates a point at the clicked
+            // position; this button drops one at stage center, 1.5m up.
+            Button
+            {
+                text: "+ Add Focus Point"
+                implicitHeight: 28
+                Layout.fillWidth: true
+                onClicked: {
+                    var newId = spatialController.createFocusPoint(0, 0, 1.5)
+                    spatialController.setSelectedFocusPointId(newId)
+                }
+                ToolTip.visible: hovered; ToolTip.delay: 500
+                ToolTip.text: "Drop a focus point at stage center (or Shift+click in 3D view)"
+                background: Rectangle { color: parent.hovered ? "#4a9eff" : "#3a7fcc"; radius: 3 }
+                contentItem: Text { text: parent.text; color: "#fff"; font.pixelSize: 11; font.bold: true
+                    horizontalAlignment: Text.AlignHCenter; verticalAlignment: Text.AlignVCenter }
+            }
+
+            // --- Assign selected fixture(s) ---
+            Button
+            {
+                text: {
+                    var n = spatialController.selectionCount
+                    if (n === 0) return "Assign fixtures (select some first)"
+                    if (n === 1) return "Assign selected fixture"
+                    return "Assign " + n + " fixtures"
+                }
+                implicitHeight: 26
+                Layout.fillWidth: true
+                enabled: spatialController.hasSelection && spatialController.selectedFocusPointId !== ""
+                onClicked: {
+                    var fpId = spatialController.selectedFocusPointId
+                    if (fpId === "") return
+                    var ids = spatialController.selectedFixtureIds()
+                    for (var i = 0; i < ids.length; ++i)
+                        spatialController.assignFixtureToFocusPoint(fpId, ids[i])
+                }
+                ToolTip.visible: hovered; ToolTip.delay: 500
+                ToolTip.text: "Assign currently selected fixtures to the selected focus point"
+                background: Rectangle {
+                    color: parent.enabled ? (parent.hovered ? "#444" : "#333") : "#2a2a2a"
+                    radius: 3
+                }
+                contentItem: Text {
+                    text: parent.text
+                    color: parent.enabled ? "#ccc" : "#555"
+                    font.pixelSize: 10
+                    horizontalAlignment: Text.AlignHCenter; verticalAlignment: Text.AlignVCenter
+                }
+            }
+
+            // --- Separator ---
+            Rectangle { Layout.fillWidth: true; height: 1; color: "#444" }
+
+            // --- Empty state ---
+            Text
+            {
+                visible: spatialController.focusPoints.length === 0
+                Layout.fillWidth: true
+                horizontalAlignment: Text.AlignHCenter
+                text: "No focus points yet.\nClick + Add or Shift+click in the 3D view."
+                color: "#666"; font.pixelSize: 11
+                wrapMode: Text.Wrap
+                topPadding: 20
+                bottomPadding: 20
+            }
+
+            // --- List ---
+            Repeater
+            {
+                model: spatialController.focusPoints
+
+                delegate: Rectangle
+                {
+                    Layout.fillWidth: true
+                    implicitHeight: rowContent.implicitHeight + 12
+                    color: modelData.selected ? "#384050" : "#2e2e2e"
+                    border.color: modelData.selected ? "#4a9eff" : "#3a3a3a"
+                    border.width: 1
+                    radius: 4
+
+                    MouseArea
+                    {
+                        anchors.fill: parent
+                        onClicked: spatialController.setSelectedFocusPointId(modelData.id)
+                    }
+
+                    ColumnLayout
+                    {
+                        id: rowContent
+                        anchors.fill: parent
+                        anchors.margins: 6
+                        spacing: 4
+
+                        // Name row: dot indicator, editable name, assignment badge, buttons
+                        RowLayout
+                        {
+                            Layout.fillWidth: true
+                            spacing: 4
+
+                            // Selected indicator
+                            Rectangle {
+                                Layout.preferredWidth: 8; Layout.preferredHeight: 8
+                                radius: 4
+                                color: modelData.selected ? "#4a9eff" : "#555"
+                            }
+
+                            // Editable name — double-click to edit
+                            TextInput
+                            {
+                                id: nameInput
+                                Layout.fillWidth: true
+                                text: modelData.name
+                                color: "#e0e0e0"
+                                font.pixelSize: 12
+                                font.bold: modelData.selected
+                                readOnly: true
+                                selectByMouse: true
+                                clip: true
+
+                                MouseArea {
+                                    anchors.fill: parent
+                                    enabled: nameInput.readOnly
+                                    onDoubleClicked: {
+                                        nameInput.readOnly = false
+                                        nameInput.forceActiveFocus()
+                                        nameInput.selectAll()
+                                    }
+                                    onClicked: spatialController.setSelectedFocusPointId(modelData.id)
+                                }
+
+                                onEditingFinished: {
+                                    readOnly = true
+                                    if (text !== modelData.name && text.length > 0)
+                                        spatialController.renameFocusPoint(modelData.id, text)
+                                    else
+                                        text = modelData.name
+                                }
+                                Keys.onEscapePressed: {
+                                    text = modelData.name
+                                    readOnly = true
+                                    focus = false
+                                }
+                            }
+
+                            // Assignment badge
+                            Rectangle {
+                                visible: modelData.assignedCount > 0
+                                Layout.preferredWidth: 22
+                                Layout.preferredHeight: 18
+                                radius: 9
+                                color: "#444"
+                                Text {
+                                    anchors.centerIn: parent
+                                    text: "[" + modelData.assignedCount + "]"
+                                    color: "#ccc"; font.pixelSize: 9
+                                }
+                            }
+
+                            // Aim button — IK all assigned fixtures to the point
+                            Button
+                            {
+                                text: "\u25B6"  // ▶
+                                implicitWidth: 24; implicitHeight: 22
+                                enabled: modelData.assignedCount > 0
+                                onClicked: spatialController.aimAtFocusPoint(modelData.id)
+                                ToolTip.visible: hovered; ToolTip.delay: 500
+                                ToolTip.text: modelData.assignedCount > 0
+                                              ? "Aim assigned fixtures at this point"
+                                              : "Assign fixtures first"
+                                background: Rectangle {
+                                    color: parent.enabled ? (parent.hovered ? "#2ecc71" : "#27ae60") : "#333"
+                                    radius: 3
+                                }
+                                contentItem: Text {
+                                    text: parent.text
+                                    color: parent.enabled ? "#fff" : "#555"
+                                    font.pixelSize: 10
+                                    horizontalAlignment: Text.AlignHCenter
+                                    verticalAlignment: Text.AlignVCenter
+                                }
+                            }
+
+                            // Delete
+                            Button
+                            {
+                                text: "\u00d7"
+                                implicitWidth: 22; implicitHeight: 22
+                                onClicked: spatialController.deleteFocusPoint(modelData.id)
+                                background: Rectangle { color: parent.hovered ? "#a33" : "transparent"; radius: 3 }
+                                contentItem: Text { text: parent.text; color: "#c66"; font.pixelSize: 13
+                                    horizontalAlignment: Text.AlignHCenter; verticalAlignment: Text.AlignVCenter }
+                            }
+                        }
+
+                        // Position row: X/Y/Z in meters
+                        RowLayout
+                        {
+                            Layout.fillWidth: true
+                            spacing: 4
+
+                            Text { text: "X"; color: "#e74c3c"; font.pixelSize: 10; Layout.preferredWidth: 10 }
+                            CompactSpin {
+                                Layout.fillWidth: true
+                                from: -100000; to: 100000; stepSize: 10
+                                value: Math.round(modelData.x * 100)
+                                editable: true
+                                textFromValue: function(v) { return (v / 100.0).toFixed(2) }
+                                valueFromText: function(t) { return Math.round(parseFloat(t) * 100) }
+                                onValueModified: spatialController.moveFocusPoint(
+                                    modelData.id, value / 100.0, modelData.y, modelData.z)
+                            }
+
+                            Text { text: "Y"; color: "#2ecc71"; font.pixelSize: 10; Layout.preferredWidth: 10 }
+                            CompactSpin {
+                                Layout.fillWidth: true
+                                from: -100000; to: 100000; stepSize: 10
+                                value: Math.round(modelData.y * 100)
+                                editable: true
+                                textFromValue: function(v) { return (v / 100.0).toFixed(2) }
+                                valueFromText: function(t) { return Math.round(parseFloat(t) * 100) }
+                                onValueModified: spatialController.moveFocusPoint(
+                                    modelData.id, modelData.x, value / 100.0, modelData.z)
+                            }
+
+                            Text { text: "Z"; color: "#3498db"; font.pixelSize: 10; Layout.preferredWidth: 10 }
+                            CompactSpin {
+                                Layout.fillWidth: true
+                                from: -100000; to: 100000; stepSize: 10
+                                value: Math.round(modelData.z * 100)
+                                editable: true
+                                textFromValue: function(v) { return (v / 100.0).toFixed(2) }
+                                valueFromText: function(t) { return Math.round(parseFloat(t) * 100) }
+                                onValueModified: spatialController.moveFocusPoint(
+                                    modelData.id, modelData.x, modelData.y, value / 100.0)
+                            }
+                        }
+                    }
+                }
+            }
+
+            Item { Layout.fillHeight: true }  // spacer so list stays at top
+
+        } // end Focus mode ColumnLayout
+        } // end ScrollView wrapping Focus
+
         // (No spacer needed — ScrollViews above use Layout.fillHeight)
 
         // ===============================================================

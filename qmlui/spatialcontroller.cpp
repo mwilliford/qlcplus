@@ -22,6 +22,8 @@
 #include <rigmath/kinematic_chain.hpp>
 #include <rigmath/rigid_transform.hpp>
 
+#include <QHash>
+#include <QVariantMap>
 #include <cmath>
 
 // Helper: pack a RigidTransform into a QVariantList [x, y, z, rx, ry, rz]
@@ -107,6 +109,10 @@ SpatialController::SpatialController(Doc *doc, SpatialView *view, QObject *paren
         }
     });
 
+    // Any focus-point mutation (add/remove/update/assign) or a selection
+    // change refreshes the QML list. Coalesce both signals into one.
+    connect(sm, &SpatialModel::focusPointsChanged, this, &SpatialController::focusPointsChanged);
+    connect(this, &SpatialController::selectedFocusPointChanged, this, &SpatialController::focusPointsChanged);
 }
 
 void SpatialController::setSelectedFixtureId(int id)
@@ -474,6 +480,27 @@ void SpatialController::clearFocusAim()
 // Focus points (persistent named aim targets)
 // ---------------------------------------------------------------------------
 
+// Build a full-state payload for Add/Remove undo entries. Captures position,
+// name, and assignments so a deleted focus point can be fully restored.
+static QVariantMap focusPointToMap(const SpatialModel::FocusPoint &fp)
+{
+    QVariantMap m;
+    m["id"] = fp.id;
+    m["name"] = fp.name;
+    m["x"] = fp.position[0];
+    m["y"] = fp.position[1];
+    m["z"] = fp.position[2];
+    m["assigned"] = QVariant(fp.assignedFixtureIds);
+    return m;
+}
+
+// Small helper so the objID we hand to Tardis is stable per focus point —
+// keeps batching coalesced by id (drag-move of one point stays one undo step).
+static quint32 focusPointObjId(const QString &fpId)
+{
+    return static_cast<quint32>(qHash(fpId));
+}
+
 QString SpatialController::createFocusPoint(double wx, double wy, double wz,
                                              const QString &name)
 {
@@ -503,6 +530,13 @@ QString SpatialController::createFocusPoint(double wx, double wy, double wz,
     fp.position[2] = wz;
     sm->addFocusPoint(fp);
 
+    if (Tardis *tardis = Tardis::instance())
+    {
+        QVariantMap payload = focusPointToMap(fp);
+        tardis->enqueueAction(Tardis::SpatialFocusPointAdd, focusPointObjId(fp.id),
+                              QVariant(payload), QVariant(payload));
+    }
+
     return fp.id;
 }
 
@@ -511,11 +545,26 @@ void SpatialController::deleteFocusPoint(const QString &id)
     if (id.isEmpty())
         return;
     SpatialModel *sm = m_doc->spatialModel();
+
+    // Capture full state BEFORE removal so undo can restore it.
+    QVariantMap payload;
+    if (const auto *fp = sm->focusPoint(id))
+        payload = focusPointToMap(*fp);
+
     sm->removeFocusPoint(id);
     if (m_selectedFocusPointId == id)
     {
         m_selectedFocusPointId.clear();
         emit selectedFocusPointChanged();
+    }
+
+    if (!payload.isEmpty())
+    {
+        if (Tardis *tardis = Tardis::instance())
+        {
+            tardis->enqueueAction(Tardis::SpatialFocusPointRemove, focusPointObjId(id),
+                                  QVariant(payload), QVariant(payload));
+        }
     }
 }
 
@@ -526,11 +575,36 @@ void SpatialController::moveFocusPoint(const QString &id,
     const auto *existing = sm->focusPoint(id);
     if (!existing)
         return;
+    // Short-circuit no-op moves so drag frames with identical positions
+    // (e.g. grid-snap plateaus) don't spam Tardis.
+    if (qFuzzyCompare(existing->position[0], wx)
+        && qFuzzyCompare(existing->position[1], wy)
+        && qFuzzyCompare(existing->position[2], wz))
+        return;
+
+    QVariantMap oldPayload;
+    oldPayload["id"] = id;
+    oldPayload["x"] = existing->position[0];
+    oldPayload["y"] = existing->position[1];
+    oldPayload["z"] = existing->position[2];
+
     SpatialModel::FocusPoint updated = *existing;
     updated.position[0] = wx;
     updated.position[1] = wy;
     updated.position[2] = wz;
     sm->updateFocusPoint(updated);
+
+    if (Tardis *tardis = Tardis::instance())
+    {
+        QVariantMap newPayload;
+        newPayload["id"] = id;
+        newPayload["x"] = wx;
+        newPayload["y"] = wy;
+        newPayload["z"] = wz;
+        // Same objID per fp coalesces a drag into one undo step.
+        tardis->enqueueAction(Tardis::SpatialFocusPointMove, focusPointObjId(id),
+                              QVariant(oldPayload), QVariant(newPayload));
+    }
 }
 
 void SpatialController::renameFocusPoint(const QString &id, const QString &name)
@@ -539,23 +613,55 @@ void SpatialController::renameFocusPoint(const QString &id, const QString &name)
     const auto *existing = sm->focusPoint(id);
     if (!existing || existing->name == name)
         return;
+
+    QVariantMap oldPayload{{"id", id}, {"name", existing->name}};
+    QVariantMap newPayload{{"id", id}, {"name", name}};
+
     SpatialModel::FocusPoint updated = *existing;
     updated.name = name;
     sm->updateFocusPoint(updated);
+
+    if (Tardis *tardis = Tardis::instance())
+    {
+        tardis->enqueueAction(Tardis::SpatialFocusPointRename, focusPointObjId(id),
+                              QVariant(oldPayload), QVariant(newPayload));
+    }
 }
 
 bool SpatialController::assignFixtureToFocusPoint(const QString &fpId, int fixtureId)
 {
     if (fixtureId < 0) return false;
     SpatialModel *sm = m_doc->spatialModel();
-    return sm->assignFixtureToFocusPoint(fpId, QString::number(fixtureId));
+    bool ok = sm->assignFixtureToFocusPoint(fpId, QString::number(fixtureId));
+    if (ok)
+    {
+        if (Tardis *tardis = Tardis::instance())
+        {
+            QVariantMap oldPayload{{"fpId", fpId}, {"fixtureId", fixtureId}, {"assigned", false}};
+            QVariantMap newPayload{{"fpId", fpId}, {"fixtureId", fixtureId}, {"assigned", true}};
+            tardis->enqueueAction(Tardis::SpatialFocusPointAssign, focusPointObjId(fpId),
+                                  QVariant(oldPayload), QVariant(newPayload));
+        }
+    }
+    return ok;
 }
 
 bool SpatialController::unassignFixtureFromFocusPoint(const QString &fpId, int fixtureId)
 {
     if (fixtureId < 0) return false;
     SpatialModel *sm = m_doc->spatialModel();
-    return sm->unassignFixtureFromFocusPoint(fpId, QString::number(fixtureId));
+    bool ok = sm->unassignFixtureFromFocusPoint(fpId, QString::number(fixtureId));
+    if (ok)
+    {
+        if (Tardis *tardis = Tardis::instance())
+        {
+            QVariantMap oldPayload{{"fpId", fpId}, {"fixtureId", fixtureId}, {"assigned", true}};
+            QVariantMap newPayload{{"fpId", fpId}, {"fixtureId", fixtureId}, {"assigned", false}};
+            tardis->enqueueAction(Tardis::SpatialFocusPointAssign, focusPointObjId(fpId),
+                                  QVariant(oldPayload), QVariant(newPayload));
+        }
+    }
+    return ok;
 }
 
 void SpatialController::aimAtFocusPoint(const QString &id)
@@ -599,4 +705,23 @@ void SpatialController::setSelectedFocusPointId(const QString &id)
         return;
     m_selectedFocusPointId = id;
     emit selectedFocusPointChanged();
+}
+
+QVariantList SpatialController::focusPointsList() const
+{
+    QVariantList out;
+    SpatialModel *sm = m_doc->spatialModel();
+    for (const SpatialModel::FocusPoint &fp : sm->focusPoints())
+    {
+        QVariantMap row;
+        row["id"] = fp.id;
+        row["name"] = fp.name;
+        row["x"] = fp.position[0];
+        row["y"] = fp.position[1];
+        row["z"] = fp.position[2];
+        row["assignedCount"] = fp.assignedFixtureIds.size();
+        row["selected"] = (fp.id == m_selectedFocusPointId);
+        out.append(row);
+    }
+    return out;
 }

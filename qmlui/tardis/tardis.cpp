@@ -683,6 +683,78 @@ int Tardis::processAction(TardisAction &action, bool undo)
             }
         }
         break;
+        case SpatialFocusPointAdd:
+        case SpatialFocusPointRemove:
+        {
+            // Payload (same QVariantMap in both old/new): { id, name, x, y, z, assigned }.
+            // undo Add = remove; redo Add = re-add. Remove is the inverse.
+            const bool isAdd = (action.m_action == SpatialFocusPointAdd);
+            const bool shouldRemove = isAdd ? undo : !undo;
+            QVariantMap m = value->toMap();
+            QString id = m.value("id").toString();
+            if (id.isEmpty()) break;
+
+            SpatialModel *sm = m_doc->spatialModel();
+            if (shouldRemove)
+            {
+                sm->removeFocusPoint(id);
+            }
+            else
+            {
+                SpatialModel::FocusPoint fp;
+                fp.id = id;
+                fp.name = m.value("name").toString();
+                fp.position[0] = m.value("x").toDouble();
+                fp.position[1] = m.value("y").toDouble();
+                fp.position[2] = m.value("z").toDouble();
+                fp.assignedFixtureIds = m.value("assigned").toStringList();
+                sm->addFocusPoint(fp);
+            }
+        }
+        break;
+        case SpatialFocusPointMove:
+        {
+            // Payload: { id, x, y, z }. value is pre- or post- depending on undo flag.
+            QVariantMap m = value->toMap();
+            QString id = m.value("id").toString();
+            SpatialModel *sm = m_doc->spatialModel();
+            const auto *existing = sm->focusPoint(id);
+            if (!existing) break;
+            SpatialModel::FocusPoint fp = *existing;
+            fp.position[0] = m.value("x").toDouble();
+            fp.position[1] = m.value("y").toDouble();
+            fp.position[2] = m.value("z").toDouble();
+            sm->updateFocusPoint(fp);
+        }
+        break;
+        case SpatialFocusPointRename:
+        {
+            // Payload: { id, name }.
+            QVariantMap m = value->toMap();
+            QString id = m.value("id").toString();
+            SpatialModel *sm = m_doc->spatialModel();
+            const auto *existing = sm->focusPoint(id);
+            if (!existing) break;
+            SpatialModel::FocusPoint fp = *existing;
+            fp.name = m.value("name").toString();
+            sm->updateFocusPoint(fp);
+        }
+        break;
+        case SpatialFocusPointAssign:
+        {
+            // Payload: { fpId, fixtureId, assigned }. "assigned" is the desired
+            // final state in each slot (true for old means was-assigned).
+            QVariantMap m = value->toMap();
+            QString fpId = m.value("fpId").toString();
+            QString fxId = QString::number(m.value("fixtureId").toInt());
+            bool shouldBeAssigned = m.value("assigned").toBool();
+            SpatialModel *sm = m_doc->spatialModel();
+            if (shouldBeAssigned)
+                sm->assignFixtureToFocusPoint(fpId, fxId);
+            else
+                sm->unassignFixtureFromFocusPoint(fpId, fxId);
+        }
+        break;
 
         /* *********************** Input/Output manager actions ************************ */
         case IOAddUniverse:

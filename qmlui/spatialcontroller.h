@@ -64,6 +64,10 @@ class SpatialController : public QObject
     // Gizmo mode (0=Translate, 1=Rotate)
     Q_PROPERTY(int gizmoMode READ gizmoMode WRITE setGizmoMode NOTIFY gizmoModeChanged)
 
+    // Focus points list — refreshed on model changes or selection changes.
+    // Each entry: { id, name, x, y, z, assignedCount, selected }.
+    Q_PROPERTY(QVariantList focusPoints READ focusPointsList NOTIFY focusPointsChanged)
+
 public:
     explicit SpatialController(Doc *doc, SpatialView *view, QObject *parent = nullptr);
 
@@ -172,6 +176,10 @@ public:
     QString selectedFocusPointId() const { return m_selectedFocusPointId; }
     Q_INVOKABLE void setSelectedFocusPointId(const QString &id);
 
+    /** QML-facing snapshot of the focus point list. Each entry:
+     *  { id, name, x, y, z, assignedCount, selected }. */
+    QVariantList focusPointsList() const;
+
 signals:
     void selectionChanged();
     void transformChanged();
@@ -195,6 +203,10 @@ signals:
 
     /** Emitted when the selected focus point changes. */
     void selectedFocusPointChanged();
+
+    /** Emitted when the focus point list OR the selected id changes —
+     *  drives the QML ListView. */
+    void focusPointsChanged();
 
 private:
     void updateTransformFromModel();

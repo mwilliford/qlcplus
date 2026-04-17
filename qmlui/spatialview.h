@@ -107,6 +107,23 @@ public:
         m_selectedFocusPointCallback = std::move(cb);
     }
 
+    /** Click-to-select a focus point. SpatialView calls this when the user
+     *  clicks on (or misses) a focus point in Focus mode. Empty id deselects. */
+    void setSelectFocusPointCallback(std::function<void(const QString &)> cb) {
+        m_selectFocusPointCallback = std::move(cb);
+    }
+
+    /** Drag-to-move callback. Fires each mouseMoveEvent during a drag on a
+     *  selected focus point; args are the world-plane hit position. */
+    void setMoveFocusPointCallback(std::function<void(const QString &, double, double, double)> cb) {
+        m_moveFocusPointCallback = std::move(cb);
+    }
+
+    /** Shift+click-on-empty creates a focus point at the ray-plane intersection. */
+    void setCreateFocusPointCallback(std::function<void(double, double, double)> cb) {
+        m_createFocusPointCallback = std::move(cb);
+    }
+
     /** Get current camera state. */
     float cameraYaw() const { return m_cameraYaw; }
     float cameraPitch() const { return m_cameraPitch; }
@@ -169,6 +186,8 @@ private:
     bool m_draggingGizmo = false;
     bool m_draggingRotate = false;
     bool m_focusDragging = false;
+    bool m_focusPointDragging = false;
+    QString m_draggedFocusPointId;
 
     // Gizmo drag state
     float m_dragStartPos[3] = {0, 0, 0};  // primary fixture position at drag start
@@ -196,6 +215,9 @@ private:
     std::function<void(double, double, double)> m_focusAimCallback;
     std::function<bool()> m_liveDmxModeCallback;
     std::function<QString()> m_selectedFocusPointCallback;
+    std::function<void(const QString &)> m_selectFocusPointCallback;
+    std::function<void(const QString &, double, double, double)> m_moveFocusPointCallback;
+    std::function<void(double, double, double)> m_createFocusPointCallback;
 
     // Universe DMX snapshots (deep-copied from InputOutputMap::universeWritten)
     QHash<quint32, QByteArray> m_universeSnapshots;
