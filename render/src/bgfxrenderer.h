@@ -92,6 +92,9 @@ public:
     void setObservationLines(const std::vector<RenderLine>& lines) override;
     void setBeamCones(const std::vector<RenderBeamCone>& cones) override;
     void setFocusAimMarker(bool visible, const float pos[3]) override;
+    void setFocusPoints(const std::vector<RenderFocusPoint>& points) override;
+    std::string hitTestFocusPoint(float mouseX, float mouseY,
+                                   uint32_t viewportW, uint32_t viewportH) override;
 
     /** Update DOF angles for a single fixture (called per DMX tick). */
     void updateFixtureDofAngles(uint32_t fixtureId, const std::vector<float> &angles) override;
@@ -105,6 +108,8 @@ private:
     void renderObservationLines();
     void renderBeamCones();
     void renderFocusAimMarker();
+    void renderFocusPoints();
+    void renderFocusPointLabels();
     void renderLabels();
     void renderSceneGraph(const SceneNode &node, const float parentTransform[16],
                           const float color[4],
@@ -150,6 +155,9 @@ private:
     // Focus aim marker (Focus mode target indicator)
     bool m_focusAimVisible = false;
     float m_focusAimPos[3] = {0, 0, 0};
+
+    // Persistent named focus points
+    std::vector<RenderFocusPoint> m_focusPoints;
 
     // Shader programs
     bgfx::ProgramHandle m_colorProgram = BGFX_INVALID_HANDLE;  // vertex-color (grid/lines)

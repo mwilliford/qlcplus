@@ -669,4 +669,182 @@ void SpatialModel_Test::clearAll()
     QVERIFY(!sm.hasSolverViz());
 }
 
+// ---------------------------------------------------------------------------
+// Focus points
+// ---------------------------------------------------------------------------
+
+static SpatialModel::FocusPoint makeFP(const QString &id, const QString &name,
+                                        double x, double y, double z)
+{
+    SpatialModel::FocusPoint fp;
+    fp.id = id;
+    fp.name = name;
+    fp.position[0] = x;
+    fp.position[1] = y;
+    fp.position[2] = z;
+    return fp;
+}
+
+void SpatialModel_Test::focusPoint_addRemoveUpdate()
+{
+    SpatialModel sm;
+    QCOMPARE(sm.focusPoints().size(), 0);
+
+    sm.addFocusPoint(makeFP("fp0", "Singer", 0.0, 0.0, 1.7));
+    sm.addFocusPoint(makeFP("fp1", "Drums", 2.0, -1.5, 1.0));
+    QCOMPARE(sm.focusPoints().size(), 2);
+    QCOMPARE(sm.focusPoints()[0].name, QString("Singer"));
+    QCOMPARE(sm.focusPoints()[1].position[0], 2.0);
+
+    // Update: move fp0 and rename
+    SpatialModel::FocusPoint updated = makeFP("fp0", "Vocalist", 0.5, 0.2, 1.8);
+    sm.updateFocusPoint(updated);
+    const auto *got = sm.focusPoint("fp0");
+    QVERIFY(got != nullptr);
+    QCOMPARE(got->name, QString("Vocalist"));
+    QCOMPARE(got->position[0], 0.5);
+    QCOMPARE(got->position[2], 1.8);
+
+    // Update with unknown id is a no-op
+    sm.updateFocusPoint(makeFP("nonexistent", "x", 9, 9, 9));
+    QCOMPARE(sm.focusPoints().size(), 2);
+
+    // Remove fp0
+    sm.removeFocusPoint("fp0");
+    QCOMPARE(sm.focusPoints().size(), 1);
+    QCOMPARE(sm.focusPoints()[0].id, QString("fp1"));
+    QVERIFY(sm.focusPoint("fp0") == nullptr);
+
+    // Remove unknown is a no-op
+    sm.removeFocusPoint("nonexistent");
+    QCOMPARE(sm.focusPoints().size(), 1);
+}
+
+void SpatialModel_Test::focusPoint_lookupById()
+{
+    SpatialModel sm;
+    sm.addFocusPoint(makeFP("fp0", "Singer", 0, 0, 1.7));
+
+    const auto *found = sm.focusPoint("fp0");
+    QVERIFY(found != nullptr);
+    QCOMPARE(found->name, QString("Singer"));
+
+    QVERIFY(sm.focusPoint("nonexistent") == nullptr);
+    QVERIFY(sm.focusPoint(QString()) == nullptr);
+}
+
+void SpatialModel_Test::focusPoint_assignUnassignFixture()
+{
+    SpatialModel sm;
+    sm.addFocusPoint(makeFP("fp0", "Singer", 0, 0, 1.7));
+
+    // Assign two fixtures
+    QVERIFY(sm.assignFixtureToFocusPoint("fp0", "1"));
+    QVERIFY(sm.assignFixtureToFocusPoint("fp0", "2"));
+    QCOMPARE(sm.focusPoint("fp0")->assignedFixtureIds.size(), 2);
+
+    // Double-assign is a no-op
+    QVERIFY(!sm.assignFixtureToFocusPoint("fp0", "1"));
+    QCOMPARE(sm.focusPoint("fp0")->assignedFixtureIds.size(), 2);
+
+    // Assigning to unknown focus point fails
+    QVERIFY(!sm.assignFixtureToFocusPoint("nonexistent", "3"));
+
+    // Unassign removes
+    QVERIFY(sm.unassignFixtureFromFocusPoint("fp0", "1"));
+    QCOMPARE(sm.focusPoint("fp0")->assignedFixtureIds.size(), 1);
+    QCOMPARE(sm.focusPoint("fp0")->assignedFixtureIds[0], QString("2"));
+
+    // Unassigning not-assigned returns false
+    QVERIFY(!sm.unassignFixtureFromFocusPoint("fp0", "99"));
+    QVERIFY(!sm.unassignFixtureFromFocusPoint("nonexistent", "1"));
+}
+
+void SpatialModel_Test::focusPoint_xmlRoundTrip()
+{
+    SpatialModel sm;
+    sm.addFocusPoint(makeFP("fp0", "Singer", 0.5, -1.2, 1.7));
+    sm.addFocusPoint(makeFP("fp1", "Drum kit", 2.0, 0.0, 0.9));
+
+    QByteArray data = writeXML(sm);
+    QVERIFY(!data.isEmpty());
+    QVERIFY(data.contains("FocusPoint"));
+
+    SpatialModel sm2;
+    QVERIFY(readXML(sm2, data));
+
+    QCOMPARE(sm2.focusPoints().size(), 2);
+    const auto *fp0 = sm2.focusPoint("fp0");
+    QVERIFY(fp0 != nullptr);
+    QCOMPARE(fp0->name, QString("Singer"));
+    QVERIFY(std::abs(fp0->position[0] - 0.5) < 1e-9);
+    QVERIFY(std::abs(fp0->position[1] - (-1.2)) < 1e-9);
+    QVERIFY(std::abs(fp0->position[2] - 1.7) < 1e-9);
+    QCOMPARE(fp0->assignedFixtureIds.size(), 0);
+
+    const auto *fp1 = sm2.focusPoint("fp1");
+    QVERIFY(fp1 != nullptr);
+    QCOMPARE(fp1->name, QString("Drum kit"));
+}
+
+void SpatialModel_Test::focusPoint_xmlRoundTripWithAssignments()
+{
+    SpatialModel sm;
+    sm.addFocusPoint(makeFP("fp0", "Singer", 0.5, -1.2, 1.7));
+    QVERIFY(sm.assignFixtureToFocusPoint("fp0", "1"));
+    QVERIFY(sm.assignFixtureToFocusPoint("fp0", "2"));
+    QVERIFY(sm.assignFixtureToFocusPoint("fp0", "5"));
+
+    QByteArray data = writeXML(sm);
+    QVERIFY(data.contains("AssignedFixture"));
+
+    SpatialModel sm2;
+    QVERIFY(readXML(sm2, data));
+
+    const auto *fp = sm2.focusPoint("fp0");
+    QVERIFY(fp != nullptr);
+    QCOMPARE(fp->assignedFixtureIds.size(), 3);
+    QVERIFY(fp->assignedFixtureIds.contains("1"));
+    QVERIFY(fp->assignedFixtureIds.contains("2"));
+    QVERIFY(fp->assignedFixtureIds.contains("5"));
+}
+
+void SpatialModel_Test::focusPoint_signalsOnMutation()
+{
+    SpatialModel sm;
+    QSignalSpy spy(&sm, &SpatialModel::focusPointsChanged);
+
+    sm.addFocusPoint(makeFP("fp0", "Singer", 0, 0, 1.7));
+    QCOMPARE(spy.count(), 1);
+
+    sm.updateFocusPoint(makeFP("fp0", "Vocalist", 0.5, 0, 1.8));
+    QCOMPARE(spy.count(), 2);
+
+    sm.assignFixtureToFocusPoint("fp0", "1");
+    QCOMPARE(spy.count(), 3);
+
+    sm.unassignFixtureFromFocusPoint("fp0", "1");
+    QCOMPARE(spy.count(), 4);
+
+    sm.removeFocusPoint("fp0");
+    QCOMPARE(spy.count(), 5);
+
+    // No-op mutations don't emit
+    sm.updateFocusPoint(makeFP("nonexistent", "x", 0, 0, 0));
+    sm.removeFocusPoint("nonexistent");
+    sm.unassignFixtureFromFocusPoint("nonexistent", "1");
+    QCOMPARE(spy.count(), 5);
+}
+
+void SpatialModel_Test::focusPoint_clearRemovesAll()
+{
+    SpatialModel sm;
+    sm.addFocusPoint(makeFP("fp0", "Singer", 0, 0, 1.7));
+    sm.addFocusPoint(makeFP("fp1", "Drums", 2, 0, 1.0));
+    QCOMPARE(sm.focusPoints().size(), 2);
+
+    sm.clear();
+    QCOMPARE(sm.focusPoints().size(), 0);
+}
+
 QTEST_APPLESS_MAIN(SpatialModel_Test)

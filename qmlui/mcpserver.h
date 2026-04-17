@@ -113,6 +113,18 @@ private:
     QJsonObject toolAlignSelection(const QJsonObject &args);
     QJsonObject toolAddTruss(const QJsonObject &args);
     QJsonObject toolSetSpatialMode(const QJsonObject &args);
+
+    // Focus Point tools (SV-4 Phase 1)
+    QJsonObject toolCreateFocusPoint(const QJsonObject &args);
+    QJsonObject toolListFocusPoints(const QJsonObject &args);
+    QJsonObject toolDeleteFocusPoint(const QJsonObject &args);
+    QJsonObject toolMoveFocusPoint(const QJsonObject &args);
+    QJsonObject toolRenameFocusPoint(const QJsonObject &args);
+    QJsonObject toolAssignFixtureToFocusPoint(const QJsonObject &args);
+    QJsonObject toolUnassignFixtureFromFocusPoint(const QJsonObject &args);
+    QJsonObject toolAimAtFocusPoint(const QJsonObject &args);
+    QJsonObject toolSelectFocusPoint(const QJsonObject &args);
+
     QJsonObject toolCalibrateAddObs(const QJsonObject &args);
     QJsonObject toolCalibrateRunSolve(const QJsonObject &args);
 

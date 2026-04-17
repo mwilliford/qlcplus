@@ -141,6 +141,37 @@ public:
     bool focusAimValid() const { return m_focusAimValid; }
     void getFocusAim(double *x, double *y, double *z) const;
 
+    // --- Focus points (persistent named aim targets) ---
+
+    /** Create a new focus point at the given world position. Returns the
+     *  generated id. Name is auto-generated if empty (e.g., "Point 1"). */
+    Q_INVOKABLE QString createFocusPoint(double wx, double wy, double wz,
+                                          const QString &name = QString());
+
+    /** Delete a focus point. Also unassigns any selected-focus-point state. */
+    Q_INVOKABLE void deleteFocusPoint(const QString &id);
+
+    /** Move an existing focus point to a new world position. */
+    Q_INVOKABLE void moveFocusPoint(const QString &id, double wx, double wy, double wz);
+
+    /** Rename an existing focus point. */
+    Q_INVOKABLE void renameFocusPoint(const QString &id, const QString &name);
+
+    /** Assign a fixture to track a focus point. Returns true if newly assigned. */
+    Q_INVOKABLE bool assignFixtureToFocusPoint(const QString &fpId, int fixtureId);
+
+    /** Unassign a fixture from a focus point. Returns true if it was assigned. */
+    Q_INVOKABLE bool unassignFixtureFromFocusPoint(const QString &fpId, int fixtureId);
+
+    /** Aim all fixtures assigned to the given focus point at its position.
+     *  Internally calls setFocusAim() after temporarily routing the
+     *  assigned fixtures as the "selected" set for IK. */
+    Q_INVOKABLE void aimAtFocusPoint(const QString &id);
+
+    /** Currently selected focus point id (empty if none). */
+    QString selectedFocusPointId() const { return m_selectedFocusPointId; }
+    Q_INVOKABLE void setSelectedFocusPointId(const QString &id);
+
 signals:
     void selectionChanged();
     void transformChanged();
@@ -161,6 +192,9 @@ signals:
     /** Fired when the aim point changes or clears — SpatialView uses this
      *  to update the renderer's focus aim marker. */
     void focusAimChanged();
+
+    /** Emitted when the selected focus point changes. */
+    void selectedFocusPointChanged();
 
 private:
     void updateTransformFromModel();
@@ -184,6 +218,10 @@ private:
     bool m_focusAimValid = false;
     double m_focusAim[3] = {0, 0, 0};
     QSet<uint> m_focusControlledChannels;
+
+    // Focus points
+    QString m_selectedFocusPointId;
+    int m_nextFocusPointIdNum = 0;  // for auto-generating unique ids
 };
 
 #endif // SPATIALCONTROLLER_H

@@ -66,6 +66,33 @@
 ### Virtual Console — TODO
 - [ ] **VC serializer for v5**: v5 has its own VirtualConsole implementation. May need adapted vcserializer/vccommandhandler or new approach using v5's VC API.
 
+## SV-4 Focus Mode
+
+### Phase 1: Focus Point object model — DONE (2026-04-16)
+- [x] `SpatialModel::FocusPoint` (id, name, position, assignedFixtureIds) + API (add/remove/update/assign/unassign/lookup) + `focusPointsChanged` signal
+- [x] `.aqw` XML persistence (`<FocusPoint>` + `<AssignedFixture>` children)
+- [x] `RenderFocusPoint` + sphere-with-label rendering + screen-space hit-test in BgfxRenderer
+- [x] `SpatialController` Q_INVOKABLE API: create, delete, move, rename, assign, unassign, aim, select
+- [x] `aimAtFocusPoint(id)` reuses the click-to-aim IK helper (single source of truth)
+- [x] 9 MCP tools: create_focus_point, list_focus_points, delete_focus_point, move_focus_point, rename_focus_point, assign_fixture_to_focus_point, unassign_fixture_from_focus_point, aim_at_focus_point, select_focus_point
+- [x] Unit tests: 7 new SpatialModel tests (38 total, all passing)
+- [x] End-to-end visual test verified through MCP: sphere renders, selection highlights, `[N]` assignment badge, beam visibly swings to target, DMX channels written
+
+### Phase 2: Focus panel UI + mouse interaction — TODO
+- [ ] QML Focus panel (mode === 2) — list, create, rename, delete, fixture assignment UI
+- [ ] Click-to-select in Spatial View (wire `hitTestFocusPoint` from BgfxRenderer)
+- [ ] Drag selected focus point to move (Focus mode)
+- [ ] Shift+click empty space → create focus point at cursor world-hit location
+- [ ] Tardis undo actions for focus point mutations
+
+### Phase 3: Polish — TODO
+- [ ] Multi-plane targeting (walls, custom planes) via `rigmath::Beam::hit_plane(point, normal)`
+- [ ] Fan/spread controls for multi-fixture aim
+- [ ] Auto shutter/dimmer open on Focus mode entry
+- [ ] Speed-limited aim ramp (smooth DMX transition instead of instant jump)
+- [ ] Calibration verification workflow (aim all at one point, check convergence)
+- [ ] Left-click camera orbit in Focus mode (currently cursor always aims — add modifier key)
+
 ## SV-5: Live Mode + Venue Import
 
 ### Passive DMX Visualizer Mode

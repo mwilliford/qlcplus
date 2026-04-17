@@ -242,11 +242,13 @@ void BgfxRenderer::frame()
     renderEllipsoids();
     renderBeamCones();
     renderFocusAimMarker();
+    renderFocusPoints();
     if (m_gizmoMode == 0)
         renderGizmo();
     else
         renderRotateGizmo();
     renderLabels();
+    renderFocusPointLabels();
 
     // Handle screenshot request (fires callback during bgfx::frame)
     if (m_callback.isRequested())
@@ -854,6 +856,133 @@ void BgfxRenderer::renderFocusAimMarker()
         | BGFX_STATE_PT_LINES
     );
     bgfx::submit(0, m_colorProgram);
+}
+
+void BgfxRenderer::setFocusPoints(const std::vector<RenderFocusPoint>& points)
+{
+    m_focusPoints = points;
+}
+
+void BgfxRenderer::renderFocusPoints()
+{
+    if (m_focusPoints.empty() || !bgfx::isValid(m_sphereVbh) || !bgfx::isValid(m_litProgram))
+        return;
+
+    for (const auto &fp : m_focusPoints)
+    {
+        // Build transform: T(position) * S(radius).
+        // Selected points render slightly larger with higher-intensity color.
+        float scale = fp.selected ? fp.radius * 1.5f : fp.radius;
+
+        float scaleMtx[16];
+        bx::mtxScale(scaleMtx, scale, scale, scale);
+
+        float transMtx[16];
+        bx::mtxTranslate(transMtx, fp.position[0], fp.position[1], fp.position[2]);
+
+        float worldMtx[16];
+        bx::mtxMul(worldMtx, scaleMtx, transMtx);
+
+        bgfx::setTransform(worldMtx);
+        bgfx::setVertexBuffer(0, m_sphereVbh);
+        bgfx::setIndexBuffer(m_sphereIbh);
+
+        // Brighter when selected
+        float color[4] = { fp.color[0], fp.color[1], fp.color[2], fp.color[3] };
+        if (fp.selected)
+        {
+            color[0] = std::min(1.0f, fp.color[0] * 1.3f);
+            color[1] = std::min(1.0f, fp.color[1] * 1.3f);
+            color[2] = std::min(1.0f, fp.color[2] * 1.3f);
+        }
+        bgfx::setUniform(m_u_color, color);
+
+        bgfx::setState(
+            BGFX_STATE_WRITE_RGB
+            | BGFX_STATE_WRITE_A
+            | BGFX_STATE_WRITE_Z
+            | BGFX_STATE_DEPTH_TEST_LESS
+        );
+        bgfx::submit(0, m_litProgram);
+    }
+}
+
+void BgfxRenderer::renderFocusPointLabels()
+{
+    if (m_focusPoints.empty() || m_width == 0 || m_height == 0)
+        return;
+
+    const uint32_t charW = 8;
+    const uint32_t charH = 16;
+
+    for (const auto &fp : m_focusPoints)
+    {
+        if (fp.label.empty())
+            continue;
+
+        float worldPos[3] = { fp.position[0], fp.position[1], fp.position[2] };
+        float sx, sy;
+        bool visible;
+        if (!worldToScreen(worldPos, sx, sy, visible) || !visible)
+            continue;
+
+        uint32_t col = uint32_t(std::max(0.0f, sx)) / charW;
+        uint32_t row = uint32_t(std::max(0.0f, sy)) / charH;
+
+        // Place label above the marker
+        if (row < 2) row = 0; else row -= 2;
+
+        // Center horizontally — label shows "Name [N]" when fixtures assigned
+        std::string text = fp.label;
+        if (fp.assignedCount > 0)
+        {
+            char buf[16];
+            snprintf(buf, sizeof(buf), " [%d]", fp.assignedCount);
+            text += buf;
+        }
+
+        uint32_t nameLen = uint32_t(text.size());
+        if (col >= nameLen / 2) col -= nameLen / 2;
+
+        // Amber (0xff20e6ff) or bright yellow when selected (0xff00ffff)
+        uint8_t attr = fp.selected ? 0x0e : 0x0e;  // bright yellow on black
+        bgfx::dbgTextPrintf(col, row, attr, "%s", text.c_str());
+    }
+}
+
+std::string BgfxRenderer::hitTestFocusPoint(float mouseX, float mouseY,
+                                             uint32_t viewportW, uint32_t viewportH)
+{
+    (void)viewportW;
+    (void)viewportH;
+    if (m_focusPoints.empty())
+        return std::string();
+
+    // Project each focus point to screen space; pick the nearest within a
+    // small pixel radius. In 3D a proper ray-sphere test would be more
+    // accurate, but the marker is tiny so screen-space distance is fine.
+    constexpr float kHitRadiusPx = 18.0f;
+    float bestDist = kHitRadiusPx;
+    std::string bestId;
+
+    for (const auto &fp : m_focusPoints)
+    {
+        float worldPos[3] = { fp.position[0], fp.position[1], fp.position[2] };
+        float sx, sy;
+        bool visible;
+        if (!worldToScreen(worldPos, sx, sy, visible) || !visible)
+            continue;
+
+        float dx = sx - mouseX;
+        float dy = sy - mouseY;
+        float dist = std::sqrt(dx*dx + dy*dy);
+        if (dist < bestDist)
+        {
+            bestDist = dist;
+            bestId = fp.id;
+        }
+    }
+    return bestId;
 }
 
 void BgfxRenderer::renderEllipsoids()

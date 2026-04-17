@@ -141,6 +141,32 @@ public:
                      double &outX, double &outY, double &outZ,
                      double snapDistance = 0.5) const;
 
+    // --- Focus points (named persistent aim targets for Focus mode) ---
+
+    struct FocusPoint
+    {
+        QString id;                        // unique identifier
+        QString name;                      // display name (e.g., "Singer", "Drum kit")
+        double position[3] = {0, 0, 0};    // world coords in meters
+        QStringList assignedFixtureIds;    // fixtures that track this point
+    };
+
+    void addFocusPoint(const FocusPoint &fp);
+    void removeFocusPoint(const QString &id);
+    /** Replace an existing focus point by id. No-op if id not found. */
+    void updateFocusPoint(const FocusPoint &fp);
+    QList<FocusPoint> focusPoints() const;
+    /** Lookup by id — returns nullptr if not found. */
+    const FocusPoint *focusPoint(const QString &id) const;
+
+    /** Assign a fixture to a focus point. Returns true if added (false if
+     *  already assigned or focus point not found). Emits focusPointsChanged
+     *  on success. Assigning to one point does NOT unassign from others —
+     *  callers must handle exclusivity if desired. */
+    bool assignFixtureToFocusPoint(const QString &fpId, const QString &fixtureId);
+    /** Remove an assignment. Returns true if removed. */
+    bool unassignFixtureFromFocusPoint(const QString &fpId, const QString &fixtureId);
+
     // --- Ephemeral solver visualization (from server, NOT persisted) ---
 
     struct FixtureViz
@@ -184,6 +210,10 @@ signals:
     /** Emitted when trusses are added/removed. */
     void trussesChanged();
 
+    /** Emitted when focus points are added, removed, moved, renamed, or
+     *  assignments change. */
+    void focusPointsChanged();
+
     /** Emitted when ephemeral solver viz data changes (ellipsoids, quality, rms). */
     void solverVizChanged();
 
@@ -199,6 +229,7 @@ private:
     QMap<QString, FixtureEntry> m_fixtures;
     QList<Plane> m_planes;
     QList<Truss> m_trusses;
+    QList<FocusPoint> m_focusPoints;
 
     // Ephemeral solver state (not persisted)
     bool m_hasSolverViz = false;

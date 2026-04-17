@@ -60,4 +60,15 @@ struct RenderBeamCone
     float color[4];          // RGBA
 };
 
+struct RenderFocusPoint
+{
+    std::string id;          // SpatialModel FocusPoint id (for hit-testing)
+    std::string label;       // display name shown as billboard text
+    float position[3];       // world-space position in meters
+    float color[4] = {1.0f, 0.85f, 0.2f, 1.0f};  // amber default
+    float radius = 0.10f;    // marker radius in meters
+    bool selected = false;   // drawn with highlight outline when true
+    int assignedCount = 0;   // number of assigned fixtures (for badge/count display)
+};
+
 } // namespace qlcrender
