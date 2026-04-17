@@ -54,9 +54,11 @@ struct GDTFKinematicsResult
  * @brief Build a KinematicChain + ChannelMap from GDTF geometry tree and DMX mode info.
  *
  * Walks the geometry tree depth-first collecting GeometryAxis nodes as joints.
- * Each axis node's localTransform becomes Joint::parent_to_joint. The GDTF
- * convention is rotation around local +Z, so Joint::axis = (0,0,1). The first
- * GeometryLamp/GeometryLaser after the last axis becomes the beam_offset.
+ * Each joint's parent_to_joint is the composed transform from the previous
+ * axis (or root) to this axis, including all intermediate non-axis geometry
+ * nodes. This ensures offsets from grouping nodes (e.g., POS-6's "Base 1")
+ * are not lost. The first GeometryLamp/GeometryLaser after the last axis
+ * becomes the beam_offset (also accumulating intermediate transforms).
  *
  * The ChannelMap uses the raw PhysicalFrom/PhysicalTo from GDTFDmxChannelInfo,
  * which encodes both range and direction (inverted when From > To). This

@@ -42,22 +42,22 @@
 
 ## Remaining Issues
 
-### Issue 1: POS-6 beam cone origins offset from fixture mesh
-**Symptom**: Beam cones originate from a point visually displaced from the LED head mesh.
+### ~~Issue 1: POS-6 beam cone origins offset from fixture mesh~~ ✅ FIXED (2026-04-16)
 
-**Root cause**: Two independent transform chains compute positions:
-- **Mesh**: scene graph → `bx::mtxMul(world, local, parent)` recursively in `renderSceneGraph()`
-- **Beams**: rigmath `KinematicChain::forward_world()` → walks joints + beam offsets in `rebuildBeamCones()`
+**Was**: Beam cones originated from a point visually displaced from the LED head mesh.
 
-These are built from the same GDTF data but accumulated differently. The kinematics chain computes beam offsets relative to the last joint only, while the scene graph accumulates all intermediate geometry node transforms.
+**Root cause (confirmed)**: `buildGDTFKinematics()` set each joint's `parent_to_joint` to `axisNode->localTransform` — the axis node's transform relative to its **immediate** parent, not to the fixture root. GDTF trees can have non-axis grouping nodes between the root and the first axis (POS-6's "Base 1" at Z=-141mm) whose transforms were silently dropped from the kinematics chain. The scene graph path was correct because it walks every node.
 
-**Key files**:
-- `qmlui/spatialview.cpp` — `rebuildBeamCones()` (lines ~1030-1114)
-- `render/src/bgfxrenderer.cpp` — `renderSceneGraph()` (lines ~528-591)
-- `engine/src/gdtfkinematics.cpp` — `collectBeams()`, beam offset computation
-- rigmath `kinematic_chain.cpp` — `forward_world()`, `forward_local()`, `walk_chain()`
+**Fix**: `buildGDTFKinematics()` now composes the full path transform from each previous axis (or root) down to the current axis, including any intermediate non-axis geometry nodes. `collectBeams()` similarly accumulates intermediate transforms between the last axis and each beam node. See `engine/src/gdtfkinematics.cpp` and commit message "POS-6 beam cone origin offset fix".
 
-**Fix approach**: Either unify the two paths (compute beam origins from the scene graph during rendering), or ensure the kinematics chain produces identical transforms.
+**Tests added** (5 in `gdtfkinematics_test.cpp`):
+- `intermediateNode_beforeFirstAxis` — POS-6 pattern
+- `intermediateNode_betweenAxes`
+- `intermediateNode_beforeBeam`
+- `beamOrigin_matchesSceneGraphWalk` — kinematics vs scene-graph walk at 5 angles
+- `beamOrigin_matchesSceneGraphWalk_withIntermediates` — comprehensive with intermediates at every level
+
+Also: rigmath bumped to v1.1.0 and `rebuildBeamCones()` now uses `forward_world_all` + `rigmath::Beam::hit_plane_z(0)` (cleanup; not required for the fix).
 
 ### Issue 2: glTF axis convention mismatch (cosmetic)
 **Symptom**: Robe 575XT body mesh appears distorted — stretched in Y, squished in Z.
