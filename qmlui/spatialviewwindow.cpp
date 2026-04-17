@@ -11,8 +11,10 @@
       http://www.apache.org/licenses/LICENSE-2.0.txt
 */
 
+#include <QApplication>
 #include <QWidget>
 #include <QHBoxLayout>
+#include <QKeyEvent>
 #include <QSplitter>
 #include <QSettings>
 #include <QScreen>
@@ -31,6 +33,7 @@
 #include "calibratecontroller.h"
 #include "spatialmodel.h"
 #include "doc.h"
+#include "inputoutputmap.h"
 #include "simpledesk.h"
 #include <cmath>
 #include "bgfxrenderer.h"
@@ -117,6 +120,22 @@ public:
             return ids;
         });
 
+        // Snapshot accessor for trackpad to seed from current DMX
+        m_controller->setUniverseSnapshotCallback([this](quint32 u) -> QByteArray {
+            return m_spatialView ? m_spatialView->universeSnapshot(u) : QByteArray();
+        });
+
+        // Propagate universe ticks to the controller so the trackpad's live
+        // pan/tilt properties re-emit on every DMX frame. Connect directly to
+        // InputOutputMap so we see every tick, not just our own overrides.
+        if (InputOutputMap *ioMap = m_doc->inputOutputMap())
+        {
+            connect(ioMap, &InputOutputMap::universeWritten,
+                    m_controller, [this](quint32, const QByteArray &) {
+                        m_controller->notifyUniverseWritten();
+                    });
+        }
+
         // Gizmo mode: translate (0) or rotate (1)
         m_spatialView->setGizmoModeCallback(
             [this]() { return m_controller->gizmoMode(); },
@@ -133,12 +152,23 @@ public:
         m_spatialView->setFocusModeCallback([this]() {
             return m_controller->mode() == SpatialController::Focus;
         });
+        // F/H gestures are valid in both Focus and Calibrate.
+        m_spatialView->setDmxControlModeCallback([this]() {
+            int m = m_controller->mode();
+            return m == SpatialController::Focus || m == SpatialController::Calibrate;
+        });
         m_spatialView->setFocusAimCallback([this](double x, double y, double z) {
             m_controller->setFocusAim(x, y, z);
         });
         m_spatialView->setLiveDmxModeCallback([this]() {
             int m = m_controller->mode();
-            return m == SpatialController::Calibrate || m == SpatialController::Focus;
+            // Live mode is the "visualizer" view — fixtures render from live
+            // DMX just like Calibrate/Focus. (The distinction is that Live
+            // doesn't accept our gesture overrides, but the render path is
+            // the same as far as visualization goes.)
+            return m == SpatialController::Calibrate
+                || m == SpatialController::Focus
+                || m == SpatialController::Live;
         });
         m_spatialView->setSelectedFocusPointCallback([this]() {
             return m_controller->selectedFocusPointId();
@@ -151,6 +181,9 @@ public:
         });
         m_spatialView->setToggleHighlightCallback([this]() {
             m_controller->toggleHighlight();
+        });
+        m_spatialView->setHighlightedIdsCallback([this]() -> std::vector<int32_t> {
+            return m_controller ? m_controller->highlightedFixtureIds() : std::vector<int32_t>();
         });
         m_spatialView->setCreateFocusPointCallback([this](double x, double y, double z) {
             // Spawn at the clicked floor point. If a focus point is currently
@@ -166,14 +199,23 @@ public:
         // Selected focus point changed → re-send render data so the highlight updates.
         connect(m_controller, &SpatialController::selectedFocusPointChanged, this, [this]() {
             if (m_spatialView)
-                m_spatialView->rebuildFocusPoints();  // need to expose this or use signal→slot
+                m_spatialView->rebuildFocusPoints();
         });
 
-        // Mode change: rebuild beam cones so Layout↔Calibrate switches between
-        // home-position and live-DMX rendering immediately.
+        // Highlight set changed → rebuild cones (tint + membership in union).
+        connect(m_controller, &SpatialController::highlightChanged, this, [this]() {
+            if (m_spatialView) m_spatialView->rebuildBeamCones();
+        });
+
+        // Mode change: rebuild beam cones AND fixture DOFs so Layout↔Calibrate
+        // ↔Focus switches immediately snap the fixture heads + beams to the
+        // right visualization (home pose in Layout, live DMX elsewhere).
         connect(m_controller, &SpatialController::modeChanged, this, [this]() {
             if (m_spatialView)
+            {
+                m_spatialView->rebuildFixtureDofs();
                 m_spatialView->rebuildBeamCones();
+            }
         });
 
         // Focus aim marker: update renderer when SpatialController aim changes.
@@ -362,12 +404,36 @@ protected:
     {
         QWidget::showEvent(event);
         m_spatialView->startRendering();
+        qApp->installEventFilter(this);
     }
 
     void hideEvent(QHideEvent *event) override
     {
         QWidget::hideEvent(event);
         m_spatialView->stopRendering();
+        qApp->removeEventFilter(this);
+    }
+
+    bool eventFilter(QObject *watched, QEvent *event) override
+    {
+        // Don't re-filter events we forwarded to the SpatialView ourselves.
+        if (watched == m_spatialView)
+            return QWidget::eventFilter(watched, event);
+        if (!isVisible() || !m_spatialView)
+            return QWidget::eventFilter(watched, event);
+
+        // Route F / H gestures to the 3D view even when the QML side panel
+        // (QQuickWidget) has keyboard focus after a click.
+        if (event->type() == QEvent::KeyPress || event->type() == QEvent::KeyRelease)
+        {
+            auto *ke = static_cast<QKeyEvent *>(event);
+            if (ke->key() == Qt::Key_F || ke->key() == Qt::Key_H)
+            {
+                QCoreApplication::sendEvent(m_spatialView, ke);
+                return true;
+            }
+        }
+        return QWidget::eventFilter(watched, event);
     }
 
 private:

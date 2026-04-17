@@ -1025,6 +1025,205 @@ Rectangle
                 }
             }
 
+            // --- Crossing observation (N selected fixtures aimed at common target) ---
+            GridLayout
+            {
+                Layout.fillWidth: true
+                columns: 4
+                rowSpacing: 2
+                columnSpacing: 4
+                enabled: spatialController.selectionCount >= 2
+
+                Text {
+                    text: spatialController.selectionCount >= 2
+                          ? "Meet @ z="
+                          : "Meet (sel ≥2)"
+                    color: spatialController.selectionCount >= 2 ? "#999" : "#666"
+                    font.pixelSize: 11
+                    Layout.preferredWidth: 72
+                    ToolTip.visible: hoverHandler.hovered
+                    ToolTip.delay: 400
+                    ToolTip.text: "Crossing observation: all selected beams meet at some shared point whose Z you measure. The solver finds X and Y. Useful when you can see beams crossing but can't measure the exact floor spot."
+                    HoverHandler { id: hoverHandler }
+                }
+
+                CompactSpin
+                {
+                    id: crossValueSpin
+                    from: -500; to: 2000
+                    value: 0
+                    stepSize: 10
+                    Layout.fillWidth: true
+                    editable: true
+                    ToolTip.visible: hovered; ToolTip.delay: 500
+                    ToolTip.text: "Z-plane the beams share (X,Y is unknown — solver figures it out). Default 0 = floor."
+                    textFromValue: function(v) { return (v / 100.0).toFixed(2) + "m" }
+                    valueFromText: function(t) { return Math.round(parseFloat(t) * 100) }
+                }
+
+                CompactSpin
+                {
+                    id: crossSigmaSpin
+                    from: 1; to: 500
+                    value: 20
+                    stepSize: 5
+                    implicitWidth: 68
+                    editable: true
+                    ToolTip.visible: hovered; ToolTip.delay: 500
+                    ToolTip.text: "Crossing uncertainty (±σ)"
+                    textFromValue: function(v) { return "±" + v + "cm" }
+                    valueFromText: function(t) { return Math.round(parseFloat(t.replace("±","").replace("cm",""))) }
+                }
+
+                Button
+                {
+                    text: "+ Cross " + spatialController.selectionCount
+                    implicitWidth: 68; implicitHeight: 28
+                    enabled: spatialController.selectionCount >= 2
+                    onClicked: {
+                        calibrateController.addCrossingObs(
+                            spatialController.selectedFixtureIds(),
+                            2,  // z axis
+                            crossValueSpin.value / 100.0,
+                            crossSigmaSpin.value / 100.0)
+                    }
+                    background: Rectangle {
+                        color: parent.enabled ? (parent.hovered ? "#4a9eff" : "#3a7fcc") : "#444"
+                        radius: 3
+                    }
+                    contentItem: Text {
+                        text: parent.text; color: parent.enabled ? "#fff" : "#666"
+                        font.pixelSize: 10; font.bold: parent.enabled
+                        horizontalAlignment: Text.AlignHCenter; verticalAlignment: Text.AlignVCenter
+                    }
+                }
+            }
+
+            // --- Pan/Tilt trackpad (for aiming fixture during calibration) ---
+            ColumnLayout
+            {
+                id: panTiltPad
+                Layout.fillWidth: true
+                spacing: 4
+                visible: spatialController.selectionCount === 1 && spatialController.selectedFixtureHasPanTilt()
+
+                // Dot tracks live DMX via Q_PROPERTY binding — updates in real
+                // time during F-drag, trackpad interactions, or any other
+                // source driving these channels. User-initiated trackpad
+                // drags write immediately so the binding mirrors the write
+                // within one frame.
+                property real panPct: spatialController.selectedFixturePanPercent
+                property real tiltPct: spatialController.selectedFixtureTiltPercent
+                property int primaryId: spatialController.selectedFixtureId
+
+                Rectangle { Layout.fillWidth: true; height: 1; color: "#444" }
+
+                RowLayout {
+                    Layout.fillWidth: true
+                    Text {
+                        text: "Pan/Tilt Control"
+                        color: "#ccc"; font.pixelSize: 13; font.bold: true
+                        Layout.fillWidth: true
+                    }
+                    Text {
+                        text: "double-click to center"
+                        color: "#666"; font.pixelSize: 9
+                    }
+                }
+
+                Item {
+                    id: trackpadHolder
+                    Layout.preferredHeight: 140
+                    Layout.fillWidth: true
+
+                    Rectangle {
+                        id: trackpad
+                        anchors.centerIn: parent
+                        width: Math.min(parent.width, 160)
+                        height: Math.min(parent.width, 160)
+                        color: "#222"
+                        border.color: "#555"; border.width: 1
+                        radius: 4
+
+                        // Crosshair guides
+                        Rectangle {
+                            anchors.horizontalCenter: parent.horizontalCenter
+                            anchors.top: parent.top; anchors.bottom: parent.bottom
+                            width: 1; color: "#333"
+                        }
+                        Rectangle {
+                            anchors.verticalCenter: parent.verticalCenter
+                            anchors.left: parent.left; anchors.right: parent.right
+                            height: 1; color: "#333"
+                        }
+
+                        Rectangle {
+                            id: dot
+                            width: 12; height: 12; radius: 6
+                            color: "#4a9eff"
+                            border.color: "#fff"; border.width: 1
+                            x: (panTiltPad.panPct / 100.0) * (trackpad.width - width)
+                            y: (panTiltPad.tiltPct / 100.0) * (trackpad.height - height)
+                        }
+
+                        MouseArea {
+                            anchors.fill: parent
+                            acceptedButtons: Qt.LeftButton
+                            preventStealing: true  // don't let the enclosing ScrollView steal drags
+                            onPressed: (mouse) => updateFromPos(mouse.x, mouse.y)
+                            onPositionChanged: (mouse) => { if (pressed) updateFromPos(mouse.x, mouse.y) }
+                            onDoubleClicked: {
+                                panTiltPad.panPct = 50
+                                panTiltPad.tiltPct = 50
+                                spatialController.setSelectedFixturePanTiltPercent(50, 50)
+                            }
+                            function updateFromPos(mx, my) {
+                                panTiltPad.panPct  = Math.max(0, Math.min(100, (mx / trackpad.width)  * 100))
+                                panTiltPad.tiltPct = Math.max(0, Math.min(100, (my / trackpad.height) * 100))
+                                spatialController.setSelectedFixturePanTiltPercent(
+                                    panTiltPad.panPct, panTiltPad.tiltPct)
+                            }
+                        }
+                    }
+                }
+
+                // Readouts + precision sliders
+                RowLayout {
+                    Layout.fillWidth: true
+                    spacing: 4
+                    Text { text: "Pan"; color: "#e74c3c"; font.pixelSize: 10; Layout.preferredWidth: 22 }
+                    CompactSpin {
+                        Layout.fillWidth: true
+                        from: 0; to: 10000
+                        value: Math.round(panTiltPad.panPct * 100)
+                        stepSize: 100
+                        editable: true
+                        textFromValue: function(v) { return (v / 100.0).toFixed(1) + "%" }
+                        valueFromText: function(t) { return Math.round(parseFloat(t) * 100) }
+                        onValueModified: {
+                            panTiltPad.panPct = value / 100.0
+                            spatialController.setSelectedFixturePanTiltPercent(
+                                panTiltPad.panPct, panTiltPad.tiltPct)
+                        }
+                    }
+                    Text { text: "Tilt"; color: "#3498db"; font.pixelSize: 10; Layout.preferredWidth: 24 }
+                    CompactSpin {
+                        Layout.fillWidth: true
+                        from: 0; to: 10000
+                        value: Math.round(panTiltPad.tiltPct * 100)
+                        stepSize: 100
+                        editable: true
+                        textFromValue: function(v) { return (v / 100.0).toFixed(1) + "%" }
+                        valueFromText: function(t) { return Math.round(parseFloat(t) * 100) }
+                        onValueModified: {
+                            panTiltPad.tiltPct = value / 100.0
+                            spatialController.setSelectedFixturePanTiltPercent(
+                                panTiltPad.panPct, panTiltPad.tiltPct)
+                        }
+                    }
+                }
+            }
+
             // --- Separator ---
             Rectangle { Layout.fillWidth: true; height: 1; color: "#444" }
 
@@ -1213,8 +1412,30 @@ Rectangle
                 color: "#d4a017"
                 Text {
                     anchors.centerIn: parent
-                    text: "☀ Highlight ON — press H to release"
+                    text: "☀ " + spatialController.highlightCount()
+                          + " fixture(s) lit — H toggles selected"
                     color: "#222"; font.pixelSize: 10; font.bold: true
+                }
+            }
+
+            // --- Release Programmer button (grandMA "Off" / Eos "Release") ---
+            Button {
+                visible: spatialController.highlight
+                         || spatialController.selectedFocusPointId !== ""
+                         || spatialController.hasSelection
+                Layout.fillWidth: true
+                implicitHeight: 24
+                text: "■ Release all overrides"
+                ToolTip.visible: hovered; ToolTip.delay: 500
+                ToolTip.text: "Drop all DMX overrides from Focus/Calibrate back to running show"
+                onClicked: spatialController.releaseProgrammer()
+                background: Rectangle {
+                    color: parent.hovered ? "#c0392b" : "#8e2d23"
+                    radius: 3
+                }
+                contentItem: Text {
+                    text: parent.text; color: "#fff"; font.pixelSize: 10; font.bold: true
+                    horizontalAlignment: Text.AlignHCenter; verticalAlignment: Text.AlignVCenter
                 }
             }
 

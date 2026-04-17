@@ -96,10 +96,21 @@
       Auto-clears on Focus mode exit.
 
 ### Phase 3: Polish — TODO
+- [ ] **Commit aim / highlight state to Scene** — Focus mode's aim + highlight
+      are live DMX overrides that release on mode exit. Add a "Save as Scene"
+      button in the Focus panel that captures the current override state as a
+      QLC+ Scene (SceneValue per channel), so the aim persists across modes
+      and can be played back later. Required for practical use: after aiming,
+      the user needs a way to keep the beam where they put it.
 - [ ] Multi-plane targeting (walls, custom planes) via `rigmath::Beam::hit_plane(point, normal)`
 - [ ] Fan/spread controls for multi-fixture aim
 - [ ] Speed-limited aim ramp (smooth DMX transition instead of instant jump)
 - [ ] Calibration verification workflow (aim all at one point, check convergence)
+- [ ] **Per-fixture highlight pin** — optional: an alternative to the current
+      snapshot-at-toggle semantics, letting each fixture have an independent
+      "keep lit" state that ignores both selection AND highlight-toggle. Matches
+      grandMA's stage-lock concept. Only needed if the snapshot approach proves
+      too coarse in practice.
 
 ### Known bugs (tracked elsewhere)
 - [ ] IK branch-selection bug in rigmath: `KinematicChain::inverse_world` may

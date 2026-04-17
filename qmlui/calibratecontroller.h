@@ -48,6 +48,13 @@ public:
     Q_INVOKABLE int addPositionObs(int fixtureId, int axis, double value, double sigma);
     Q_INVOKABLE int addRotationObs(int fixtureId, int axis, double valueDeg, double sigma);
     Q_INVOKABLE int addDistanceObs(int fixtureIdA, int fixtureIdB, double distance, double sigma);
+    /** Crossing observation: N fixtures currently aimed at a common physical
+     *  point. The constraint is that all beams meet on the plane
+     *  <axis>=<value> (e.g. all cross at z=1.2m). fixtureIds must contain
+     *  ≥2 items. Captures current DMX implicitly (solver reads from
+     *  SpatialModel fixture transforms, same as addAimObs). */
+    Q_INVOKABLE int addCrossingObs(const QVariantList &fixtureIds,
+                                    int axis, double value, double sigma);
     Q_INVOKABLE void removeObs(int obsId);
     Q_INVOKABLE void clearAllObs();
 

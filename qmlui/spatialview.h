@@ -91,6 +91,10 @@ public:
     /** Set focus-mode predicate callback. Returns true when in Focus mode. */
     void setFocusModeCallback(std::function<bool()> cb) { m_focusModeCallback = std::move(cb); }
 
+    /** Modes in which keyboard gestures (F, H) may drive fixture DMX — i.e.
+     *  Focus and Calibrate. Live is passthrough-only; Layout is design. */
+    void setDmxControlModeCallback(std::function<bool()> cb) { m_dmxControlModeCallback = std::move(cb); }
+
     /** Set Focus aim commit callback — SpatialView calls it on mouse click/drag. */
     void setFocusAimCallback(std::function<void(double, double, double)> cb) {
         m_focusAimCallback = std::move(cb);
@@ -129,6 +133,14 @@ public:
         m_toggleHighlightCallback = std::move(cb);
     }
 
+    /** Returns the set of fixture IDs currently "lit" via Highlight.
+     *  rebuildBeamCones renders cones for the UNION of selected and
+     *  highlighted fixtures so crossing beams stay visible after
+     *  deselecting. */
+    void setHighlightedIdsCallback(std::function<std::vector<int32_t>()> cb) {
+        m_highlightedIdsCallback = std::move(cb);
+    }
+
     /** Get current camera state. */
     float cameraYaw() const { return m_cameraYaw; }
     float cameraPitch() const { return m_cameraPitch; }
@@ -140,6 +152,16 @@ public:
     /** Rebuild focus point render data (public so selection-state changes
      *  can force a re-render without mutating SpatialModel). */
     void rebuildFocusPoints();
+
+    /** Rebuild fixture DOF articulation (public so mode changes can force a
+     *  refresh — Layout uses home pose, Calibrate/Focus/Live read live DMX). */
+    void rebuildFixtureDofs();
+
+    /** Get a cached DMX snapshot for a universe (used by SpatialController
+     *  to seed the trackpad from current live DMX). Empty if none. */
+    QByteArray universeSnapshot(quint32 universeId) const {
+        return m_universeSnapshots.value(universeId);
+    }
 
 protected:
     void exposeEvent(QExposeEvent *event) override;
@@ -154,7 +176,6 @@ protected:
 private:
     void initBgfx();
     void rebuildFixtures();
-    void rebuildFixtureDofs();
     void rebuildEllipsoids();
     void rebuildTrusses();
     void rebuildObservationLines();
@@ -218,6 +239,7 @@ private:
 
     // Focus mode callbacks
     std::function<bool()> m_focusModeCallback;
+    std::function<bool()> m_dmxControlModeCallback;  // Focus + Calibrate
     std::function<void(double, double, double)> m_focusAimCallback;
     std::function<bool()> m_liveDmxModeCallback;
     std::function<QString()> m_selectedFocusPointCallback;
@@ -225,6 +247,7 @@ private:
     std::function<void(const QString &, double, double, double)> m_moveFocusPointCallback;
     std::function<void(double, double, double)> m_createFocusPointCallback;
     std::function<void()> m_toggleHighlightCallback;
+    std::function<std::vector<int32_t>()> m_highlightedIdsCallback;
 
     // Universe DMX snapshots (deep-copied from InputOutputMap::universeWritten)
     QHash<quint32, QByteArray> m_universeSnapshots;

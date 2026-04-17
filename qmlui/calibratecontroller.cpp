@@ -16,6 +16,10 @@
 #include "spatialmodel.h"
 #include "doc.h"
 #include "fixture.h"
+#include "fixturekinematics.h"
+#include "inputoutputmap.h"
+#include "universe.h"
+#include "fixture.h"
 
 #include <QVariantMap>
 
@@ -56,6 +60,9 @@ double CalibrateController::solverRms() const
         return 0.0;
     return m_doc->calibrationModel()->lastResult().rms_residual;
 }
+
+// Forward decl — definition is below addAimObs/addCrossingObs.
+static std::vector<double> captureFixtureNormalizedDmx(Doc *doc, int fixtureId);
 
 // ---------------------------------------------------------------------------
 // Observation CRUD
@@ -155,10 +162,114 @@ void CalibrateController::dismissFixtureResult(int fixtureId)
 int CalibrateController::addAimObs(int fixtureId, double targetX, double targetY,
                                     double targetZ, double sigma)
 {
+    // AimFactor's operator() reads dmxNormalized via forward_chain, which
+    // dereferences dof_values[joint.dof_index] for each joint in the chain.
+    // Passing an empty vector is UB — it crashes or returns garbage depending
+    // on memory state. Always capture the live DMX at observation time.
+    std::vector<double> dmx = captureFixtureNormalizedDmx(m_doc, fixtureId);
+    if (dmx.empty())
+    {
+        qWarning() << "[Calibrate] addAimObs: fixture" << fixtureId
+                   << "has no DOFs to capture — observation skipped";
+        return -1;
+    }
     CalibrationModel *cm = m_doc->calibrationModel();
-    std::vector<double> emptyDmx;
-    int id = cm->addAimObservation(QString::number(fixtureId), emptyDmx,
+    int id = cm->addAimObservation(QString::number(fixtureId), dmx,
                                     targetX, targetY, targetZ, sigma);
+    emit changed();
+    return id;
+}
+
+// Capture normalized DMX (0..1 per DOF) for a fixture at the moment of the
+// observation. The crossing solver needs these — unlike AimObs, it doesn't
+// read from SpatialModel but directly uses these DMX values to compute beam
+// directions through the fixture's kinematic chain.
+static std::vector<double> captureFixtureNormalizedDmx(Doc *doc, int fixtureId)
+{
+    std::vector<double> out;
+    if (!doc) return out;
+    Fixture *fxi = doc->fixture(quint32(fixtureId));
+    if (!fxi) return out;
+
+    FixtureKinematics fk = buildFixtureKinematics(fxi);
+    if (!fk.chain || fk.dmxAddresses.empty()) return out;
+
+    InputOutputMap *ioMap = doc->inputOutputMap();
+    if (!ioMap) return out;
+
+    // Read live universe bytes and normalize each DOF's MSB to 0..1.
+    const quint32 uni = fxi->universe();
+    if (int(uni) >= ioMap->universesCount()) return out;
+
+    // dmxAddresses holds absolute addresses (universe * 512 + rel); collect
+    // one normalized value per DOF by reading the MSB channel per DOF.
+    // fk.chain->dof_count() tells us how many DOFs; dmxAddresses is in
+    // MSB-first order (2 per DOF when a fine channel exists, 1 otherwise).
+    const int dofCount = fk.dofCount();
+    out.reserve(dofCount);
+
+    // Get the post-GM universe snapshot (what we're actually outputting).
+    QList<Universe *> universes = ioMap->claimUniverses();
+    QByteArray snapshot;
+    if (int(uni) < universes.size() && universes[uni])
+    {
+        const QByteArray *pg = universes[uni]->postGMValues();
+        if (pg) snapshot = *pg;
+    }
+    ioMap->releaseUniverses(false);
+
+    if (snapshot.isEmpty())
+    {
+        // Fall back to zeros if no snapshot.
+        out.assign(size_t(dofCount), 0.5);
+        return out;
+    }
+
+    // fk.dmxAddresses typically holds MSB-then-LSB pairs per DOF. Walk in
+    // strides that match: if fine channels exist, they follow MSBs; otherwise
+    // just 1 entry per DOF. ChannelMap handles the detail for us via
+    // dmxSnapshotToDofs, but we need raw 0..1 not angles. Simplest: pull
+    // the MSB channel index for each DOF from channelMap.
+    // For safety: iterate the addresses in groups determined by dofCount.
+    // This assumes MSB ordering — correct for current rigmath ChannelMap.
+    int stride = (fk.dmxAddresses.size() >= size_t(dofCount * 2)) ? 2 : 1;
+    for (int d = 0; d < dofCount; ++d)
+    {
+        const size_t idx = size_t(d) * stride;
+        if (idx >= fk.dmxAddresses.size()) { out.push_back(0.5); continue; }
+        const quint32 absAddr = fk.dmxAddresses[idx];
+        const int rel = int(absAddr & 0x1FF);
+        if (rel >= 0 && rel < snapshot.size())
+            out.push_back(double(uchar(snapshot.at(rel))) / 255.0);
+        else
+            out.push_back(0.5);
+    }
+    return out;
+}
+
+int CalibrateController::addCrossingObs(const QVariantList &fixtureIds,
+                                         int axis, double value, double sigma)
+{
+    if (fixtureIds.size() < 2) return -1;
+    QStringList fixtures;
+    std::vector<std::vector<double>> dmxPerFixture;
+    for (const QVariant &v : fixtureIds)
+    {
+        const int fid = v.toInt();
+        fixtures << QString::number(fid);
+        std::vector<double> n = captureFixtureNormalizedDmx(m_doc, fid);
+        if (n.empty())
+        {
+            qWarning() << "[Calibrate] addCrossingObs: fixture" << fid
+                       << "has no DOFs to capture — skipping observation";
+            return -1;
+        }
+        dmxPerFixture.push_back(std::move(n));
+    }
+    CalibrationModel *cm = m_doc->calibrationModel();
+    int id = cm->addCrossingObservation(fixtures, dmxPerFixture,
+                                         axis, value, sigma);
+    qDebug() << "[Calibrate] crossing obs added:" << fixtures.size() << "fixtures, axis" << axis << "value" << value;
     emit changed();
     return id;
 }

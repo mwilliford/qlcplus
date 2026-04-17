@@ -641,22 +641,21 @@ void BgfxRenderer::renderBeamCones()
     if (m_beamCones.empty())
         return;
 
-    // --- Pass 1: Solid translucent foggy white cone via lit shader ---
-    // N triangles (apex + adjacent base ring verts) per cone, with smooth radial normals.
+    // --- Pass 1: Solid translucent cone(s). One draw call per cone so we
+    // can apply the per-cone color (Highlight state → amber, dim cyan, etc).
     if (bgfx::isValid(m_litProgram) && bgfx::isValid(m_u_color))
     {
         constexpr int N = 24;
-        constexpr int vertsPerCone = 3 * N;  // no index buffer, 3 verts per triangle
+        constexpr int vertsPerCone = 3 * N;
 
-        uint32_t totalVerts = uint32_t(m_beamCones.size()) * vertsPerCone;
-        if (bgfx::getAvailTransientVertexBuffer(totalVerts, PosNormalVertex::layout))
+        for (const auto &cone : m_beamCones)
         {
+            if (!bgfx::getAvailTransientVertexBuffer(vertsPerCone, PosNormalVertex::layout))
+                break;
             bgfx::TransientVertexBuffer tvb;
-            bgfx::allocTransientVertexBuffer(&tvb, totalVerts, PosNormalVertex::layout);
+            bgfx::allocTransientVertexBuffer(&tvb, vertsPerCone, PosNormalVertex::layout);
             auto *v = (PosNormalVertex *)tvb.data;
-
             size_t writeIdx = 0;
-            for (const auto &cone : m_beamCones)
             {
                 float dx = cone.direction[0];
                 float dy = cone.direction[1];
@@ -705,7 +704,6 @@ void BgfxRenderer::renderBeamCones()
 
                 // Emit N triangles (apex, ring[i], ring[i+1])
                 for (int i = 0; i < N; i++) {
-                    // Apex normal: average of adjacent ring radials (smooth along rim)
                     float anx = (rnx[i] + rnx[i+1]) * 0.5f;
                     float any = (rny[i] + rny[i+1]) * 0.5f;
                     float anz = (rnz[i] + rnz[i+1]) * 0.5f;
@@ -720,13 +718,12 @@ void BgfxRenderer::renderBeamCones()
                 bx::mtxIdentity(identity);
                 bgfx::setTransform(identity);
 
-                // Foggy white, soft alpha
-                float foggyColor[4] = { 0.95f, 0.95f, 1.0f, 0.18f };
-                bgfx::setUniform(m_u_color, foggyColor);
+                // Per-cone RGBA from cone.color — set by SpatialView based on
+                // live DMX state (visibility + Highlight).
+                float coneColor[4] = { cone.color[0], cone.color[1], cone.color[2], cone.color[3] };
+                bgfx::setUniform(m_u_color, coneColor);
 
                 bgfx::setVertexBuffer(0, &tvb, 0, uint32_t(writeIdx));
-                // No back-face culling so both sides of the thin cone read.
-                // Depth test on, no depth write so the cone doesn't occlude the rod or other geo.
                 bgfx::setState(
                     BGFX_STATE_WRITE_RGB | BGFX_STATE_WRITE_A
                     | BGFX_STATE_DEPTH_TEST_LESS

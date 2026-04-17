@@ -117,10 +117,12 @@ SpatialController::SpatialController(Doc *doc, SpatialView *view, QObject *paren
     connect(sm, &SpatialModel::focusPointsChanged, this, &SpatialController::focusPointsChanged);
     connect(this, &SpatialController::selectedFocusPointChanged, this, &SpatialController::focusPointsChanged);
 
-    // Highlight follows selection — if the user changes which fixtures are
-    // selected (or which focus point), re-apply highlight to the new target set.
-    connect(this, &SpatialController::selectionChanged, this, [this]() { refreshHighlight(); });
-    connect(this, &SpatialController::selectedFocusPointChanged, this, [this]() { refreshHighlight(); });
+    // Highlight uses snapshot semantics: when H is pressed, we capture the
+    // currently-selected fixtures (or selected focus point's assigned fixtures)
+    // and hold them lit until H is pressed again. Changing selection does NOT
+    // re-target the highlight — this enables cross-beam calibration workflows
+    // where you light fixtures 1+2, then select each individually to aim them
+    // at a shared target without losing visibility on the other one.
 }
 
 void SpatialController::setSelectedFixtureId(int id)
@@ -252,12 +254,17 @@ void SpatialController::setMode(int m)
 {
     if (m_mode == m)
         return;
-    // Leaving Focus mode → release any DMX we were holding.
-    if (m_mode == Focus && m != Focus)
-    {
-        clearFocusAim();
-        clearHighlight();
-    }
+
+    // Programmer-persistent model (grandMA / Eos / Hog convention): DMX
+    // overrides persist across ALL view switches. The programmer is only
+    // released by explicit user action (e.g. a future "Clear / Release"
+    // button), not by navigation. In Layout we still render fixtures at
+    // home pose in the UI (liveDmxModeCallback is false), but the underlying
+    // DMX output continues — so physical fixtures don't flinch and returning
+    // to Focus/Calibrate/Live picks up exactly where you left off.
+    qDebug() << "[SpatialMode]" << m_mode << "->" << m
+             << "— overrides persist (focus:" << m_focusControlledChannels.size()
+             << "highlight-fixtures:" << m_highlightedFixtureIds.size() << ")";
     m_mode = m;
     emit modeChanged();
 }
@@ -738,6 +745,103 @@ QVariantList SpatialController::focusPointsList() const
 }
 
 // ---------------------------------------------------------------------------
+// Calibrate pan/tilt trackpad — raw DMX on primary selected fixture
+// ---------------------------------------------------------------------------
+
+bool SpatialController::selectedFixtureHasPanTilt() const
+{
+    if (m_selectedFixtureId < 0) return false;
+    Fixture *fxi = m_doc->fixture(quint32(m_selectedFixtureId));
+    if (!fxi) return false;
+    const QLCFixtureMode *mode = fxi->fixtureMode();
+    if (!mode) return false;
+    const quint32 pan  = mode->channelNumber(QLCChannel::Pan,  QLCChannel::MSB);
+    const quint32 tilt = mode->channelNumber(QLCChannel::Tilt, QLCChannel::MSB);
+    return pan != QLCChannel::invalid() || tilt != QLCChannel::invalid();
+}
+
+// Read current pan/tilt % from live DMX for the primary selected fixture.
+// Returns 50.0 when no data available so the trackpad doesn't jump.
+static double axisPercent(const SpatialController *self,
+                           std::function<QByteArray(quint32)> snapCb,
+                           Fixture *fxi, QLCChannel::Group axis)
+{
+    if (!fxi) return 50.0;
+    const QLCFixtureMode *mode = fxi->fixtureMode();
+    if (!mode) return 50.0;
+    const quint32 chNum = mode->channelNumber(axis, QLCChannel::MSB);
+    if (chNum == QLCChannel::invalid()) return 50.0;
+
+    if (!snapCb) return 50.0;
+    QByteArray dmx = snapCb(fxi->universe());
+    if (dmx.isEmpty()) return 50.0;
+    const int absIdx = int(fxi->address()) + int(chNum);
+    if (absIdx < 0 || absIdx >= dmx.size()) return 50.0;
+    const uchar v = uchar(dmx.at(absIdx));
+    (void)self;
+    return double(v) / 2.55;  // 0-255 -> 0-100
+}
+
+double SpatialController::selectedFixturePanPercent() const
+{
+    if (m_selectedFixtureId < 0) return 50.0;
+    Fixture *fxi = m_doc->fixture(quint32(m_selectedFixtureId));
+    return axisPercent(this, m_universeSnapshotCallback, fxi, QLCChannel::Pan);
+}
+
+double SpatialController::selectedFixtureTiltPercent() const
+{
+    if (m_selectedFixtureId < 0) return 50.0;
+    Fixture *fxi = m_doc->fixture(quint32(m_selectedFixtureId));
+    return axisPercent(this, m_universeSnapshotCallback, fxi, QLCChannel::Tilt);
+}
+
+void SpatialController::notifyUniverseWritten()
+{
+    // Only emit if a mover is selected — avoids spamming the QML binding
+    // when nothing cares.
+    if (m_selectedFixtureId < 0) return;
+    if (selectedFixtureHasPanTilt())
+        emit livePanTiltChanged();
+}
+
+void SpatialController::setSelectedFixturePanTiltPercent(double panPct, double tiltPct)
+{
+    if (m_selectedFixtureId < 0) return;
+    Fixture *fxi = m_doc->fixture(quint32(m_selectedFixtureId));
+    if (!fxi) return;
+    const QLCFixtureMode *mode = fxi->fixtureMode();
+    if (!mode) return;
+
+    auto clampPct = [](double v) { return v < 0.0 ? 0.0 : (v > 100.0 ? 100.0 : v); };
+    panPct = clampPct(panPct);
+    tiltPct = clampPct(tiltPct);
+
+    const uint universe = fxi->universe();
+    const uint baseAddr = fxi->address();
+
+    auto writeAxis = [&](QLCChannel::Group g, double pct) {
+        const quint32 msbCh = mode->channelNumber(g, QLCChannel::MSB);
+        if (msbCh == QLCChannel::invalid()) return;
+        const uchar msb = uchar(std::min(255, int(pct * 2.55 + 0.5)));
+        const uint absMsb = universe * 512U + baseAddr + uint(msbCh);
+        emit focusDmxWrite(absMsb, msb);
+        m_focusControlledChannels.insert(absMsb);
+
+        // Zero the LSB if present so the coarse value isn't jittered by stale fine bits.
+        const quint32 lsbCh = mode->channelNumber(g, QLCChannel::LSB);
+        if (lsbCh != QLCChannel::invalid())
+        {
+            const uint absLsb = universe * 512U + baseAddr + uint(lsbCh);
+            emit focusDmxWrite(absLsb, 0);
+            m_focusControlledChannels.insert(absLsb);
+        }
+    };
+    writeAxis(QLCChannel::Pan,  panPct);
+    writeAxis(QLCChannel::Tilt, tiltPct);
+}
+
+// ---------------------------------------------------------------------------
 // Highlight (Focus-mode visibility helper)
 // ---------------------------------------------------------------------------
 
@@ -762,10 +866,54 @@ static uchar findShutterOpenValue(const QLCChannel *ch)
     return 255;
 }
 
-void SpatialController::applyHighlight()
+void SpatialController::lightFixture(int32_t fid)
 {
-    // Target fixtures: selected fixture set wins; fall back to the selected
-    // focus point's assigned fixtures if no fixtures are selected.
+    if (m_highlightedFixtureIds.contains(fid)) return;  // already lit
+
+    Fixture *fxi = m_doc->fixture(quint32(fid));
+    if (!fxi) return;
+    const QLCFixtureMode *mode = fxi->fixtureMode();
+    if (!mode) return;
+
+    const uint universe = fxi->universe();
+    const uint baseAddr = fxi->address();
+    const auto &channels = mode->channels();
+    QSet<uint> chans;
+    for (int i = 0; i < channels.size(); i++)
+    {
+        const QLCChannel *ch = channels.at(i);
+        if (!ch) continue;
+        const uint absAddr = universe * 512U + baseAddr + uint(i);
+        if (ch->group() == QLCChannel::Intensity)
+        {
+            emit focusDmxWrite(absAddr, 255);
+            chans.insert(absAddr);
+        }
+        else if (ch->group() == QLCChannel::Shutter)
+        {
+            emit focusDmxWrite(absAddr, findShutterOpenValue(ch));
+            chans.insert(absAddr);
+        }
+    }
+    m_highlightedFixtureIds.insert(fid);
+    m_highlightChannelsPerFixture[fid] = chans;
+    qDebug() << "[Highlight] lit fix" << fid << fxi->name() << "(" << chans.size() << "channels )";
+}
+
+void SpatialController::unlightFixture(int32_t fid)
+{
+    auto it = m_highlightChannelsPerFixture.find(fid);
+    if (it == m_highlightChannelsPerFixture.end()) return;
+    for (uint addr : it.value()) emit focusDmxReset(addr);
+    m_highlightChannelsPerFixture.erase(it);
+    m_highlightedFixtureIds.remove(fid);
+    qDebug() << "[Highlight] unlit fix" << fid;
+}
+
+void SpatialController::toggleHighlight()
+{
+    // Target fixtures: current selection (or selected focus point's assigned
+    // fixtures as a fallback). Fixtures outside this set are untouched.
     std::vector<int32_t> ids;
     if (m_selectedIdsCallback)
         ids = m_selectedIdsCallback();
@@ -774,82 +922,63 @@ void SpatialController::applyHighlight()
 
     if (ids.empty() && !m_selectedFocusPointId.isEmpty())
     {
-        SpatialModel *sm = m_doc->spatialModel();
-        if (const auto *fp = sm->focusPoint(m_selectedFocusPointId))
-        {
-            for (const QString &fidStr : fp->assignedFixtureIds)
+        if (const auto *fp = m_doc->spatialModel()->focusPoint(m_selectedFocusPointId))
+            for (const QString &s : fp->assignedFixtureIds)
             {
-                bool ok = false;
-                int32_t fid = fidStr.toInt(&ok);
+                bool ok = false; int32_t fid = s.toInt(&ok);
                 if (ok) ids.push_back(fid);
             }
-        }
     }
 
+    if (ids.empty())
+    {
+        qDebug() << "[Highlight] toggleHighlight — no selection, nothing to do";
+        return;
+    }
+
+    // Decide whether to light or unlight: if ALL selected are already lit,
+    // toggle them off. Otherwise light the ones not yet lit. This gives
+    // intuitive behavior for the common cross-beam flow.
+    bool allLit = true;
     for (int32_t fid : ids)
-    {
-        Fixture *fxi = m_doc->fixture(quint32(fid));
-        if (!fxi) continue;
-        const QLCFixtureMode *mode = fxi->fixtureMode();
-        if (!mode) continue;
+        if (!m_highlightedFixtureIds.contains(fid)) { allLit = false; break; }
 
-        const uint universe = fxi->universe();
-        const uint baseAddr = fxi->address();
-        const auto &channels = mode->channels();
-        for (int i = 0; i < channels.size(); i++)
-        {
-            const QLCChannel *ch = channels.at(i);
-            if (!ch) continue;
-            const uint absAddr = universe * 512U + baseAddr + uint(i);
-
-            if (ch->group() == QLCChannel::Intensity)
-            {
-                // Full intensity. MSB only; leave LSB alone (most fixtures
-                // interpret MSB=255 as 100% regardless).
-                emit focusDmxWrite(absAddr, 255);
-                m_highlightChannels.insert(absAddr);
-            }
-            else if (ch->group() == QLCChannel::Shutter)
-            {
-                emit focusDmxWrite(absAddr, findShutterOpenValue(ch));
-                m_highlightChannels.insert(absAddr);
-            }
-        }
-    }
-}
-
-void SpatialController::toggleHighlight()
-{
-    if (m_highlightActive)
-    {
-        clearHighlight();
-    }
+    if (allLit)
+        for (int32_t fid : ids) unlightFixture(fid);
     else
-    {
-        m_highlightActive = true;
-        applyHighlight();
-        emit highlightChanged();
-    }
+        for (int32_t fid : ids)
+            if (!m_highlightedFixtureIds.contains(fid)) lightFixture(fid);
+
+    emit highlightChanged();
 }
 
 void SpatialController::clearHighlight()
 {
-    if (!m_highlightActive && m_highlightChannels.isEmpty())
-        return;
-    for (uint addr : m_highlightChannels)
-        emit focusDmxReset(addr);
-    m_highlightChannels.clear();
-    const bool was = m_highlightActive;
-    m_highlightActive = false;
-    if (was) emit highlightChanged();
+    if (m_highlightedFixtureIds.isEmpty()) return;
+    QList<int32_t> fids(m_highlightedFixtureIds.begin(), m_highlightedFixtureIds.end());
+    for (int32_t fid : fids) unlightFixture(fid);
+    emit highlightChanged();
 }
 
-void SpatialController::refreshHighlight()
+void SpatialController::releaseProgrammer()
 {
-    if (!m_highlightActive) return;
-    // Release previous override set, re-compute for new selection.
-    for (uint addr : m_highlightChannels)
-        emit focusDmxReset(addr);
-    m_highlightChannels.clear();
-    applyHighlight();
+    qDebug() << "[SpatialController] releaseProgrammer: focus=" << m_focusControlledChannels.size()
+             << "highlight-fixtures=" << m_highlightedFixtureIds.size();
+    clearFocusAim();
+    clearHighlight();
+}
+
+std::vector<int32_t> SpatialController::highlightedFixtureIds() const
+{
+    std::vector<int32_t> out;
+    out.reserve(m_highlightedFixtureIds.size());
+    for (int32_t id : m_highlightedFixtureIds) out.push_back(id);
+    return out;
+}
+
+QVariantList SpatialController::highlightedFixtureIdsList() const
+{
+    QVariantList out;
+    for (int32_t id : m_highlightedFixtureIds) out.append(int(id));
+    return out;
 }

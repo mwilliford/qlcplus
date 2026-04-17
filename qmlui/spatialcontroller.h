@@ -76,6 +76,12 @@ class SpatialController : public QObject
     // toggle (industry-standard H-key idiom). Open shutter + dimmer to 100%.
     Q_PROPERTY(bool highlight READ highlight NOTIFY highlightChanged)
 
+    // Live pan/tilt of the primary selected fixture as a 0..100 percent.
+    // Refreshes on every universe tick so the Calibrate trackpad dot follows
+    // the real-time DMX value — e.g. while the user holds F to sweep aim.
+    Q_PROPERTY(double selectedFixturePanPercent READ selectedFixturePanPercent NOTIFY livePanTiltChanged)
+    Q_PROPERTY(double selectedFixtureTiltPercent READ selectedFixtureTiltPercent NOTIFY livePanTiltChanged)
+
 public:
     explicit SpatialController(Doc *doc, SpatialView *view, QObject *parent = nullptr);
 
@@ -142,6 +148,11 @@ public:
     /** Set a callback to retrieve all selected fixture IDs. */
     void setSelectedIdsCallback(std::function<std::vector<int32_t>()> cb) { m_selectedIdsCallback = std::move(cb); }
 
+    /** Set a callback for reading the live DMX snapshot of a given universe.
+     *  Returns an empty QByteArray if no snapshot is available. Used by
+     *  selectedFixturePanPercent()/TiltPercent() to seed the trackpad. */
+    void setUniverseSnapshotCallback(std::function<QByteArray(quint32)> cb) { m_universeSnapshotCallback = std::move(cb); }
+
     // --- Focus mode aim ---
     /** Set the world-space aim point for Focus mode. Computes IK for each
      *  selected moving-head fixture and emits focusDmxWrite signals. */
@@ -188,15 +199,49 @@ public:
      *  { id, name, x, y, z, assignedCount, selected }. */
     QVariantList focusPointsList() const;
 
-    // --- Highlight (Focus-mode visibility helper) ---
+    // --- Calibrate pan/tilt control ---
+    /** Raw-DMX pan/tilt for the primary selected fixture. Percent inputs
+     *  0..100 map to DMX 0..255 (MSB only; LSB set to 0). No-op if no
+     *  fixture is selected or the fixture has no pan/tilt channels. */
+    Q_INVOKABLE void setSelectedFixturePanTiltPercent(double panPct, double tiltPct);
 
-    bool highlight() const { return m_highlightActive; }
-    /** Toggle highlight: open shutter + set dimmer to 100% on the currently
-     *  selected fixtures (or, if none, on the selected focus point's
-     *  assigned fixtures). Re-toggle to release. */
+    /** Whether the primary selected fixture has pan+tilt channels. QML uses
+     *  this to show/hide the trackpad widget. */
+    Q_INVOKABLE bool selectedFixtureHasPanTilt() const;
+
+    /** Current pan DMX value as percentage (0..100) for the primary selected
+     *  fixture, reading from live DMX output. Q_PROPERTY above makes these
+     *  bindable so the trackpad dot updates in real time during F-drag. */
+    double selectedFixturePanPercent() const;
+    double selectedFixtureTiltPercent() const;
+
+    /** Called by SpatialView after each universeWritten — emits
+     *  livePanTiltChanged when a fixture with pan/tilt is selected. */
+    void notifyUniverseWritten();
+
+    // --- Highlight (per-fixture lit state) ---
+
+    /** True when at least one fixture is currently highlighted. */
+    bool highlight() const { return !m_highlightedFixtureIds.isEmpty(); }
+    /** Number of fixtures currently highlighted (for panel display). */
+    Q_INVOKABLE int highlightCount() const { return m_highlightedFixtureIds.size(); }
+    /** Toggle highlight for the currently selected fixtures. If ALL selected
+     *  are already lit → unlight them. Otherwise → light the ones not lit.
+     *  Other fixtures' highlight state is unaffected. */
     Q_INVOKABLE void toggleHighlight();
-    /** Turn highlight off and release its DMX overrides. Safe to call when off. */
+    /** Release all highlight overrides. */
     void clearHighlight();
+
+    /** Full programmer release: clears focus-aim overrides AND all
+     *  highlights. Equivalent to grandMA's "Off" / Eos's "Release". */
+    Q_INVOKABLE void releaseProgrammer();
+
+    /** List of fixture IDs currently highlighted — used by SpatialView to
+     *  render amber-tinted cones even when the fixture isn't selected. */
+    std::vector<int32_t> highlightedFixtureIds() const;
+
+    /** QML-facing version of the above. */
+    Q_INVOKABLE QVariantList highlightedFixtureIdsList() const;
 
 signals:
     void selectionChanged();
@@ -229,6 +274,10 @@ signals:
     /** Emitted when the highlight state toggles on/off. */
     void highlightChanged();
 
+    /** Emitted on every DMX tick when a fixture with pan/tilt is selected —
+     *  drives real-time trackpad follow during F-drag. */
+    void livePanTiltChanged();
+
 private:
     void updateTransformFromModel();
 
@@ -241,6 +290,7 @@ private:
     double m_gridSize = 0.5;  // 0.5m grid
     int m_axisMode = 0;       // 0=World, 1=Local
     std::function<std::vector<int32_t>()> m_selectedIdsCallback;
+    std::function<QByteArray(quint32)> m_universeSnapshotCallback;
     int m_gizmoMode = 0;      // 0=Translate, 1=Rotate
 
     // Cached transform values (avoid querying model every frame)
@@ -256,15 +306,17 @@ private:
     QString m_selectedFocusPointId;
     int m_nextFocusPointIdNum = 0;  // for auto-generating unique ids
 
-    // Highlight
-    bool m_highlightActive = false;
-    QSet<uint> m_highlightChannels;  // abs DMX addresses we're currently overriding
-    /** Internal: compute target fixtures (selected fixtures, or if none, the
-     *  selected focus point's assigned fixtures), open their shutter, set
-     *  dimmer to 100%. Fills m_highlightChannels. */
-    void applyHighlight();
-    /** Internal: re-apply highlight if active (call after selection changes). */
-    void refreshHighlight();
+    // Highlight — per-fixture latched state. Each fixture we've lit stays
+    // lit until explicitly toggled off (via H with it selected) or released
+    // (via releaseProgrammer). This supports cross-beam calibration: light
+    // fix 1, select fix 2 without losing fix 1, light fix 2, aim each
+    // independently while both stay visible.
+    QSet<int32_t> m_highlightedFixtureIds;
+    QHash<int32_t, QSet<uint>> m_highlightChannelsPerFixture;
+    /** Internal: light a single fixture (open shutter + dimmer full). */
+    void lightFixture(int32_t fixtureId);
+    /** Internal: release our DMX overrides for a single fixture. */
+    void unlightFixture(int32_t fixtureId);
 };
 
 #endif // SPATIALCONTROLLER_H

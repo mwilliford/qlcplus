@@ -38,6 +38,7 @@
 #include "qlcfixturemode.h"
 #include "qlcphysical.h"
 #include "qlcchannel.h"
+#include "qlccapability.h"
 #include "gdtfgeometrydata.h"
 #include "gdtfkinematics.h"
 #include "qlcfile.h"
@@ -45,6 +46,7 @@
 
 #include <rigmath/beam.hpp>
 #include <rigmath/kinematic_chain.hpp>
+#include <set>
 
 #ifdef Q_OS_MACOS
 extern void *setupMetalLayerForView(void *nativeHandle);
@@ -645,13 +647,13 @@ void SpatialView::keyPressEvent(QKeyEvent *event)
     else if (event->key() == Qt::Key_E && m_gizmoModeSetCallback)
         m_gizmoModeSetCallback(1);  // Rotate
     else if (event->key() == Qt::Key_H && !event->isAutoRepeat()
-             && m_focusModeCallback && m_focusModeCallback())
+             && m_dmxControlModeCallback && m_dmxControlModeCallback())
     {
         if (m_toggleHighlightCallback)
             m_toggleHighlightCallback();
     }
     else if (event->key() == Qt::Key_F && !event->isAutoRepeat()
-             && m_focusModeCallback && m_focusModeCallback())
+             && m_dmxControlModeCallback && m_dmxControlModeCallback())
     {
         // Hold-F "follow focus": subsequent mouseMoveEvents drive the aim.
         // Fire once now at the current cursor so the beam snaps immediately
@@ -1126,6 +1128,12 @@ void SpatialView::rebuildFixtureDofs()
     if (!m_bgfxReady)
         return;
 
+    // In Layout mode (and any non-live mode) fixtures render at their home
+    // pose (all DOFs zero) so the body matches the home-direction beam cone.
+    // Only when we're actually driving off DMX (Calibrate/Focus/Live) do we
+    // read from the universe snapshot.
+    const bool useLiveDmx = m_liveDmxModeCallback && m_liveDmxModeCallback();
+
     SpatialModel *sm = m_doc->spatialModel();
 
     for (const QString &id : sm->fixtureIds())
@@ -1141,9 +1149,12 @@ void SpatialView::rebuildFixtureDofs()
         int numDofs = fk.dofCount();
         std::vector<double> dofs(numDofs, 0.0);
 
-        auto it = m_universeSnapshots.find(fk.universeId);
-        if (it != m_universeSnapshots.end())
-            dofs = dmxSnapshotToDofs(fk, it.value());
+        if (useLiveDmx)
+        {
+            auto it = m_universeSnapshots.find(fk.universeId);
+            if (it != m_universeSnapshots.end())
+                dofs = dmxSnapshotToDofs(fk, it.value());
+        }
 
         // Convert double → float for the render layer
         std::vector<float> angles(numDofs);
@@ -1163,9 +1174,18 @@ void SpatialView::rebuildBeamCones()
 
     std::vector<qlcrender::RenderBeamCone> cones;
     SpatialModel *sm = m_doc->spatialModel();
-    auto selectedIds = m_renderer->selectedIds();
 
-    for (int32_t fid : selectedIds)
+    // Union of selected + highlighted so cross-beam observations stay
+    // visible: a fixture you've lit stays on screen even when you click
+    // away to aim another one.
+    std::set<int32_t> ids;
+    for (int32_t id : m_renderer->selectedIds()) ids.insert(id);
+    std::vector<int32_t> highlighted;
+    if (m_highlightedIdsCallback) highlighted = m_highlightedIdsCallback();
+    for (int32_t id : highlighted) ids.insert(id);
+    std::set<int32_t> highlightedSet(highlighted.begin(), highlighted.end());
+
+    for (int32_t fid : ids)
     {
         Fixture *fxi = m_doc->fixture(quint32(fid));
         if (!fxi)
@@ -1196,6 +1216,70 @@ void SpatialView::rebuildBeamCones()
 
         QLCPhysical phy = mode->physical();
         rigmath::RigidTransform xf = sm->fixtureTransform(QString::number(fid));
+
+        // Visibility: in live-DMX modes, dim the cone alpha by
+        // dimmer% × shutter-open%. In Layout (home pose, no DMX read) render
+        // at full brightness so direction stays legible.
+        double visibility = 1.0;
+        if (useLiveDmx)
+        {
+            auto itVis = m_universeSnapshots.find(fk.universeId);
+            if (itVis != m_universeSnapshots.end())
+            {
+                const QByteArray &dmx = itVis.value();
+                const uint base = fxi->address();
+                double dimPct = 0.0;
+                double shutterOpen = 1.0;
+                bool hasDim = false, hasShutter = false;
+                for (int i = 0; i < mode->channels().size(); i++)
+                {
+                    const QLCChannel *ch = mode->channel(i);
+                    if (!ch) continue;
+                    const int absIdx = int(base) + i;
+                    if (absIdx < 0 || absIdx >= dmx.size()) continue;
+                    const uchar v = uchar(dmx.at(absIdx));
+                    if (ch->group() == QLCChannel::Intensity && ch->controlByte() == QLCChannel::MSB)
+                    {
+                        dimPct = std::max(dimPct, v / 255.0);
+                        hasDim = true;
+                    }
+                    else if (ch->group() == QLCChannel::Shutter)
+                    {
+                        hasShutter = true;
+                        if (QLCCapability *cap = ch->searchCapability(v))
+                        {
+                            const auto p = cap->preset();
+                            if (p == QLCCapability::ShutterClose)
+                                shutterOpen = 0.0;
+                            else if (p == QLCCapability::StrobeFastToSlow
+                                  || p == QLCCapability::StrobeSlowToFast
+                                  || p == QLCCapability::StrobeRandom)
+                                shutterOpen = 0.5;
+                            // ShutterOpen / unknown → leave at 1.0
+                        }
+                        else if (v <= 3)
+                        {
+                            shutterOpen = 0.0;
+                        }
+                    }
+                }
+                if (!hasDim) dimPct = 1.0;
+                if (!hasShutter) shutterOpen = 1.0;
+                visibility = dimPct * shutterOpen;
+                static int beamLogCounter = 0;
+                if (++beamLogCounter % 60 == 0)  // once per sec at 60Hz to avoid spam
+                {
+                    qDebug() << "[BeamCone] fix" << fid
+                             << "dimPct=" << dimPct << "(hasDim=" << hasDim << ")"
+                             << "shutter=" << shutterOpen << "(hasShutter=" << hasShutter << ")"
+                             << "visibility=" << visibility;
+                }
+            }
+            else
+            {
+                visibility = 0.3;  // no snapshot yet — show faintly
+            }
+        }
 
         // Beam full-cone angle (use widest end of zoom range, default 10°)
         double beamAngleDeg = phy.lensDegreesMax() > 0
@@ -1235,10 +1319,18 @@ void SpatialView::rebuildBeamCones()
             cone.direction[2] = float(beam.direction.z);
             cone.halfAngleDeg = float(halfAngle);
             cone.length = beamLength;
-            cone.color[0] = 0.3f;
-            cone.color[1] = 0.9f;
-            cone.color[2] = 1.0f;
-            cone.color[3] = 0.7f;
+            // Hue by Highlight membership (explicit user intent), not by
+            // inferred DMX visibility. Amber = user highlighted this fixture.
+            // Cyan = selected but not highlighted (just showing direction).
+            const bool highlighted = highlightedSet.count(fid) > 0;
+            cone.color[0] = highlighted ? 1.0f  : 0.3f;
+            cone.color[1] = highlighted ? 0.85f : 0.9f;
+            cone.color[2] = highlighted ? 0.2f  : 1.0f;
+            // Alpha still modulated by live visibility so a cue driving the
+            // fixture to half intensity shows a half-bright cone. Highlight
+            // boosts visibility via its DMX writes, so the amber cone ends
+            // up at near-max alpha naturally.
+            cone.color[3] = float(std::max(0.10, 0.10 + 0.90 * visibility));
             cones.push_back(cone);
         }
     }
