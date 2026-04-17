@@ -144,6 +144,7 @@ protected:
     void mouseReleaseEvent(QMouseEvent *event) override;
     void wheelEvent(QWheelEvent *event) override;
     void keyPressEvent(QKeyEvent *event) override;
+    void keyReleaseEvent(QKeyEvent *event) override;
 
 private:
     void initBgfx();
@@ -185,7 +186,7 @@ private:
     bool m_panning = false;
     bool m_draggingGizmo = false;
     bool m_draggingRotate = false;
-    bool m_focusDragging = false;
+    bool m_focusFollowing = false;  // hold-F gesture in Focus mode
     bool m_focusPointDragging = false;
     QString m_draggedFocusPointId;
 

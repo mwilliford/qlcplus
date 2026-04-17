@@ -11,6 +11,7 @@
       http://www.apache.org/licenses/LICENSE-2.0.txt
 */
 
+#include <QCursor>
 #include <QExposeEvent>
 #include <QScreen>
 #include <QGuiApplication>
@@ -235,9 +236,10 @@ void SpatialView::mousePressEvent(QMouseEvent *event)
         int gizmoMode = m_gizmoModeCallback ? m_gizmoModeCallback() : 0;
         auto *bgfxR = dynamic_cast<qlcrender::BgfxRenderer *>(m_renderer.get());
 
-        // Focus mode: pick order is focus-point → fixture → empty space
-        // (Shift=create, plain=ephemeral aim). Checked BEFORE gizmo hit-tests
-        // so camera orbit doesn't fight interaction.
+        // Focus mode: pick order is focus-point → fixture → Shift+create.
+        // Plain click on empty space falls through to the shared orbit path so
+        // the 3D view behaves the same across Layout / Calibrate / Focus.
+        // Ephemeral aim is now a keyboard gesture: hold F + move mouse.
         if (m_focusModeCallback && m_focusModeCallback() && bgfxR)
         {
             // 1. Focus point hit-test — wins over fixtures so the user can
@@ -263,29 +265,23 @@ void SpatialView::mousePressEvent(QMouseEvent *event)
                 return;
             }
 
-            // 3. Missed everything — need the floor-plane intersection for
-            //    either Shift+create or ephemeral aim.
-            float view[16], proj[16];
-            bgfxR->camera().viewMatrix(view);
-            float aspect = float(vw) / float(vh);
-            bgfxR->camera().projMatrix(proj, aspect, true);
-            qlcrender::Ray ray = qlcrender::screenToRay(mx, my, vw, vh, view, proj);
-
-            float hit[3];
-            if (qlcrender::rayIntersectsPlaneZ(ray, 0.0f, hit))
+            // 3. Shift+click on empty floor → create focus point.
+            if (event->modifiers() & Qt::ShiftModifier)
             {
-                if ((event->modifiers() & Qt::ShiftModifier) && m_createFocusPointCallback)
+                float view[16], proj[16];
+                bgfxR->camera().viewMatrix(view);
+                float aspect = float(vw) / float(vh);
+                bgfxR->camera().projMatrix(proj, aspect, true);
+                qlcrender::Ray ray = qlcrender::screenToRay(mx, my, vw, vh, view, proj);
+                float hit[3];
+                if (qlcrender::rayIntersectsPlaneZ(ray, 0.0f, hit) && m_createFocusPointCallback)
                 {
                     m_createFocusPointCallback(double(hit[0]), double(hit[1]), double(hit[2]));
                     m_orbiting = false;
                     return;
                 }
-                m_focusDragging = true;
-                m_orbiting = false;
-                if (m_focusAimCallback)
-                    m_focusAimCallback(double(hit[0]), double(hit[1]), double(hit[2]));
             }
-            return;
+            // else: fall through to orbit (m_orbiting = true below)
         }
 
         if (gizmoMode == 0)
@@ -403,7 +399,7 @@ void SpatialView::mouseMoveEvent(QMouseEvent *event)
         return;
     }
 
-    if (m_focusDragging && m_bgfxReady)
+    if (m_focusFollowing && m_bgfxReady)
     {
         auto *bgfxR = dynamic_cast<qlcrender::BgfxRenderer *>(m_renderer.get());
         if (!bgfxR)
@@ -425,6 +421,8 @@ void SpatialView::mouseMoveEvent(QMouseEvent *event)
             if (m_focusAimCallback)
                 m_focusAimCallback(double(hit[0]), double(hit[1]), double(hit[2]));
         }
+        // Don't return — allow orbit / other drags to still process this move
+        // if a mouse button is also down. But common case: follow only.
         return;
     }
 
@@ -562,12 +560,6 @@ void SpatialView::mouseReleaseEvent(QMouseEvent *event)
         return;
     }
 
-    if (event->button() == Qt::LeftButton && m_focusDragging)
-    {
-        m_focusDragging = false;
-        return;
-    }
-
     if (event->button() == Qt::LeftButton && m_draggingGizmo)
     {
         auto *bgfxR = dynamic_cast<qlcrender::BgfxRenderer *>(m_renderer.get());
@@ -652,6 +644,32 @@ void SpatialView::keyPressEvent(QKeyEvent *event)
         m_gizmoModeSetCallback(0);  // Translate
     else if (event->key() == Qt::Key_E && m_gizmoModeSetCallback)
         m_gizmoModeSetCallback(1);  // Rotate
+    else if (event->key() == Qt::Key_F && !event->isAutoRepeat()
+             && m_focusModeCallback && m_focusModeCallback())
+    {
+        // Hold-F "follow focus": subsequent mouseMoveEvents drive the aim.
+        // Fire once now at the current cursor so the beam snaps immediately
+        // even if the user holds F without moving the mouse.
+        m_focusFollowing = true;
+        if (m_bgfxReady)
+        {
+            auto *bgfxR = dynamic_cast<qlcrender::BgfxRenderer *>(m_renderer.get());
+            if (bgfxR)
+            {
+                QPoint local = mapFromGlobal(QCursor::pos());
+                float mx, my; uint32_t vw, vh;
+                mouseToViewport(local, mx, my, vw, vh);
+                float view[16], proj[16];
+                bgfxR->camera().viewMatrix(view);
+                float aspect = float(vw) / float(vh);
+                bgfxR->camera().projMatrix(proj, aspect, true);
+                qlcrender::Ray ray = qlcrender::screenToRay(mx, my, vw, vh, view, proj);
+                float hit[3];
+                if (qlcrender::rayIntersectsPlaneZ(ray, 0.0f, hit) && m_focusAimCallback)
+                    m_focusAimCallback(double(hit[0]), double(hit[1]), double(hit[2]));
+            }
+        }
+    }
     else if (event->key() == Qt::Key_Z && (event->modifiers() & Qt::ControlModifier))
     {
         Tardis *tardis = Tardis::instance();
@@ -665,6 +683,18 @@ void SpatialView::keyPressEvent(QKeyEvent *event)
     }
     else
         QWindow::keyPressEvent(event);
+}
+
+void SpatialView::keyReleaseEvent(QKeyEvent *event)
+{
+    if (event->key() == Qt::Key_F && !event->isAutoRepeat())
+    {
+        m_focusFollowing = false;
+    }
+    else
+    {
+        QWindow::keyReleaseEvent(event);
+    }
 }
 
 void SpatialView::wheelEvent(QWheelEvent *event)

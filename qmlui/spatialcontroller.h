@@ -68,6 +68,10 @@ class SpatialController : public QObject
     // Each entry: { id, name, x, y, z, assignedCount, selected }.
     Q_PROPERTY(QVariantList focusPoints READ focusPointsList NOTIFY focusPointsChanged)
 
+    // Currently selected focus-point id ("" = none). Bindable so the Focus
+    // panel can reactively enable/disable actions that need one selected.
+    Q_PROPERTY(QString selectedFocusPointId READ selectedFocusPointId WRITE setSelectedFocusPointId NOTIFY selectedFocusPointChanged)
+
 public:
     explicit SpatialController(Doc *doc, SpatialView *view, QObject *parent = nullptr);
 

@@ -1196,6 +1196,14 @@ Rectangle
                 }
             }
 
+            // --- 3D-view gesture hints ---
+            Text {
+                Layout.fillWidth: true
+                text: "Hold F over 3D view to aim beam at cursor.\nShift+click on floor to create a point."
+                color: "#777"; font.pixelSize: 10
+                wrapMode: Text.Wrap
+            }
+
             // --- Add button ---
             // Shift+click in the 3D view also creates a point at the clicked
             // position; this button drops one at stage center, 1.5m up.
@@ -1237,13 +1245,15 @@ Rectangle
                 ToolTip.visible: hovered; ToolTip.delay: 500
                 ToolTip.text: "Assign currently selected fixtures to the selected focus point"
                 background: Rectangle {
-                    color: parent.enabled ? (parent.hovered ? "#444" : "#333") : "#2a2a2a"
+                    color: !parent.enabled ? "#2a2a2a"
+                           : parent.hovered ? "#4a9eff" : "#3a7fcc"
                     radius: 3
                 }
                 contentItem: Text {
                     text: parent.text
-                    color: parent.enabled ? "#ccc" : "#555"
+                    color: parent.enabled ? "#fff" : "#555"
                     font.pixelSize: 10
+                    font.bold: parent.enabled
                     horizontalAlignment: Text.AlignHCenter; verticalAlignment: Text.AlignVCenter
                 }
             }
