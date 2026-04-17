@@ -1360,6 +1360,102 @@ Rectangle
                         horizontalAlignment: Text.AlignHCenter; verticalAlignment: Text.AlignVCenter }
                 }
             }
+
+            // --- Save as Scene (Calibrate mode) ---
+            ColumnLayout
+            {
+                visible: spatialController.hasProgrammerContent
+                Layout.fillWidth: true
+                spacing: 3
+
+                Rectangle { Layout.fillWidth: true; height: 1; color: "#444" }
+
+                RowLayout
+                {
+                    Layout.fillWidth: true
+                    spacing: 4
+
+                    TextField
+                    {
+                        id: saveSceneNameCal
+                        Layout.fillWidth: true
+                        implicitHeight: 26
+                        placeholderText: "Scene name..."
+                        text: "Aim"
+                        font.pixelSize: 11
+                        background: Rectangle { color: "#2a2a2a"; border.color: "#555"; radius: 3 }
+                        color: "#ddd"
+                        selectByMouse: true
+                        onAccepted: spatialController.commitProgrammerToScene(text)
+                    }
+
+                    Button
+                    {
+                        text: "Save as Scene"
+                        implicitHeight: 26
+                        implicitWidth: 90
+                        onClicked: spatialController.commitProgrammerToScene(saveSceneNameCal.text)
+                        ToolTip.visible: hovered; ToolTip.delay: 500
+                        ToolTip.text: "Capture current aim + highlight as a reusable QLC+ Scene"
+                        background: Rectangle {
+                            color: parent.hovered ? "#27ae60" : "#1e8449"
+                            radius: 3
+                        }
+                        contentItem: Text {
+                            text: parent.text; color: "#fff"; font.pixelSize: 10; font.bold: true
+                            horizontalAlignment: Text.AlignHCenter; verticalAlignment: Text.AlignVCenter
+                        }
+                    }
+                }
+
+                Rectangle
+                {
+                    id: saveToastCal
+                    visible: false
+                    Layout.fillWidth: true
+                    implicitHeight: 22
+                    radius: 11
+                    color: saveToastCal.isError ? "#c0392b" : "#27ae60"
+                    property bool isError: false
+                    property string toastText: ""
+
+                    Text
+                    {
+                        anchors.centerIn: parent
+                        text: saveToastCal.toastText
+                        color: "#fff"; font.pixelSize: 10; font.bold: true
+                    }
+
+                    Timer
+                    {
+                        id: saveToastCalTimer
+                        interval: 2500
+                        onTriggered: saveToastCal.visible = false
+                    }
+                }
+            }
+
+            Connections
+            {
+                target: spatialController
+                function onSceneSaved(functionId, name)
+                {
+                    if (spatialController.mode !== 1) return
+                    saveToastCal.isError = false
+                    saveToastCal.toastText = "✓ Saved \"" + name + "\""
+                    saveToastCal.visible = true
+                    saveToastCalTimer.restart()
+                }
+                function onSceneSaveError(reason)
+                {
+                    if (spatialController.mode !== 1) return
+                    saveToastCal.isError = true
+                    saveToastCal.toastText = "✗ " + reason
+                    saveToastCal.visible = true
+                    saveToastCalTimer.restart()
+                }
+            }
+
         } // end Calibrate mode ColumnLayout
         } // end ScrollView wrapping Calibrate
 
@@ -1412,9 +1508,107 @@ Rectangle
                 color: "#d4a017"
                 Text {
                     anchors.centerIn: parent
-                    text: "☀ " + spatialController.highlightCount()
+                    text: "☀ " + spatialController.highlightCount
                           + " fixture(s) lit — H toggles selected"
                     color: "#222"; font.pixelSize: 10; font.bold: true
+                }
+            }
+
+
+            // --- Save as Scene ---
+            // Visible whenever the programmer holds DMX overrides (aim or
+            // highlight). Captures the current override state as a new Scene
+            // that can be recalled from the Functions panel like any other.
+            ColumnLayout
+            {
+                visible: spatialController.hasProgrammerContent
+                Layout.fillWidth: true
+                spacing: 3
+
+                RowLayout
+                {
+                    Layout.fillWidth: true
+                    spacing: 4
+
+                    TextField
+                    {
+                        id: saveSceneNameFocus
+                        Layout.fillWidth: true
+                        implicitHeight: 26
+                        placeholderText: "Scene name..."
+                        text: "Aim"
+                        font.pixelSize: 11
+                        background: Rectangle { color: "#2a2a2a"; border.color: "#555"; radius: 3 }
+                        color: "#ddd"
+                        selectByMouse: true
+                        onAccepted: spatialController.commitProgrammerToScene(text)
+                    }
+
+                    Button
+                    {
+                        text: "Save as Scene"
+                        implicitHeight: 26
+                        implicitWidth: 90
+                        onClicked: spatialController.commitProgrammerToScene(saveSceneNameFocus.text)
+                        ToolTip.visible: hovered; ToolTip.delay: 500
+                        ToolTip.text: "Capture current aim + highlight as a reusable QLC+ Scene"
+                        background: Rectangle {
+                            color: parent.hovered ? "#27ae60" : "#1e8449"
+                            radius: 3
+                        }
+                        contentItem: Text {
+                            text: parent.text; color: "#fff"; font.pixelSize: 10; font.bold: true
+                            horizontalAlignment: Text.AlignHCenter; verticalAlignment: Text.AlignVCenter
+                        }
+                    }
+                }
+
+                // Confirmation / error toast
+                Rectangle
+                {
+                    id: saveToastFocus
+                    visible: false
+                    Layout.fillWidth: true
+                    implicitHeight: 22
+                    radius: 11
+                    color: saveToastFocus.isError ? "#c0392b" : "#27ae60"
+                    property bool isError: false
+                    property string toastText: ""
+
+                    Text
+                    {
+                        anchors.centerIn: parent
+                        text: saveToastFocus.toastText
+                        color: "#fff"; font.pixelSize: 10; font.bold: true
+                    }
+
+                    Timer
+                    {
+                        id: saveToastFocusTimer
+                        interval: 2500
+                        onTriggered: saveToastFocus.visible = false
+                    }
+                }
+            }
+
+            Connections
+            {
+                target: spatialController
+                function onSceneSaved(functionId, name)
+                {
+                    if (spatialController.mode !== 2) return
+                    saveToastFocus.isError = false
+                    saveToastFocus.toastText = "✓ Saved \"" + name + "\""
+                    saveToastFocus.visible = true
+                    saveToastFocusTimer.restart()
+                }
+                function onSceneSaveError(reason)
+                {
+                    if (spatialController.mode !== 2) return
+                    saveToastFocus.isError = true
+                    saveToastFocus.toastText = "✗ " + reason
+                    saveToastFocus.visible = true
+                    saveToastFocusTimer.restart()
                 }
             }
 

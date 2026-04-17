@@ -75,12 +75,17 @@ class SpatialController : public QObject
     // Highlight: Focus-mode "light up selected fixtures so I can see them"
     // toggle (industry-standard H-key idiom). Open shutter + dimmer to 100%.
     Q_PROPERTY(bool highlight READ highlight NOTIFY highlightChanged)
+    Q_PROPERTY(int highlightCount READ highlightCount NOTIFY highlightChanged)
 
     // Live pan/tilt of the primary selected fixture as a 0..100 percent.
     // Refreshes on every universe tick so the Calibrate trackpad dot follows
     // the real-time DMX value — e.g. while the user holds F to sweep aim.
     Q_PROPERTY(double selectedFixturePanPercent READ selectedFixturePanPercent NOTIFY livePanTiltChanged)
     Q_PROPERTY(double selectedFixtureTiltPercent READ selectedFixtureTiltPercent NOTIFY livePanTiltChanged)
+
+    // True when the programmer holds at least one DMX override (aim or
+    // highlight). Used by QML to enable/disable the "Save as Scene" button.
+    Q_PROPERTY(bool hasProgrammerContent READ hasProgrammerContent NOTIFY programmerContentChanged)
 
 public:
     explicit SpatialController(Doc *doc, SpatialView *view, QObject *parent = nullptr);
@@ -224,7 +229,7 @@ public:
     /** True when at least one fixture is currently highlighted. */
     bool highlight() const { return !m_highlightedFixtureIds.isEmpty(); }
     /** Number of fixtures currently highlighted (for panel display). */
-    Q_INVOKABLE int highlightCount() const { return m_highlightedFixtureIds.size(); }
+    int highlightCount() const { return m_highlightedFixtureIds.size(); }
     /** Toggle highlight for the currently selected fixtures. If ALL selected
      *  are already lit → unlight them. Otherwise → light the ones not lit.
      *  Other fixtures' highlight state is unaffected. */
@@ -242,6 +247,19 @@ public:
 
     /** QML-facing version of the above. */
     Q_INVOKABLE QVariantList highlightedFixtureIdsList() const;
+
+    /** True when the programmer holds at least one DMX override. */
+    bool hasProgrammerContent() const
+    {
+        return !m_focusControlledChannels.isEmpty() || !m_highlightedFixtureIds.isEmpty();
+    }
+
+    /** Capture current programmer DMX state as a new QLC+ Scene.
+     *  Collects overridden channels from aim + highlight for all affected
+     *  fixtures. Emits sceneSaved(functionId, name) on success, or
+     *  sceneSaveError(reason) on failure. No-op (emits sceneSaved(-1,""))
+     *  when the programmer is empty. */
+    Q_INVOKABLE void commitProgrammerToScene(const QString &name);
 
 signals:
     void selectionChanged();
@@ -277,6 +295,17 @@ signals:
     /** Emitted on every DMX tick when a fixture with pan/tilt is selected —
      *  drives real-time trackpad follow during F-drag. */
     void livePanTiltChanged();
+
+    /** Emitted when hasProgrammerContent() changes. */
+    void programmerContentChanged();
+
+    /** Emitted when commitProgrammerToScene() succeeds.
+     *  @param functionId  The new Scene's QLC+ function ID.
+     *  @param name        The scene name that was used. */
+    void sceneSaved(int functionId, const QString &name);
+
+    /** Emitted when commitProgrammerToScene() cannot create the scene. */
+    void sceneSaveError(const QString &reason);
 
 private:
     void updateTransformFromModel();

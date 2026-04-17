@@ -427,8 +427,14 @@ bool CalibrationModel::solve()
 
         rigmath::RigidTransform initialPose = m_spatialModel->renderTransform(fid);
         std::string sid = fid.toStdString();
+        int dofCount = int(chain->dof_count());
         prob.addFixture(sid, initialPose, chain.get());
         chains.push_back(std::move(chain));
+        qDebug() << "[CalibModel] fixture" << fid
+                 << "initial pose (m/deg): tx=" << initialPose.pos[0]
+                 << "ty=" << initialPose.pos[1]
+                 << "tz=" << initialPose.pos[2]
+                 << "dofs=" << dofCount;
     }
 
     // Auto-add layout priors (soft constraints from committed positions + tolerances)
@@ -464,6 +470,10 @@ bool CalibrationModel::solve()
             dc.value = poseVals[dof];
             dc.sigma = sigma;
             prob.setConstraint(sid, dof, dc);
+            static const char *dofNames[] = {"tx","ty","tz","rx","ry","rz"};
+            qDebug() << "[CalibModel]   prior fix" << QString::fromStdString(sid)
+                     << dofNames[dof] << "=" << poseVals[dof]
+                     << "sigma=" << sigma;
         }
     }
 
@@ -509,42 +519,73 @@ bool CalibrationModel::solve()
 
             if constexpr (std::is_same_v<T, AimObs>)
             {
-                prob.addAimObservation(o.fixture.toStdString(),
+                int rid = prob.addAimObservation(o.fixture.toStdString(),
                                             o.dmxNormalized, o.target, o.sigma);
+                if (rid < 0)
+                    qWarning() << "[CalibModel] AimObs REJECTED (id=-1) fix" << o.fixture
+                               << "dmx.size=" << int(o.dmxNormalized.size())
+                               << "target=(" << o.target[0] << o.target[1] << o.target[2] << ")";
+                else
+                    qDebug() << "[CalibModel] AimObs id=" << rid << "fix" << o.fixture
+                             << "-> (" << o.target[0] << o.target[1] << o.target[2] << ")";
             }
             else if constexpr (std::is_same_v<T, CrossingObs>)
             {
                 std::vector<std::string> fids;
                 for (const auto &f : o.fixtures) fids.push_back(f.toStdString());
-                prob.addCrossingObservation(fids, o.dmxValues,
+                // Log per-fixture DMX before handing to solver
+                for (size_t i = 0; i < fids.size(); ++i)
+                {
+                    const auto &dmx = o.dmxValues[i];
+                    QString s;
+                    for (double d : dmx) s += QString::number(d, 'f', 4) + " ";
+                    qDebug() << "[CalibModel] CrossingObs fix" << QString::fromStdString(fids[i])
+                             << "dmx.size=" << int(dmx.size()) << "vals:" << s.trimmed();
+                }
+                int rid = prob.addCrossingObservation(fids, o.dmxValues,
                                                   o.axis, o.value, o.sigma);
+                if (rid < 0)
+                    qWarning() << "[CalibModel] CrossingObs REJECTED (id=-1)"
+                               << "axis=" << o.axis << "value=" << o.value
+                               << "sigma=" << o.sigma
+                               << "fixtures=" << o.fixtures;
+                else
+                    qDebug() << "[CalibModel] CrossingObs id=" << rid
+                             << "axis=" << o.axis << "value=" << o.value
+                             << "sigma=" << o.sigma;
             }
             else if constexpr (std::is_same_v<T, PositionObs>)
             {
-                prob.addPositionObservation(o.fixture.toStdString(),
+                int rid = prob.addPositionObservation(o.fixture.toStdString(),
                                                   o.axis, o.value, o.sigma);
+                if (rid < 0)
+                    qWarning() << "[CalibModel] PositionObs REJECTED fix" << o.fixture;
             }
             else if constexpr (std::is_same_v<T, RotationObs>)
             {
-                // Rotation sigma is stored in degrees, solver wants radians
                 double sigma_rad = o.sigma * (M_PI / 180.0);
-                prob.addRotationObservation(o.fixture.toStdString(),
+                int rid = prob.addRotationObservation(o.fixture.toStdString(),
                                                   o.axis, o.valueDeg, sigma_rad);
+                if (rid < 0)
+                    qWarning() << "[CalibModel] RotationObs REJECTED fix" << o.fixture;
             }
             else if constexpr (std::is_same_v<T, BeamDirectionObs>)
             {
-                // BeamDirection sigma is degrees; solver wants radians.
                 double sigma_rad = o.sigma * (M_PI / 180.0);
-                prob.addBeamDirectionObservation(
+                int rid = prob.addBeamDirectionObservation(
                     o.fixture.toStdString(), o.dmxNormalized,
                     o.elevationDeg, o.azimuthDeg,
                     o.hasElevation, o.hasAzimuth, sigma_rad);
+                if (rid < 0)
+                    qWarning() << "[CalibModel] BeamDirectionObs REJECTED fix" << o.fixture;
             }
             else if constexpr (std::is_same_v<T, DistanceObs>)
             {
-                prob.addDistanceObservation(o.fixtureA.toStdString(),
+                int rid = prob.addDistanceObservation(o.fixtureA.toStdString(),
                                                   o.fixtureB.toStdString(),
                                                   o.distance, o.sigma);
+                if (rid < 0)
+                    qWarning() << "[CalibModel] DistanceObs REJECTED" << o.fixtureA << o.fixtureB;
             }
         }, obs);
     }
@@ -553,10 +594,19 @@ bool CalibrationModel::solve()
     m_lastResult = prob.solve();
     m_hasResult = true;
 
-    qDebug() << "[CalibrationModel] Solve complete:"
-             << (m_lastResult.converged ? "converged" : "did not converge")
-             << "rms=" << m_lastResult.rms_residual
-             << "fixtures=" << m_lastResult.poses.size();
+    qDebug() << "[CalibModel] ===== Solve result =====";
+    qDebug() << "[CalibModel] converged=" << m_lastResult.converged
+             << "reason=" << QString::fromStdString(m_lastResult.message);
+    qDebug() << "[CalibModel] rms_residual=" << m_lastResult.rms_residual
+             << "fixtures_solved=" << int(m_lastResult.poses.size());
+    for (const auto &[sid, pose] : m_lastResult.poses)
+    {
+        if (pose.size() == 6)
+            qDebug() << "[CalibModel]   fix" << QString::fromStdString(sid)
+                     << "solved pos (m):" << pose[0] << pose[1] << pose[2]
+                     << "rot (rad):" << pose[3] << pose[4] << pose[5];
+    }
+    qDebug() << "[CalibModel] ========================";
 
     // Apply results to SpatialModel
     if (m_spatialModel)

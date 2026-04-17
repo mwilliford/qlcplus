@@ -261,15 +261,42 @@ int CalibrateController::addCrossingObs(const QVariantList &fixtureIds,
         if (n.empty())
         {
             qWarning() << "[Calibrate] addCrossingObs: fixture" << fid
-                       << "has no DOFs to capture — skipping observation";
+                       << "has no DOFs to capture (no kinematic chain?) — skipping observation";
             return -1;
         }
+
+        // Log captured DMX per fixture so we can verify the values are sensible
+        {
+            Fixture *fxi = m_doc->fixture(quint32(fid));
+            QString name = fxi ? fxi->name() : QString("fid%1").arg(fid);
+            QString dmxStr;
+            for (size_t i = 0; i < n.size(); ++i)
+                dmxStr += QString("%1:%2 ").arg(i).arg(n[i], 0, 'f', 4);
+            qDebug() << "[Calibrate] crossing capture fix" << fid << name
+                     << "DOFs:" << int(n.size()) << "normalized:" << dmxStr.trimmed();
+            // Warn if all DOFs are exactly 0.5 (fallback) or 0 (no output)
+            bool allHalf = true, allZero = true;
+            for (double d : n) { if (d != 0.5) allHalf = false; if (d != 0.0) allZero = false; }
+            if (allHalf)
+                qWarning() << "[Calibrate]   ^ all DOFs = 0.5 (fallback — universe snapshot was empty at capture time)";
+            if (allZero)
+                qWarning() << "[Calibrate]   ^ all DOFs = 0.0 (fixture at home / no DMX output)";
+        }
+
         dmxPerFixture.push_back(std::move(n));
     }
     CalibrationModel *cm = m_doc->calibrationModel();
     int id = cm->addCrossingObservation(fixtures, dmxPerFixture,
                                          axis, value, sigma);
-    qDebug() << "[Calibrate] crossing obs added:" << fixtures.size() << "fixtures, axis" << axis << "value" << value;
+    if (id < 0)
+        qWarning() << "[Calibrate] addCrossingObs REJECTED by rigmath (id=-1):"
+                   << "fixtures=" << fixtures
+                   << "axis=" << axis << "value=" << value << "sigma=" << sigma
+                   << "— check DMX values are in [0,1] and dof count matches chain";
+    else
+        qDebug() << "[Calibrate] crossing obs accepted id=" << id
+                 << fixtures.size() << "fixtures, axis" << axis
+                 << "value" << value << "sigma" << sigma;
     emit changed();
     return id;
 }

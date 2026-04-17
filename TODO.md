@@ -141,10 +141,11 @@
       Bank (color/gobo/beam encoders).
 
 ### Phase 3: still-open polish
-- [ ] **Commit aim / highlight to Scene** — Focus/Calibrate overrides are
-      live-only; need a "Save as Scene" button that captures current
-      programmer state (selected fixtures' overridden DMX channels) as a
-      QLC+ Scene. Required for the aim to persist across sessions.
+- [x] **Commit aim / highlight to Scene** — "Save as Scene" button in Focus
+      and Calibrate panels. Captures all programmer-controlled channels (aim
+      pan/tilt + highlight dimmer/shutter) as a new QLC+ Scene via
+      `SpatialController::commitProgrammerToScene(name)`. Reads live DMX
+      from universe snapshot. Green toast confirmation on success.
 - [ ] Multi-plane targeting (walls, custom planes) via `rigmath::Beam::hit_plane(point, normal)`
 - [ ] Fan/spread controls for multi-fixture aim
 - [ ] Speed-limited aim ramp (smooth DMX transition instead of instant jump)

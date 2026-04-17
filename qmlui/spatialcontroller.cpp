@@ -21,6 +21,7 @@
 #include "fixtureattributes.h"
 #include "qlcfixturemode.h"
 #include "qlcchannel.h"
+#include "scene.h"
 
 #include <rigmath/kinematic_chain.hpp>
 #include <rigmath/rigid_transform.hpp>
@@ -480,6 +481,7 @@ void SpatialController::setFocusAim(double wx, double wy, double wz)
                     wx, wy, wz, m_focusControlledChannels);
 
     emit focusAimChanged();
+    emit programmerContentChanged();
 }
 
 void SpatialController::clearFocusAim()
@@ -492,6 +494,7 @@ void SpatialController::clearFocusAim()
     m_focusAim[0] = m_focusAim[1] = m_focusAim[2] = 0.0;
 
     emit focusAimChanged();
+    emit programmerContentChanged();
 }
 
 // ---------------------------------------------------------------------------
@@ -715,6 +718,7 @@ void SpatialController::aimAtFocusPoint(const QString &id)
                     m_focusControlledChannels);
 
     emit focusAimChanged();
+    emit programmerContentChanged();
 }
 
 void SpatialController::setSelectedFocusPointId(const QString &id)
@@ -840,6 +844,7 @@ void SpatialController::lightFixture(int32_t fid)
     m_highlightChannelsPerFixture[fid] = fa.controlledChannels();
     qDebug() << "[Highlight] lit fix" << fid << fxi->name()
              << "(" << fa.controlledChannels().size() << "channels)";
+    emit programmerContentChanged();
 }
 
 void SpatialController::unlightFixture(int32_t fid)
@@ -850,6 +855,7 @@ void SpatialController::unlightFixture(int32_t fid)
     m_highlightChannelsPerFixture.erase(it);
     m_highlightedFixtureIds.remove(fid);
     qDebug() << "[Highlight] unlit fix" << fid;
+    emit programmerContentChanged();
 }
 
 void SpatialController::toggleHighlight()
@@ -923,4 +929,73 @@ QVariantList SpatialController::highlightedFixtureIdsList() const
     QVariantList out;
     for (int32_t id : m_highlightedFixtureIds) out.append(int(id));
     return out;
+}
+
+// ---------------------------------------------------------------------------
+// Commit programmer state to a QLC+ Scene
+// ---------------------------------------------------------------------------
+
+void SpatialController::commitProgrammerToScene(const QString &name)
+{
+    // Union all programmer-controlled channels (aim + highlight)
+    QSet<uint> allAddrs = m_focusControlledChannels;
+    for (auto it = m_highlightChannelsPerFixture.begin();
+         it != m_highlightChannelsPerFixture.end(); ++it)
+        allAddrs.unite(it.value());
+
+    if (allAddrs.isEmpty())
+    {
+        emit sceneSaved(-1, QString());
+        return;
+    }
+
+    // Build reverse map: absAddr -> (fixtureId, channelIndex).
+    // Fixture absolute address format: (universe << 9) | relativeAddr.
+    QHash<uint, QPair<quint32, quint32>> addrToFxCh;
+    for (Fixture *fxi : m_doc->fixtures())
+    {
+        if (!fxi) continue;
+        quint32 base = fxi->universeAddress();
+        for (quint32 ch = 0; ch < fxi->channels(); ++ch)
+            addrToFxCh[base + ch] = qMakePair(fxi->id(), ch);
+    }
+
+    QString sceneName = name.trimmed().isEmpty()
+                        ? QStringLiteral("Aim") : name.trimmed();
+    Scene *scene = new Scene(m_doc);
+    scene->setName(sceneName);
+
+    for (uint addr : std::as_const(allAddrs))
+    {
+        auto it = addrToFxCh.find(addr);
+        if (it == addrToFxCh.end()) continue;
+
+        quint32 fid    = it->first;
+        quint32 ch     = it->second;
+
+        // Read current DMX from universe snapshot (same data the renderer uses)
+        uchar val = 0;
+        if (m_universeSnapshotCallback)
+        {
+            quint32 uni  = addr >> 9;
+            int     rel  = static_cast<int>(addr & 0x1FF);
+            QByteArray snap = m_universeSnapshotCallback(uni);
+            if (rel < snap.size())
+                val = static_cast<uchar>(snap.at(rel));
+        }
+
+        scene->setValue(fid, ch, val);
+    }
+
+    if (!m_doc->addFunction(scene))
+    {
+        delete scene;
+        emit sceneSaveError(QStringLiteral("Failed to add scene to document"));
+        return;
+    }
+
+    qDebug() << "[SpatialController] commitProgrammerToScene: saved"
+             << scene->name() << "id=" << scene->id()
+             << "channels=" << allAddrs.size();
+    emit sceneSaved(static_cast<int>(scene->id()), scene->name());
 }
