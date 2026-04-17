@@ -76,6 +76,15 @@ class SpatialViewWindow : public QWidget
     friend void spatialViewAlignSelection(const QString &);
     friend void spatialViewAddTruss(const QString &, double, double, double, double, double, double);
     friend void spatialViewSetMode(int);
+    friend QString spatialViewCreateFocusPoint(double, double, double, const QString &);
+    friend bool spatialViewDeleteFocusPoint(const QString &);
+    friend bool spatialViewMoveFocusPoint(const QString &, double, double, double);
+    friend bool spatialViewRenameFocusPoint(const QString &, const QString &);
+    friend bool spatialViewAssignFixtureToFocusPoint(const QString &, int);
+    friend bool spatialViewUnassignFixtureFromFocusPoint(const QString &, int);
+    friend bool spatialViewAimAtFocusPoint(const QString &);
+    friend void spatialViewSelectFocusPoint(const QString &);
+    friend QJsonArray spatialViewGetFocusPoints();
 
 public:
     explicit SpatialViewWindow(Doc *doc)
@@ -130,6 +139,15 @@ public:
         m_spatialView->setLiveDmxModeCallback([this]() {
             int m = m_controller->mode();
             return m == SpatialController::Calibrate || m == SpatialController::Focus;
+        });
+        m_spatialView->setSelectedFocusPointCallback([this]() {
+            return m_controller->selectedFocusPointId();
+        });
+
+        // Selected focus point changed → re-send render data so the highlight updates.
+        connect(m_controller, &SpatialController::selectedFocusPointChanged, this, [this]() {
+            if (m_spatialView)
+                m_spatialView->rebuildFocusPoints();  // need to expose this or use signal→slot
         });
 
         // Mode change: rebuild beam cones so Layout↔Calibrate switches between
@@ -537,4 +555,102 @@ void spatialViewSetMode(int mode)
     auto *inst = SpatialViewWindow::s_instance;
     if (inst && inst->m_controller)
         inst->m_controller->setMode(mode);
+}
+
+// --- Focus Point bridge implementations ---
+
+QString spatialViewCreateFocusPoint(double x, double y, double z, const QString &name)
+{
+    auto *inst = SpatialViewWindow::s_instance;
+    if (!inst || !inst->m_controller)
+        return QString();
+    return inst->m_controller->createFocusPoint(x, y, z, name);
+}
+
+bool spatialViewDeleteFocusPoint(const QString &id)
+{
+    auto *inst = SpatialViewWindow::s_instance;
+    if (!inst || !inst->m_controller || !inst->m_doc) return false;
+    // Only delete if it actually exists (to give the caller a useful bool).
+    if (!inst->m_doc->spatialModel()->focusPoint(id)) return false;
+    inst->m_controller->deleteFocusPoint(id);
+    return true;
+}
+
+bool spatialViewMoveFocusPoint(const QString &id, double x, double y, double z)
+{
+    auto *inst = SpatialViewWindow::s_instance;
+    if (!inst || !inst->m_controller || !inst->m_doc) return false;
+    if (!inst->m_doc->spatialModel()->focusPoint(id)) return false;
+    inst->m_controller->moveFocusPoint(id, x, y, z);
+    return true;
+}
+
+bool spatialViewRenameFocusPoint(const QString &id, const QString &name)
+{
+    auto *inst = SpatialViewWindow::s_instance;
+    if (!inst || !inst->m_controller || !inst->m_doc) return false;
+    if (!inst->m_doc->spatialModel()->focusPoint(id)) return false;
+    inst->m_controller->renameFocusPoint(id, name);
+    return true;
+}
+
+bool spatialViewAssignFixtureToFocusPoint(const QString &fpId, int fixtureId)
+{
+    auto *inst = SpatialViewWindow::s_instance;
+    if (!inst || !inst->m_controller) return false;
+    return inst->m_controller->assignFixtureToFocusPoint(fpId, fixtureId);
+}
+
+bool spatialViewUnassignFixtureFromFocusPoint(const QString &fpId, int fixtureId)
+{
+    auto *inst = SpatialViewWindow::s_instance;
+    if (!inst || !inst->m_controller) return false;
+    return inst->m_controller->unassignFixtureFromFocusPoint(fpId, fixtureId);
+}
+
+bool spatialViewAimAtFocusPoint(const QString &id)
+{
+    auto *inst = SpatialViewWindow::s_instance;
+    if (!inst || !inst->m_controller || !inst->m_doc) return false;
+    if (!inst->m_doc->spatialModel()->focusPoint(id)) return false;
+    inst->m_controller->aimAtFocusPoint(id);
+    return true;
+}
+
+void spatialViewSelectFocusPoint(const QString &id)
+{
+    auto *inst = SpatialViewWindow::s_instance;
+    if (inst && inst->m_controller)
+        inst->m_controller->setSelectedFocusPointId(id);
+}
+
+QJsonArray spatialViewGetFocusPoints()
+{
+    QJsonArray result;
+    auto *inst = SpatialViewWindow::s_instance;
+    if (!inst || !inst->m_doc || !inst->m_controller)
+        return result;
+
+    SpatialModel *sm = inst->m_doc->spatialModel();
+    QString selId = inst->m_controller->selectedFocusPointId();
+
+    for (const auto &fp : sm->focusPoints())
+    {
+        QJsonArray assigned;
+        for (const QString &fid : fp.assignedFixtureIds)
+            assigned.append(fid.toInt());
+
+        QJsonObject obj{
+            {"id",       fp.id},
+            {"name",     fp.name},
+            {"x",        fp.position[0]},
+            {"y",        fp.position[1]},
+            {"z",        fp.position[2]},
+            {"assigned", assigned},
+            {"selected", fp.id == selId},
+        };
+        result.append(obj);
+    }
+    return result;
 }

@@ -519,6 +519,138 @@ void McpServer::registerBuiltinTools()
         [this](const QJsonObject &args) { return toolSetSpatialMode(args); }
     });
 
+    // ----- Focus Point tools (SV-4 Phase 1) -----
+
+    registerTool({
+        "create_focus_point",
+        "Create a persistent named focus point in the 3D scene at the given world position. "
+        "Focus points are amber-sphere targets that fixtures can be assigned to track. "
+        "Returns the generated id, which can be passed to aim_at_focus_point, "
+        "assign_fixture_to_focus_point, etc.",
+        QJsonObject{
+            {"type", "object"},
+            {"properties", QJsonObject{
+                {"x", QJsonObject{{"type", "number"}, {"description", "World X (m)"}}},
+                {"y", QJsonObject{{"type", "number"}, {"description", "World Y (m)"}}},
+                {"z", QJsonObject{{"type", "number"}, {"description", "World Z (m)"}}},
+                {"name", QJsonObject{{"type", "string"},
+                    {"description", "Display name (defaults to 'Point N')"}}},
+            }},
+            {"required", QJsonArray{"x", "y", "z"}}
+        },
+        [this](const QJsonObject &args) { return toolCreateFocusPoint(args); }
+    });
+
+    registerTool({
+        "list_focus_points",
+        "List all persistent focus points in the workspace. Returns an array of "
+        "{id, name, x, y, z, assigned:[fixtureIds], selected:bool}.",
+        QJsonObject{{"type", "object"}, {"properties", QJsonObject{}}},
+        [this](const QJsonObject &args) { return toolListFocusPoints(args); }
+    });
+
+    registerTool({
+        "delete_focus_point",
+        "Delete a focus point by id.",
+        QJsonObject{
+            {"type", "object"},
+            {"properties", QJsonObject{
+                {"id", QJsonObject{{"type", "string"}, {"description", "Focus point id (e.g. 'fp0')"}}},
+            }},
+            {"required", QJsonArray{"id"}}
+        },
+        [this](const QJsonObject &args) { return toolDeleteFocusPoint(args); }
+    });
+
+    registerTool({
+        "move_focus_point",
+        "Move an existing focus point to a new world position.",
+        QJsonObject{
+            {"type", "object"},
+            {"properties", QJsonObject{
+                {"id", QJsonObject{{"type", "string"}, {"description", "Focus point id"}}},
+                {"x", QJsonObject{{"type", "number"}, {"description", "World X (m)"}}},
+                {"y", QJsonObject{{"type", "number"}, {"description", "World Y (m)"}}},
+                {"z", QJsonObject{{"type", "number"}, {"description", "World Z (m)"}}},
+            }},
+            {"required", QJsonArray{"id", "x", "y", "z"}}
+        },
+        [this](const QJsonObject &args) { return toolMoveFocusPoint(args); }
+    });
+
+    registerTool({
+        "rename_focus_point",
+        "Rename a focus point.",
+        QJsonObject{
+            {"type", "object"},
+            {"properties", QJsonObject{
+                {"id", QJsonObject{{"type", "string"}, {"description", "Focus point id"}}},
+                {"name", QJsonObject{{"type", "string"}, {"description", "New display name"}}},
+            }},
+            {"required", QJsonArray{"id", "name"}}
+        },
+        [this](const QJsonObject &args) { return toolRenameFocusPoint(args); }
+    });
+
+    registerTool({
+        "assign_fixture_to_focus_point",
+        "Assign a fixture to track a focus point. The fixture is not aimed until "
+        "aim_at_focus_point is called.",
+        QJsonObject{
+            {"type", "object"},
+            {"properties", QJsonObject{
+                {"id", QJsonObject{{"type", "string"}, {"description", "Focus point id"}}},
+                {"fixtureId", QJsonObject{{"type", "integer"},
+                    {"description", "Fixture numeric id"}}},
+            }},
+            {"required", QJsonArray{"id", "fixtureId"}}
+        },
+        [this](const QJsonObject &args) { return toolAssignFixtureToFocusPoint(args); }
+    });
+
+    registerTool({
+        "unassign_fixture_from_focus_point",
+        "Remove a fixture's assignment to a focus point.",
+        QJsonObject{
+            {"type", "object"},
+            {"properties", QJsonObject{
+                {"id", QJsonObject{{"type", "string"}, {"description", "Focus point id"}}},
+                {"fixtureId", QJsonObject{{"type", "integer"},
+                    {"description", "Fixture numeric id"}}},
+            }},
+            {"required", QJsonArray{"id", "fixtureId"}}
+        },
+        [this](const QJsonObject &args) { return toolUnassignFixtureFromFocusPoint(args); }
+    });
+
+    registerTool({
+        "aim_at_focus_point",
+        "Aim all fixtures assigned to the focus point at its position. Runs inverse "
+        "kinematics per fixture and pushes the resulting DMX values (requires Focus mode).",
+        QJsonObject{
+            {"type", "object"},
+            {"properties", QJsonObject{
+                {"id", QJsonObject{{"type", "string"}, {"description", "Focus point id"}}},
+            }},
+            {"required", QJsonArray{"id"}}
+        },
+        [this](const QJsonObject &args) { return toolAimAtFocusPoint(args); }
+    });
+
+    registerTool({
+        "select_focus_point",
+        "Visually select a focus point (renders with highlight). Pass empty id to deselect.",
+        QJsonObject{
+            {"type", "object"},
+            {"properties", QJsonObject{
+                {"id", QJsonObject{{"type", "string"},
+                    {"description", "Focus point id (empty string to deselect)"}}},
+            }},
+            {"required", QJsonArray{"id"}}
+        },
+        [this](const QJsonObject &args) { return toolSelectFocusPoint(args); }
+    });
+
     registerTool({
         "calibrate_add_obs",
         "Add a calibration observation. type='height': set fixture Z position (requires fixtureId, value in meters). "
@@ -1049,6 +1181,123 @@ QJsonObject McpServer::toolSetSpatialMode(const QJsonObject &args)
             {"text", QString("Spatial View mode set to %1 (%2)").arg(mode).arg(name)}
         }}}
     };
+}
+
+// --- Focus Point tools (SV-4 Phase 1) ---
+
+// Helper: wrap a plain-text response (non-error).
+static QJsonObject mcpText(const QString &text)
+{
+    return QJsonObject{
+        {"content", QJsonArray{QJsonObject{{"type", "text"}, {"text", text}}}}
+    };
+}
+
+// Helper: wrap an error response.
+static QJsonObject mcpError(const QString &text)
+{
+    return QJsonObject{
+        {"content", QJsonArray{QJsonObject{{"type", "text"}, {"text", text}}}},
+        {"isError", true}
+    };
+}
+
+QJsonObject McpServer::toolCreateFocusPoint(const QJsonObject &args)
+{
+    double x = args.value("x").toDouble();
+    double y = args.value("y").toDouble();
+    double z = args.value("z").toDouble();
+    QString name = args.value("name").toString();
+
+    QString id = spatialViewCreateFocusPoint(x, y, z, name);
+    if (id.isEmpty())
+        return mcpError("Spatial View not available");
+
+    // Return id + human-readable summary
+    return QJsonObject{
+        {"content", QJsonArray{QJsonObject{{"type", "text"},
+            {"text", QString("Created focus point '%1' (id=%2) at (%3, %4, %5)")
+                .arg(name.isEmpty() ? id : name).arg(id).arg(x).arg(y).arg(z)}
+        }}},
+        {"id", id}
+    };
+}
+
+QJsonObject McpServer::toolListFocusPoints(const QJsonObject &)
+{
+    QJsonArray points = spatialViewGetFocusPoints();
+    QString summary = QString("Focus points: %1").arg(points.size());
+    return QJsonObject{
+        {"content", QJsonArray{QJsonObject{{"type", "text"}, {"text", summary}}}},
+        {"points", points}
+    };
+}
+
+QJsonObject McpServer::toolDeleteFocusPoint(const QJsonObject &args)
+{
+    QString id = args.value("id").toString();
+    if (!spatialViewDeleteFocusPoint(id))
+        return mcpError(QString("Focus point not found: %1").arg(id));
+    return mcpText(QString("Deleted focus point %1").arg(id));
+}
+
+QJsonObject McpServer::toolMoveFocusPoint(const QJsonObject &args)
+{
+    QString id = args.value("id").toString();
+    double x = args.value("x").toDouble();
+    double y = args.value("y").toDouble();
+    double z = args.value("z").toDouble();
+    if (!spatialViewMoveFocusPoint(id, x, y, z))
+        return mcpError(QString("Focus point not found: %1").arg(id));
+    return mcpText(QString("Moved %1 to (%2, %3, %4)").arg(id).arg(x).arg(y).arg(z));
+}
+
+QJsonObject McpServer::toolRenameFocusPoint(const QJsonObject &args)
+{
+    QString id = args.value("id").toString();
+    QString name = args.value("name").toString();
+    if (!spatialViewRenameFocusPoint(id, name))
+        return mcpError(QString("Focus point not found: %1").arg(id));
+    return mcpText(QString("Renamed %1 to '%2'").arg(id).arg(name));
+}
+
+QJsonObject McpServer::toolAssignFixtureToFocusPoint(const QJsonObject &args)
+{
+    QString id = args.value("id").toString();
+    int fixtureId = args.value("fixtureId").toInt(-1);
+    bool ok = spatialViewAssignFixtureToFocusPoint(id, fixtureId);
+    if (!ok)
+        return mcpError(QString("Could not assign fixture %1 to %2 "
+                                "(focus point missing or already assigned)")
+                         .arg(fixtureId).arg(id));
+    return mcpText(QString("Assigned fixture %1 to %2").arg(fixtureId).arg(id));
+}
+
+QJsonObject McpServer::toolUnassignFixtureFromFocusPoint(const QJsonObject &args)
+{
+    QString id = args.value("id").toString();
+    int fixtureId = args.value("fixtureId").toInt(-1);
+    bool ok = spatialViewUnassignFixtureFromFocusPoint(id, fixtureId);
+    if (!ok)
+        return mcpError(QString("Fixture %1 was not assigned to %2").arg(fixtureId).arg(id));
+    return mcpText(QString("Unassigned fixture %1 from %2").arg(fixtureId).arg(id));
+}
+
+QJsonObject McpServer::toolAimAtFocusPoint(const QJsonObject &args)
+{
+    QString id = args.value("id").toString();
+    if (!spatialViewAimAtFocusPoint(id))
+        return mcpError(QString("Focus point not found: %1").arg(id));
+    return mcpText(QString("Aiming assigned fixtures at %1").arg(id));
+}
+
+QJsonObject McpServer::toolSelectFocusPoint(const QJsonObject &args)
+{
+    QString id = args.value("id").toString();
+    spatialViewSelectFocusPoint(id);
+    return mcpText(id.isEmpty()
+                    ? QString("Cleared focus point selection")
+                    : QString("Selected focus point %1").arg(id));
 }
 
 QJsonObject McpServer::toolCalibrateAddObs(const QJsonObject &args)

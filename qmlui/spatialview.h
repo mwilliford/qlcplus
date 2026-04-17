@@ -14,6 +14,7 @@
 #ifndef SPATIALVIEW_H
 #define SPATIALVIEW_H
 
+#include <QString>
 #include <QWindow>
 #include <QTimer>
 #include <QPoint>
@@ -99,6 +100,13 @@ public:
      *  use live DMX values instead of home position. */
     void setLiveDmxModeCallback(std::function<bool()> cb) { m_liveDmxModeCallback = std::move(cb); }
 
+    /** Set selected focus-point getter — returns the id of the currently
+     *  selected persistent focus point (empty if none). Used to render the
+     *  selected marker with a highlight. */
+    void setSelectedFocusPointCallback(std::function<QString()> cb) {
+        m_selectedFocusPointCallback = std::move(cb);
+    }
+
     /** Get current camera state. */
     float cameraYaw() const { return m_cameraYaw; }
     float cameraPitch() const { return m_cameraPitch; }
@@ -106,6 +114,10 @@ public:
 
     /** Rebuild the beam cones (public for mode change triggers). */
     void rebuildBeamCones();
+
+    /** Rebuild focus point render data (public so selection-state changes
+     *  can force a re-render without mutating SpatialModel). */
+    void rebuildFocusPoints();
 
 protected:
     void exposeEvent(QExposeEvent *event) override;
@@ -183,6 +195,7 @@ private:
     std::function<bool()> m_focusModeCallback;
     std::function<void(double, double, double)> m_focusAimCallback;
     std::function<bool()> m_liveDmxModeCallback;
+    std::function<QString()> m_selectedFocusPointCallback;
 
     // Universe DMX snapshots (deep-copied from InputOutputMap::universeWritten)
     QHash<quint32, QByteArray> m_universeSnapshots;

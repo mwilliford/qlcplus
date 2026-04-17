@@ -66,6 +66,8 @@ SpatialView::SpatialView(Doc *doc, QWindow *parent)
             this, &SpatialView::onSolverVizChanged);
     connect(sm, &SpatialModel::trussesChanged,
             this, [this]() { rebuildTrusses(); });
+    connect(sm, &SpatialModel::focusPointsChanged,
+            this, [this]() { rebuildFocusPoints(); });
 
     CalibrationModel *cm = m_doc->calibrationModel();
     connect(cm, &CalibrationModel::observationsChanged,
@@ -176,6 +178,7 @@ void SpatialView::initBgfx()
         rebuildTrusses();
         rebuildObservationLines();
         rebuildBeamCones();
+        rebuildFocusPoints();
         m_frameTimer.start(16);
         qDebug() << "[SpatialView] bgfx initialized" << w << "x" << h;
     }
@@ -939,6 +942,35 @@ void SpatialView::rebuildTrusses()
     }
 
     m_renderer->setTrusses(trusses);
+}
+
+void SpatialView::rebuildFocusPoints()
+{
+    if (!m_bgfxReady)
+        return;
+
+    SpatialModel *sm = m_doc->spatialModel();
+    std::vector<qlcrender::RenderFocusPoint> points;
+
+    // Optional: which point is currently selected (for highlight rendering)
+    QString selId;
+    if (m_selectedFocusPointCallback)
+        selId = m_selectedFocusPointCallback();
+
+    for (const SpatialModel::FocusPoint &fp : sm->focusPoints())
+    {
+        qlcrender::RenderFocusPoint rfp;
+        rfp.id = fp.id.toStdString();
+        rfp.label = fp.name.toStdString();
+        rfp.position[0] = float(fp.position[0]);
+        rfp.position[1] = float(fp.position[1]);
+        rfp.position[2] = float(fp.position[2]);
+        rfp.assignedCount = fp.assignedFixtureIds.size();
+        rfp.selected = !selId.isEmpty() && fp.id == selId;
+        points.push_back(rfp);
+    }
+
+    m_renderer->setFocusPoints(points);
 }
 
 void SpatialView::rebuildObservationLines()
