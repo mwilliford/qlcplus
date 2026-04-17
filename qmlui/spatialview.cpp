@@ -644,6 +644,12 @@ void SpatialView::keyPressEvent(QKeyEvent *event)
         m_gizmoModeSetCallback(0);  // Translate
     else if (event->key() == Qt::Key_E && m_gizmoModeSetCallback)
         m_gizmoModeSetCallback(1);  // Rotate
+    else if (event->key() == Qt::Key_H && !event->isAutoRepeat()
+             && m_focusModeCallback && m_focusModeCallback())
+    {
+        if (m_toggleHighlightCallback)
+            m_toggleHighlightCallback();
+    }
     else if (event->key() == Qt::Key_F && !event->isAutoRepeat()
              && m_focusModeCallback && m_focusModeCallback())
     {

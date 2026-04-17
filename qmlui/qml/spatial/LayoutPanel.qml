@@ -1199,9 +1199,23 @@ Rectangle
             // --- 3D-view gesture hints ---
             Text {
                 Layout.fillWidth: true
-                text: "Hold F over 3D view to aim beam at cursor.\nShift+click on floor to create a point."
+                text: "Hold F over 3D view to aim beam at cursor.\nH to highlight selected fixtures (open shutter + full dim).\nShift+click on floor to create a point."
                 color: "#777"; font.pixelSize: 10
                 wrapMode: Text.Wrap
+            }
+
+            // --- Highlight status chip ---
+            Rectangle {
+                visible: spatialController.highlight
+                Layout.fillWidth: true
+                implicitHeight: 22
+                radius: 11
+                color: "#d4a017"
+                Text {
+                    anchors.centerIn: parent
+                    text: "☀ Highlight ON — press H to release"
+                    color: "#222"; font.pixelSize: 10; font.bold: true
+                }
             }
 
             // --- Add button ---

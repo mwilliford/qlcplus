@@ -149,6 +149,9 @@ public:
         m_spatialView->setMoveFocusPointCallback([this](const QString &id, double x, double y, double z) {
             m_controller->moveFocusPoint(id, x, y, z);
         });
+        m_spatialView->setToggleHighlightCallback([this]() {
+            m_controller->toggleHighlight();
+        });
         m_spatialView->setCreateFocusPointCallback([this](double x, double y, double z) {
             // Spawn at the clicked floor point. If a focus point is currently
             // selected, inherit its z so repeated shift-clicks stay on-plane.

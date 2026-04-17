@@ -18,6 +18,9 @@
 #include "doc.h"
 #include "fixture.h"
 #include "fixturekinematics.h"
+#include "qlcfixturemode.h"
+#include "qlcchannel.h"
+#include "qlccapability.h"
 
 #include <rigmath/kinematic_chain.hpp>
 #include <rigmath/rigid_transform.hpp>
@@ -113,6 +116,11 @@ SpatialController::SpatialController(Doc *doc, SpatialView *view, QObject *paren
     // change refreshes the QML list. Coalesce both signals into one.
     connect(sm, &SpatialModel::focusPointsChanged, this, &SpatialController::focusPointsChanged);
     connect(this, &SpatialController::selectedFocusPointChanged, this, &SpatialController::focusPointsChanged);
+
+    // Highlight follows selection — if the user changes which fixtures are
+    // selected (or which focus point), re-apply highlight to the new target set.
+    connect(this, &SpatialController::selectionChanged, this, [this]() { refreshHighlight(); });
+    connect(this, &SpatialController::selectedFocusPointChanged, this, [this]() { refreshHighlight(); });
 }
 
 void SpatialController::setSelectedFixtureId(int id)
@@ -246,7 +254,10 @@ void SpatialController::setMode(int m)
         return;
     // Leaving Focus mode → release any DMX we were holding.
     if (m_mode == Focus && m != Focus)
+    {
         clearFocusAim();
+        clearHighlight();
+    }
     m_mode = m;
     emit modeChanged();
 }
@@ -724,4 +735,121 @@ QVariantList SpatialController::focusPointsList() const
         out.append(row);
     }
     return out;
+}
+
+// ---------------------------------------------------------------------------
+// Highlight (Focus-mode visibility helper)
+// ---------------------------------------------------------------------------
+
+// Find a DMX value that opens the shutter channel. Prefers a capability with
+// Preset == ShutterOpen (midpoint of its range); falls back to scanning
+// capability names for "open"; last resort: 255 (conventional but wrong for
+// fixtures whose DMX 255 means "strobe" or "lamp off" — those should use
+// ShutterOpen preset properly).
+static uchar findShutterOpenValue(const QLCChannel *ch)
+{
+    if (!ch) return 255;
+    for (QLCCapability *cap : ch->capabilities())
+    {
+        if (cap->preset() == QLCCapability::ShutterOpen)
+            return uchar((int(cap->min()) + int(cap->max())) / 2);
+    }
+    for (QLCCapability *cap : ch->capabilities())
+    {
+        if (cap->name().startsWith(QStringLiteral("Open"), Qt::CaseInsensitive))
+            return uchar((int(cap->min()) + int(cap->max())) / 2);
+    }
+    return 255;
+}
+
+void SpatialController::applyHighlight()
+{
+    // Target fixtures: selected fixture set wins; fall back to the selected
+    // focus point's assigned fixtures if no fixtures are selected.
+    std::vector<int32_t> ids;
+    if (m_selectedIdsCallback)
+        ids = m_selectedIdsCallback();
+    else if (m_selectedFixtureId >= 0)
+        ids.push_back(m_selectedFixtureId);
+
+    if (ids.empty() && !m_selectedFocusPointId.isEmpty())
+    {
+        SpatialModel *sm = m_doc->spatialModel();
+        if (const auto *fp = sm->focusPoint(m_selectedFocusPointId))
+        {
+            for (const QString &fidStr : fp->assignedFixtureIds)
+            {
+                bool ok = false;
+                int32_t fid = fidStr.toInt(&ok);
+                if (ok) ids.push_back(fid);
+            }
+        }
+    }
+
+    for (int32_t fid : ids)
+    {
+        Fixture *fxi = m_doc->fixture(quint32(fid));
+        if (!fxi) continue;
+        const QLCFixtureMode *mode = fxi->fixtureMode();
+        if (!mode) continue;
+
+        const uint universe = fxi->universe();
+        const uint baseAddr = fxi->address();
+        const auto &channels = mode->channels();
+        for (int i = 0; i < channels.size(); i++)
+        {
+            const QLCChannel *ch = channels.at(i);
+            if (!ch) continue;
+            const uint absAddr = universe * 512U + baseAddr + uint(i);
+
+            if (ch->group() == QLCChannel::Intensity)
+            {
+                // Full intensity. MSB only; leave LSB alone (most fixtures
+                // interpret MSB=255 as 100% regardless).
+                emit focusDmxWrite(absAddr, 255);
+                m_highlightChannels.insert(absAddr);
+            }
+            else if (ch->group() == QLCChannel::Shutter)
+            {
+                emit focusDmxWrite(absAddr, findShutterOpenValue(ch));
+                m_highlightChannels.insert(absAddr);
+            }
+        }
+    }
+}
+
+void SpatialController::toggleHighlight()
+{
+    if (m_highlightActive)
+    {
+        clearHighlight();
+    }
+    else
+    {
+        m_highlightActive = true;
+        applyHighlight();
+        emit highlightChanged();
+    }
+}
+
+void SpatialController::clearHighlight()
+{
+    if (!m_highlightActive && m_highlightChannels.isEmpty())
+        return;
+    for (uint addr : m_highlightChannels)
+        emit focusDmxReset(addr);
+    m_highlightChannels.clear();
+    const bool was = m_highlightActive;
+    m_highlightActive = false;
+    if (was) emit highlightChanged();
+}
+
+void SpatialController::refreshHighlight()
+{
+    if (!m_highlightActive) return;
+    // Release previous override set, re-compute for new selection.
+    for (uint addr : m_highlightChannels)
+        emit focusDmxReset(addr);
+    m_highlightChannels.clear();
+    applyHighlight();
 }

@@ -124,6 +124,11 @@ public:
         m_createFocusPointCallback = std::move(cb);
     }
 
+    /** H-key toggle: open shutter + dim to 100% on selected fixtures. */
+    void setToggleHighlightCallback(std::function<void()> cb) {
+        m_toggleHighlightCallback = std::move(cb);
+    }
+
     /** Get current camera state. */
     float cameraYaw() const { return m_cameraYaw; }
     float cameraPitch() const { return m_cameraPitch; }
@@ -219,6 +224,7 @@ private:
     std::function<void(const QString &)> m_selectFocusPointCallback;
     std::function<void(const QString &, double, double, double)> m_moveFocusPointCallback;
     std::function<void(double, double, double)> m_createFocusPointCallback;
+    std::function<void()> m_toggleHighlightCallback;
 
     // Universe DMX snapshots (deep-copied from InputOutputMap::universeWritten)
     QHash<quint32, QByteArray> m_universeSnapshots;

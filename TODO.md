@@ -78,22 +78,60 @@
 - [x] Unit tests: 7 new SpatialModel tests (38 total, all passing)
 - [x] End-to-end visual test verified through MCP: sphere renders, selection highlights, `[N]` assignment badge, beam visibly swings to target, DMX channels written
 
-### Phase 2: Focus panel UI + mouse interaction — TODO
-**Start here**: `docs/handoff-sv4-phase2.md` — self-contained briefing with file-level plan, patterns to copy, and gotchas.
+### Phase 2: Focus panel UI + mouse interaction — DONE (2026-04-16)
+- [x] QML Focus panel (mode === 2) — list, create, rename, delete, fixture assignment UI
+- [x] Click-to-select in Spatial View (wires `hitTestFocusPoint` from BgfxRenderer)
+- [x] Drag selected focus point to move (on its z-plane, with grid/truss snap)
+- [x] Shift+click empty space → create focus point at floor hit
+- [x] Tardis undo actions for focus point mutations (add/remove/move/rename/assign)
 
-- [ ] QML Focus panel (mode === 2) — list, create, rename, delete, fixture assignment UI
-- [ ] Click-to-select in Spatial View (wire `hitTestFocusPoint` from BgfxRenderer)
-- [ ] Drag selected focus point to move (Focus mode)
-- [ ] Shift+click empty space → create focus point at cursor world-hit location
-- [ ] Tardis undo actions for focus point mutations
+### Phase 2 UX polish — DONE (2026-04-16)
+- [x] Left-click orbit in Focus mode (uniform camera across all modes)
+- [x] Hold-F gesture for ephemeral aim (replaces click-to-aim)
+- [x] `selectedFocusPointId` promoted to Q_PROPERTY (QML reactivity fix)
+- [x] "Assign selected fixture" button styled blue when enabled
+- [x] Highlight (H key): industry-standard toggle that opens shutter and sets
+      dimmer to 100% on the selected fixtures (or the selected focus point's
+      assigned fixtures if no fixture is selected). Follows selection changes.
+      Auto-clears on Focus mode exit.
 
 ### Phase 3: Polish — TODO
 - [ ] Multi-plane targeting (walls, custom planes) via `rigmath::Beam::hit_plane(point, normal)`
 - [ ] Fan/spread controls for multi-fixture aim
-- [ ] Auto shutter/dimmer open on Focus mode entry
 - [ ] Speed-limited aim ramp (smooth DMX transition instead of instant jump)
 - [ ] Calibration verification workflow (aim all at one point, check convergence)
-- [ ] Left-click camera orbit in Focus mode (currently cursor always aims — add modifier key)
+
+### Known bugs (tracked elsewhere)
+- [ ] IK branch-selection bug in rigmath: `KinematicChain::inverse_world` may
+      pick the 180°-flipped solution when the target is far from current pose.
+      Likely cause: residual treats the beam as an infinite line rather than a
+      forward ray. Same class of fix as the v1.1 AimFactor forward-ray fix but
+      for IK instead of calibration. Addressed separately in rigmath repo.
+
+## Future: Live Attribute Bank (Focus mode)
+
+Live encoders/sliders for common non-position attributes on selected fixtures —
+the industry-standard "attribute bank" concept (grandMA preset types, Hog
+parameter banks, Eos CIA). Overlaps with scene programming; needs proper
+design work before building.
+
+- Category tabs in Focus panel: Intensity, Color, Beam, Gobo, Shutter, Shape
+- Show attributes in the intersection of selected fixtures (skip non-applicable)
+- Encoders write live DMX via SimpleDesk overrides (same mechanism as Highlight)
+- Percentage display + capability name ("Gobo 3 — Swirl") for readability
+- Question to resolve: does "release" write back or reset? Hold-vs-latch UX?
+
+## Future: Palette / Preset System
+
+Save named attribute states (e.g., "Red", "Gobo Swirl", "Open White") and
+recall them on selected fixtures. Converges our tool with commercial console
+paradigms. Integrates with focus points: a focus point could optionally carry
+a palette reference so "aim at Point 1" also sets color/gobo/intensity.
+
+- `.aqw` persistence: `<Palette>` elements with per-attribute values
+- Palette editor UI + "apply to selection" action
+- Focus point optionally references a palette (composition, not inheritance)
+- Future hook for cue system: palette + aim + time = a cue
 
 ## SV-5: Live Mode + Venue Import
 

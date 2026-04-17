@@ -72,6 +72,10 @@ class SpatialController : public QObject
     // panel can reactively enable/disable actions that need one selected.
     Q_PROPERTY(QString selectedFocusPointId READ selectedFocusPointId WRITE setSelectedFocusPointId NOTIFY selectedFocusPointChanged)
 
+    // Highlight: Focus-mode "light up selected fixtures so I can see them"
+    // toggle (industry-standard H-key idiom). Open shutter + dimmer to 100%.
+    Q_PROPERTY(bool highlight READ highlight NOTIFY highlightChanged)
+
 public:
     explicit SpatialController(Doc *doc, SpatialView *view, QObject *parent = nullptr);
 
@@ -184,6 +188,16 @@ public:
      *  { id, name, x, y, z, assignedCount, selected }. */
     QVariantList focusPointsList() const;
 
+    // --- Highlight (Focus-mode visibility helper) ---
+
+    bool highlight() const { return m_highlightActive; }
+    /** Toggle highlight: open shutter + set dimmer to 100% on the currently
+     *  selected fixtures (or, if none, on the selected focus point's
+     *  assigned fixtures). Re-toggle to release. */
+    Q_INVOKABLE void toggleHighlight();
+    /** Turn highlight off and release its DMX overrides. Safe to call when off. */
+    void clearHighlight();
+
 signals:
     void selectionChanged();
     void transformChanged();
@@ -212,6 +226,9 @@ signals:
      *  drives the QML ListView. */
     void focusPointsChanged();
 
+    /** Emitted when the highlight state toggles on/off. */
+    void highlightChanged();
+
 private:
     void updateTransformFromModel();
 
@@ -238,6 +255,16 @@ private:
     // Focus points
     QString m_selectedFocusPointId;
     int m_nextFocusPointIdNum = 0;  // for auto-generating unique ids
+
+    // Highlight
+    bool m_highlightActive = false;
+    QSet<uint> m_highlightChannels;  // abs DMX addresses we're currently overriding
+    /** Internal: compute target fixtures (selected fixtures, or if none, the
+     *  selected focus point's assigned fixtures), open their shutter, set
+     *  dimmer to 100%. Fills m_highlightChannels. */
+    void applyHighlight();
+    /** Internal: re-apply highlight if active (call after selection changes). */
+    void refreshHighlight();
 };
 
 #endif // SPATIALCONTROLLER_H
