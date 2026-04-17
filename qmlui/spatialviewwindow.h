@@ -83,4 +83,33 @@ void spatialViewAddTruss(const QString &name, double x1, double y1, double z1,
 /** Set the Spatial View panel mode: 0=Layout, 1=Calibrate, 2=Focus, 3=Live. */
 void spatialViewSetMode(int mode);
 
+// --- Focus Point bridge functions (called from MCP server) ---
+
+/** Create a persistent focus point at world position. Returns its id. */
+QString spatialViewCreateFocusPoint(double x, double y, double z, const QString &name);
+
+/** Delete a focus point by id. Returns true if deleted. */
+bool spatialViewDeleteFocusPoint(const QString &id);
+
+/** Move an existing focus point. Returns true on success. */
+bool spatialViewMoveFocusPoint(const QString &id, double x, double y, double z);
+
+/** Rename a focus point. Returns true on success. */
+bool spatialViewRenameFocusPoint(const QString &id, const QString &name);
+
+/** Assign a fixture to track a focus point. Returns true if newly assigned. */
+bool spatialViewAssignFixtureToFocusPoint(const QString &fpId, int fixtureId);
+
+/** Unassign a fixture from a focus point. Returns true if removed. */
+bool spatialViewUnassignFixtureFromFocusPoint(const QString &fpId, int fixtureId);
+
+/** Aim all assigned fixtures at a focus point (executes IK + DMX writes). */
+bool spatialViewAimAtFocusPoint(const QString &id);
+
+/** Select a focus point (updates render highlight). Pass empty id to deselect. */
+void spatialViewSelectFocusPoint(const QString &id);
+
+/** Return all focus points as a JSON array [{id, name, x, y, z, assigned:[...], selected:bool}]. */
+QJsonArray spatialViewGetFocusPoints();
+
 #endif // SPATIALVIEWWINDOW_H

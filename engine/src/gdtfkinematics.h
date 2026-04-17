@@ -15,10 +15,26 @@
 #define GDTFKINEMATICS_H
 
 #include <memory>
+#include <vector>
+
+#include <QString>
 
 namespace rigmath { class KinematicChain; class ChannelMap; }
+struct GDTFGeometryNode;
 struct GDTFGeometryData;
 struct GDTFDmxModeInfo;
+
+/**
+ * Per-axis DOF metadata extracted alongside kinematics.
+ * Used by the render layer to tag SceneNode DOF fields without
+ * duplicating axis-inference logic.
+ */
+struct AxisDofTag
+{
+    QString geometryName;   ///< axis node name (matches GDTFGeometryNode::name)
+    int dofIndex = -1;      ///< -1 if no DMX channel drives this axis
+    float axis[3] = {};     ///< rotation axis in node-local space (unit vector)
+};
 
 /**
  * @brief Result of building kinematics from GDTF geometry data.
@@ -31,25 +47,28 @@ struct GDTFKinematicsResult
     std::shared_ptr<rigmath::KinematicChain> chain;
     std::shared_ptr<rigmath::ChannelMap> channelMap;
     int dofCount = 0;       ///< number of active DOFs in the chain
+    std::vector<AxisDofTag> axisTags;  ///< one per GeometryAxis node (DFS order)
 };
 
 /**
  * @brief Build a KinematicChain + ChannelMap from GDTF geometry tree and DMX mode info.
  *
  * Walks the geometry tree depth-first collecting GeometryAxis nodes as joints.
- * Each axis node's localTransform becomes Joint::parent_to_joint. The GDTF
- * convention is rotation around local +Z, so Joint::axis = (0,0,1). The first
- * GeometryLamp/GeometryLaser after the last axis becomes the beam_offset.
+ * Each joint's parent_to_joint is the composed transform from the previous
+ * axis (or root) to this axis, including all intermediate non-axis geometry
+ * nodes. This ensures offsets from grouping nodes (e.g., POS-6's "Base 1")
+ * are not lost. The first GeometryLamp/GeometryLaser after the last axis
+ * becomes the beam_offset (also accumulating intermediate transforms).
  *
  * The ChannelMap uses the raw PhysicalFrom/PhysicalTo from GDTFDmxChannelInfo,
  * which encodes both range and direction (inverted when From > To). This
  * replaces all invertPan/invertTilt logic.
  *
- * @param geoData   Geometry tree (must not be null)
+ * @param geoRoot   Root geometry node for the mode's geometry tree
  * @param modeInfo  DMX mode metadata with physical ranges
  * @return Result with chain + channelMap. chain is null if no axes found.
  */
-GDTFKinematicsResult buildGDTFKinematics(const GDTFGeometryData &geoData,
+GDTFKinematicsResult buildGDTFKinematics(const GDTFGeometryNode &geoRoot,
                                           const GDTFDmxModeInfo &modeInfo);
 
 /**

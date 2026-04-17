@@ -44,6 +44,16 @@ struct SceneNode
 
     const LoadedMesh *mesh = nullptr;  // null = grouping node (no draw call)
     std::vector<SceneNode> children;
+
+    // R2: DOF articulation — set during buildSceneNode() for GeometryAxis nodes.
+    // dofIndex identifies which entry in RenderFixture::dofAngles drives this joint.
+    // dofAxis is the rotation axis in this node's LOCAL space (unit vector).
+    int dofIndex = -1;
+    float dofAxis[3] = {0.0f, 0.0f, 0.0f};
+
+    // R4: Beam node tagging — set during buildSceneNode() for Lamp/Laser nodes.
+    bool isBeamNode = false;
+    float beamAngle = 0.0f;  // degrees
 };
 
 /**

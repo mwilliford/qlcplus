@@ -19,6 +19,7 @@
 
 #include "primitivegen.h"
 #include <bgfx/bgfx.h>
+#include <algorithm>
 #include <cmath>
 #include <vector>
 
@@ -112,11 +113,13 @@ static LoadedMesh makeCube(float sx, float sy, float sz)
     return createMesh(v, idx);
 }
 
-static LoadedMesh makeCylinder(float radius, float height, int segments)
+// Generate a unit cylinder (r=0.5, h=1.0, Y-axis aligned) into raw buffers.
+// Extent is 1×1×1, centered at origin.
+static void generateUnitCylinder(std::vector<PNVertex> &v, std::vector<uint16_t> &idx,
+                                  int segments)
 {
-    std::vector<PNVertex> v;
-    std::vector<uint16_t> idx;
-    float hh = height * 0.5f;
+    const float radius = 0.5f;
+    const float hh = 0.5f;
     const float pi = 3.14159265358979323846f;
 
     for (int i = 0; i <= segments; i++)
@@ -155,14 +158,13 @@ static LoadedMesh makeCylinder(float radius, float height, int segments)
         uint16_t b = static_cast<uint16_t>((i + 1) * 2 + 1);
         idx.insert(idx.end(), {botCenter, b, a});
     }
-
-    return createMesh(v, idx);
 }
 
-static LoadedMesh makeSphere(float radius, int stacks, int slices)
+// Generate a unit sphere (r=0.5) into raw buffers. Extent is 1×1×1.
+static void generateUnitSphere(std::vector<PNVertex> &v, std::vector<uint16_t> &idx,
+                                int stacks, int slices)
 {
-    std::vector<PNVertex> v;
-    std::vector<uint16_t> idx;
+    const float radius = 0.5f;
     const float pi = 3.14159265358979323846f;
 
     for (int i = 0; i <= stacks; i++)
@@ -189,69 +191,126 @@ static LoadedMesh makeSphere(float radius, int stacks, int slices)
                                    uint16_t(a + 1), b, uint16_t(b + 1)});
         }
     }
+}
 
+// Scale raw vertex positions by (sx, sy, sz) and fix normals for non-uniform scale.
+static void scaleRawVertices(std::vector<PNVertex> &verts, float sx, float sy, float sz)
+{
+    for (auto &v : verts)
+    {
+        v.x *= sx;
+        v.y *= sy;
+        v.z *= sz;
+
+        // Normals: multiply by inverse scale, renormalize
+        float nx = v.nx / sx;
+        float ny = v.ny / sy;
+        float nz = v.nz / sz;
+        float len = std::sqrt(nx * nx + ny * ny + nz * nz);
+        if (len > 1e-7f) { nx /= len; ny /= len; nz /= len; }
+        v.nx = nx; v.ny = ny; v.nz = nz;
+    }
+}
+
+// Legacy wrappers used by BgfxRenderer fallback cube
+static LoadedMesh makeCylinder(float radius, float height, int segments)
+{
+    std::vector<PNVertex> v;
+    std::vector<uint16_t> idx;
+    generateUnitCylinder(v, idx, segments);
+    scaleRawVertices(v, radius * 2.0f, height, radius * 2.0f);
     return createMesh(v, idx);
 }
 
-PrimitiveGen::PrimitiveGen() = default;
-PrimitiveGen::~PrimitiveGen() { shutdown(); }
-
-void PrimitiveGen::init()
+static LoadedMesh makeSphere(float radius, int stacks, int slices)
 {
-    ensureLayout();
-
-    // Cube: 0.2m unit cube
-    m_meshes[PrimitiveCube_] = makeCube(0.2f, 0.2f, 0.2f);
-
-    // Cylinder: r=0.1m, h=0.3m
-    m_meshes[PrimitiveCylinder_] = makeCylinder(0.1f, 0.3f, 16);
-
-    // Sphere: r=0.1m
-    m_meshes[PrimitiveSphere_] = makeSphere(0.1f, 12, 24);
-
-    // Base: flat box
-    m_meshes[PrimitiveBase_] = makeCube(0.3f, 0.05f, 0.3f);
-
-    // Yoke: taller, narrower box (simplified U-bracket)
-    m_meshes[PrimitiveYoke_] = makeCube(0.25f, 0.25f, 0.08f);
-
-    // Head: compact box
-    m_meshes[PrimitiveHead_] = makeCube(0.18f, 0.12f, 0.2f);
-
-    // Scanner: flat body
-    m_meshes[PrimitiveScanner_] = makeCube(0.3f, 0.1f, 0.15f);
-
-    // Conventional: cylinder (PAR can / laser housing shape)
-    m_meshes[PrimitiveConventional_] = makeCylinder(0.15f, 0.35f, 16);
-
-    // Pigtail: small cylinder
-    m_meshes[PrimitivePigtail_] = makeCylinder(0.01f, 0.1f, 8);
-
-    // 1.1 variants: generate their own meshes (same shapes as 1.0 counterparts)
-    m_meshes[PrimitiveBase1_1_] = makeCube(0.3f, 0.05f, 0.3f);
-    m_meshes[PrimitiveScanner1_1_] = makeCube(0.3f, 0.1f, 0.15f);
-    m_meshes[PrimitiveConventional1_1_] = makeCylinder(0.15f, 0.35f, 16);
+    std::vector<PNVertex> v;
+    std::vector<uint16_t> idx;
+    generateUnitSphere(v, idx, stacks, slices);
+    float d = radius * 2.0f;
+    scaleRawVertices(v, d, d, d);
+    return createMesh(v, idx);
 }
 
-const LoadedMesh *PrimitiveGen::getPrimitive(int primitiveType) const
+// ---------------------------------------------------------------------------
+// Default dimensions for each primitive type (used when GDTF doesn't specify)
+// ---------------------------------------------------------------------------
+static void defaultDimensions(int primitiveType, float &length, float &width, float &height)
 {
-    auto it = m_meshes.find(primitiveType);
-    if (it != m_meshes.end())
-        return &it->second;
-
-    // Fallback to cube for unknown types
-    it = m_meshes.find(PrimitiveCube_);
-    if (it != m_meshes.end())
-        return &it->second;
-
-    return nullptr;
+    switch (primitiveType)
+    {
+    case PrimitiveCube_:           length = 0.2f;  width = 0.2f;  height = 0.2f;  break;
+    case PrimitiveCylinder_:       length = 0.2f;  width = 0.3f;  height = 0.2f;  break;
+    case PrimitiveSphere_:         length = 0.2f;  width = 0.2f;  height = 0.2f;  break;
+    case PrimitiveBase_:
+    case PrimitiveBase1_1_:        length = 0.3f;  width = 0.05f; height = 0.3f;  break;
+    case PrimitiveYoke_:           length = 0.25f; width = 0.25f; height = 0.08f; break;
+    case PrimitiveHead_:           length = 0.18f; width = 0.12f; height = 0.2f;  break;
+    case PrimitiveScanner_:
+    case PrimitiveScanner1_1_:     length = 0.3f;  width = 0.1f;  height = 0.15f; break;
+    case PrimitiveConventional_:
+    case PrimitiveConventional1_1_:length = 0.3f;  width = 0.35f; height = 0.3f;  break;
+    case PrimitivePigtail_:        length = 0.02f; width = 0.1f;  height = 0.02f; break;
+    default:                       length = 0.2f;  width = 0.2f;  height = 0.2f;  break;
+    }
 }
 
-void PrimitiveGen::shutdown()
+// ---------------------------------------------------------------------------
+// Public factory method
+// ---------------------------------------------------------------------------
+LoadedMesh PrimitiveGen::generate(int primitiveType, float length, float width, float height)
 {
-    for (auto &pair : m_meshes)
-        pair.second.destroy();
-    m_meshes.clear();
+    // Use defaults if no valid dimensions provided
+    if (length < 0.001f || width < 0.001f || height < 0.001f)
+        defaultDimensions(primitiveType, length, width, height);
+
+    // Clamp to minimum sensible size
+    length = std::max(length, 0.01f);
+    width  = std::max(width,  0.01f);
+    height = std::max(height, 0.01f);
+
+    switch (primitiveType)
+    {
+    // Cube-based types: direct box at GDTF dimensions
+    case PrimitiveCube_:
+    case PrimitiveBase_:
+    case PrimitiveBase1_1_:
+    case PrimitiveYoke_:
+    case PrimitiveHead_:
+    case PrimitiveScanner_:
+    case PrimitiveScanner1_1_:
+        return makeCube(length, width, height);
+
+    // Cylinder-based types: generate unit cylinder then scale by (L, W, H).
+    // This produces non-uniform scaling (elliptical cross-section) matching
+    // BlenderDMX's approach. A mirror disc (L=100, W=155, H=15mm) becomes
+    // a flat disc, not a tall pipe.
+    case PrimitiveCylinder_:
+    case PrimitiveConventional_:
+    case PrimitiveConventional1_1_:
+    case PrimitivePigtail_:
+    {
+        std::vector<PNVertex> v;
+        std::vector<uint16_t> idx;
+        generateUnitCylinder(v, idx, 16);
+        scaleRawVertices(v, length, width, height);
+        return createMesh(v, idx);
+    }
+
+    // Sphere: generate unit sphere then scale by (L, W, H) for ellipsoids.
+    case PrimitiveSphere_:
+    {
+        std::vector<PNVertex> v;
+        std::vector<uint16_t> idx;
+        generateUnitSphere(v, idx, 12, 24);
+        scaleRawVertices(v, length, width, height);
+        return createMesh(v, idx);
+    }
+
+    // Unknown type: fallback to cube
+    default:
+        return makeCube(length, width, height);
+    }
 }
 
 } // namespace qlcrender

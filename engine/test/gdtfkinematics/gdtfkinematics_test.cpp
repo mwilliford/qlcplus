@@ -18,6 +18,7 @@
 #include "gdtfkinematics.h"
 #include "gdtfgeometrydata.h"
 
+#include <rigmath/beam.hpp>
 #include <rigmath/kinematic_chain.hpp>
 #include <rigmath/channel_binding.hpp>
 #include <rigmath/rigid_transform.hpp>
@@ -98,6 +99,87 @@ static GDTFDmxChannelInfo makeTiltChannel(int coarse, int fine = -1,
     return ch;
 }
 
+// Set a column-major identity matrix with X, Y, Z translation offsets
+static void setTransformXYZ(float m[16], float tx, float ty, float tz)
+{
+    float id[16] = {1,0,0,0, 0,1,0,0, 0,0,1,0, 0,0,0,1};
+    std::copy(id, id + 16, m);
+    m[12] = tx;  // column 3, row 0
+    m[13] = ty;  // column 3, row 1
+    m[14] = tz;  // column 3, row 2
+}
+
+// Convert GDTF column-major float[16] to rigmath RigidTransform.
+// Duplicated from gdtfkinematics.cpp (static there) for test use.
+static rigmath::RigidTransform testGdtfToRigmath(const float colMajor[16])
+{
+    double rowMajor[16];
+    for (int r = 0; r < 4; r++)
+        for (int c = 0; c < 4; c++)
+            rowMajor[r * 4 + c] = static_cast<double>(colMajor[c * 4 + r]);
+    return rigmath::RigidTransform::from_4x4_row_major(rowMajor);
+}
+
+// Walk the GDTF geometry tree like renderSceneGraph, computing beam rays
+// in fixture-local space. This simulates what the renderer produces
+// (single source of truth) for comparison with kinematics output.
+static std::vector<rigmath::Ray> sceneGraphBeamRays(
+    const GDTFGeometryNode &root,
+    const std::vector<AxisDofTag> &axisTags,
+    const std::vector<double> &dofAngles)
+{
+    std::vector<rigmath::Ray> rays;
+
+    std::function<void(const GDTFGeometryNode &, rigmath::RigidTransform)> walk;
+    walk = [&](const GDTFGeometryNode &node, rigmath::RigidTransform parentWorld) {
+        // World transform = parent * local (same composition as renderSceneGraph)
+        rigmath::RigidTransform nodeWorld = parentWorld.compose(
+            testGdtfToRigmath(node.localTransform));
+
+        // If DOF node, apply articulation rotation
+        rigmath::RigidTransform articulatedWorld = nodeWorld;
+        for (const auto &tag : axisTags)
+        {
+            if (tag.geometryName == node.name && tag.dofIndex >= 0 &&
+                tag.dofIndex < (int)dofAngles.size())
+            {
+                double angleRad = dofAngles[tag.dofIndex] * M_PI / 180.0;
+                auto dofRot = rigmath::RigidTransform::rotation_around_axis(
+                    rigmath::Vec3(tag.axis[0], tag.axis[1], tag.axis[2]), angleRad);
+                articulatedWorld = nodeWorld.compose(dofRot);
+                break;
+            }
+        }
+
+        // If beam node, record the world-space ray
+        if (node.type == GeometryLamp || node.type == GeometryLaser)
+        {
+            rigmath::Ray localRay{0, 0, 0, 0, 0, -1};
+            rays.push_back(articulatedWorld.transform_ray(localRay));
+        }
+
+        // Recurse children with the articulated transform
+        for (const auto &child : node.children)
+            walk(child, articulatedWorld);
+    };
+
+    walk(root, rigmath::RigidTransform::identity());
+    return rays;
+}
+
+// Verify a ray origin is close to expected position
+static void verifyOrigin(const rigmath::Ray &ray, double ex, double ey, double ez,
+                          double tolMeters = 0.001)
+{
+    double dx = ray.ox - ex, dy = ray.oy - ey, dz = ray.oz - ez;
+    double dist = std::sqrt(dx*dx + dy*dy + dz*dz);
+    QVERIFY2(dist < tolMeters,
+             qPrintable(QString("Origin mismatch: got (%1,%2,%3) expected (%4,%5,%6) dist=%7m")
+                        .arg(ray.ox, 0, 'f', 6).arg(ray.oy, 0, 'f', 6).arg(ray.oz, 0, 'f', 6)
+                        .arg(ex, 0, 'f', 6).arg(ey, 0, 'f', 6).arg(ez, 0, 'f', 6)
+                        .arg(dist, 0, 'f', 6)));
+}
+
 // Verify a ray direction is close to expected (normalized comparison)
 static void verifyDirection(const rigmath::Ray &ray, double ex, double ey, double ez,
                             double tolDeg = 0.5)
@@ -133,7 +215,7 @@ void GDTFKinematics_Test::movingHead_standardIdentityRotation()
     mode.channels.append(makePanChannel(0));
     mode.channels.append(makeTiltChannel(1));
 
-    GDTFKinematicsResult r = buildGDTFKinematics(geo, mode);
+    GDTFKinematicsResult r = buildGDTFKinematics(geo.root, mode);
 
     QVERIFY(r.chain != nullptr);
     QCOMPARE(r.dofCount, 2);
@@ -174,7 +256,7 @@ void GDTFKinematics_Test::movingHead_wellAuthoredRotation()
     mode.channels.append(makePanChannel(0));
     mode.channels.append(makeTiltChannel(1));
 
-    GDTFKinematicsResult r = buildGDTFKinematics(geo, mode);
+    GDTFKinematicsResult r = buildGDTFKinematics(geo.root, mode);
 
     QVERIFY(r.chain != nullptr);
     QCOMPARE(r.dofCount, 2);
@@ -206,7 +288,7 @@ void GDTFKinematics_Test::movingHead_identityVsWellAuthored_equivalence()
     mode.channels.append(makePanChannel(0, -1, -270, 270));
     mode.channels.append(makeTiltChannel(1, -1, -135, 135));
 
-    auto rId = buildGDTFKinematics(geoId, mode);
+    auto rId = buildGDTFKinematics(geoId.root, mode);
 
     // Factory version (the "truth")
     auto factory = rigmath::KinematicChain::moving_head(540.0, 270.0);
@@ -248,7 +330,7 @@ void GDTFKinematics_Test::movingMirror_identityRotation()
     mode.channels.append(makePanChannel(0, -1, 90, -90, "Yoke"));
     mode.channels.append(makeTiltChannel(1, -1, 55, -55, "Head"));
 
-    auto r = buildGDTFKinematics(geo, mode);
+    auto r = buildGDTFKinematics(geo.root, mode);
 
     QVERIFY(r.chain != nullptr);
     QCOMPARE(r.dofCount, 2);
@@ -280,7 +362,7 @@ void GDTFKinematics_Test::movingMirror_wellAuthoredRotation()
     mode.channels.append(makePanChannel(0, -1, -90, 90, "Yoke"));
     mode.channels.append(makeTiltChannel(1, -1, -55, 55, "Head"));
 
-    auto r = buildGDTFKinematics(geo, mode);
+    auto r = buildGDTFKinematics(geo.root, mode);
 
     QVERIFY(r.chain != nullptr);
     QCOMPARE(r.dofCount, 2);
@@ -301,7 +383,7 @@ void GDTFKinematics_Test::tiltOnly()
     mode.modeName = "30CH";
     mode.channels.append(makeTiltChannel(28, -1, 120, -120, "Head"));
 
-    auto r = buildGDTFKinematics(geo, mode);
+    auto r = buildGDTFKinematics(geo.root, mode);
 
     QVERIFY(r.chain != nullptr);
     QCOMPARE(r.dofCount, 1);
@@ -329,7 +411,7 @@ void GDTFKinematics_Test::panOnly()
     mode.modeName = "Std";
     mode.channels.append(makePanChannel(0, -1, -180, 180));
 
-    auto r = buildGDTFKinematics(geo, mode);
+    auto r = buildGDTFKinematics(geo.root, mode);
 
     QVERIFY(r.chain != nullptr);
     QCOMPARE(r.dofCount, 1);
@@ -345,7 +427,7 @@ void GDTFKinematics_Test::fixedFixture()
     GDTFDmxModeInfo mode;
     mode.modeName = "Std";
 
-    auto r = buildGDTFKinematics(geo, mode);
+    auto r = buildGDTFKinematics(geo.root, mode);
 
     QVERIFY(r.chain != nullptr);
     QCOMPARE(r.dofCount, 0);
@@ -381,7 +463,7 @@ void GDTFKinematics_Test::multiBeam_ledBar()
     mode.modeName = "30CH";
     mode.channels.append(makeTiltChannel(28, -1, -120, 120, "Head"));
 
-    auto r = buildGDTFKinematics(geo, mode);
+    auto r = buildGDTFKinematics(geo.root, mode);
 
     QVERIFY(r.chain != nullptr);
     QCOMPARE(r.dofCount, 1);
@@ -415,7 +497,7 @@ void GDTFKinematics_Test::invertedPhysicalRange()
     mode.channels.append(makePanChannel(0, -1, 270, -270));
     mode.channels.append(makeTiltChannel(1, -1, 135, -135));
 
-    auto r = buildGDTFKinematics(geo, mode);
+    auto r = buildGDTFKinematics(geo.root, mode);
 
     QVERIFY(r.chain != nullptr);
     QVERIFY(r.channelMap != nullptr);
@@ -444,7 +526,7 @@ void GDTFKinematics_Test::sixteenBitChannels()
     mode.channels.append(makePanChannel(0, 1, -270, 270));  // coarse=0, fine=1
     mode.channels.append(makeTiltChannel(2, 3, -135, 135));  // coarse=2, fine=3
 
-    auto r = buildGDTFKinematics(geo, mode);
+    auto r = buildGDTFKinematics(geo.root, mode);
 
     QVERIFY(r.chain != nullptr);
     QVERIFY(r.channelMap != nullptr);
@@ -491,7 +573,7 @@ void GDTFKinematics_Test::missingDmxChannel()
     // Current behavior: both axes can match the same channel.
     // This is a known limitation — the matching doesn't track "used" channels.
 
-    auto r = buildGDTFKinematics(geo, mode);
+    auto r = buildGDTFKinematics(geo.root, mode);
 
     QVERIFY(r.chain != nullptr);
     // The second axis finds Pan via fallback → both get a DOF.
@@ -585,7 +667,7 @@ void GDTFKinematics_Test::pipeline_qxfToKinematics_matchesFactory()
     synthesizeGDTFFromQXF(true, true, 540, 270, false,
                            0, -1, 1, -1, 0, 25.0, geo, mode);
 
-    auto r = buildGDTFKinematics(geo, mode);
+    auto r = buildGDTFKinematics(geo.root, mode);
     auto factory = rigmath::KinematicChain::moving_head(540, 270);
 
     QVERIFY(r.chain != nullptr);
@@ -613,7 +695,7 @@ void GDTFKinematics_Test::pipeline_forwardInverseRoundTrip()
     GDTFDmxModeInfo mode;
     synthesizeGDTFFromQXF(true, true, 540, 270, false,
                            0, -1, 1, -1, 0, 25.0, geo, mode);
-    auto r = buildGDTFKinematics(geo, mode);
+    auto r = buildGDTFKinematics(geo.root, mode);
 
     // Pick a target point, do IK, then FK, verify ray passes through target
     double tx = 2.0, ty = 1.0, tz = -3.0;
@@ -653,7 +735,7 @@ void GDTFKinematics_Test::pipeline_multiBeamForwardAll()
     mode.modeName = "Std";
     mode.channels.append(makeTiltChannel(0, -1, -120, 120, "Head"));
 
-    auto r = buildGDTFKinematics(geo, mode);
+    auto r = buildGDTFKinematics(geo.root, mode);
     QCOMPARE(r.chain->beam_count(), 3);
 
     // Tilt 45°: all beams point same direction but from different origins
@@ -687,7 +769,7 @@ void GDTFKinematics_Test::pipeline_channelMapRoundTrip()
     mode.channels.append(makePanChannel(0, 1, -270, 270));
     mode.channels.append(makeTiltChannel(2, 3, -135, 135));
 
-    auto r = buildGDTFKinematics(geo, mode);
+    auto r = buildGDTFKinematics(geo.root, mode);
 
     std::vector<double> original = {42.7, -18.3};
     auto dmx = r.channelMap->angles_to_dmx(original);
@@ -696,6 +778,376 @@ void GDTFKinematics_Test::pipeline_channelMapRoundTrip()
     // 16-bit quantization: 540°/65535 ≈ 0.008° per step
     QVERIFY(std::abs(recovered[0] - original[0]) < 0.02);
     QVERIFY(std::abs(recovered[1] - original[1]) < 0.02);
+}
+
+// =====================================================================
+// Beam origin vs scene graph consistency tests
+// =====================================================================
+
+void GDTFKinematics_Test::intermediateNode_beforeFirstAxis()
+{
+    // POS-6 style: Base → Base1(offset Z=-0.141) → Head(Axis) → Lamp
+    // The intermediate "Base 1" node should contribute its offset to the
+    // beam origin. Without the prefix transform fix, this offset is lost.
+    GDTFGeometryData geo;
+    geo.root = makeNode("Base", GeometryGeneral, PrimitiveBase);
+
+    GDTFGeometryNode base1 = makeNode("Base 1", GeometryGeneral, PrimitiveUndefined);
+    setTransformXYZ(base1.localTransform, 0.0084f, 0.0f, -0.141f);
+
+    GDTFGeometryNode head = makeNode("Head", GeometryAxis, PrimitiveHead, -0.04f);
+    head.children.append(makeLamp(25.0f, -0.05f));
+    base1.children.append(head);
+    geo.root.children.append(base1);
+
+    GDTFDmxModeInfo mode;
+    mode.modeName = "Standard";
+    mode.channels.append(makeTiltChannel(0, -1, -120, 120, "Head"));
+
+    GDTFKinematicsResult r = buildGDTFKinematics(geo.root, mode);
+    QVERIFY(r.chain != nullptr);
+    QCOMPARE(r.dofCount, 1);
+
+    // Home beam origin should include Base1's offsets
+    rigmath::Ray home = r.chain->forward_local({0});
+
+    // Expected Z = -0.141 (Base1) + -0.04 (Head) + -0.05 (Lamp) = -0.231
+    // Expected X = 0.0084 (Base1)
+    verifyOrigin(home, 0.0084, 0.0, -0.231, 0.002);
+    verifyDirection(home, 0, 0, -1, 1.0);
+}
+
+void GDTFKinematics_Test::intermediateNode_betweenAxes()
+{
+    // Base → Yoke(Axis, pan) → Mount(General, z=-0.08) → Head(Axis, tilt) → Lamp
+    // The "Mount" grouping node between axes should contribute its offset.
+    GDTFGeometryData geo;
+    geo.root = makeNode("Base", GeometryGeneral, PrimitiveBase);
+
+    GDTFGeometryNode yoke = makeNode("Yoke", GeometryAxis, PrimitiveYoke, -0.15f);
+
+    GDTFGeometryNode mount = makeNode("Mount", GeometryGeneral, PrimitiveUndefined, -0.08f);
+
+    GDTFGeometryNode head = makeNode("Head", GeometryAxis, PrimitiveHead, -0.04f);
+    head.children.append(makeLamp(25.0f, -0.05f));
+
+    mount.children.append(head);
+    yoke.children.append(mount);
+    geo.root.children.append(yoke);
+
+    GDTFDmxModeInfo mode;
+    mode.modeName = "Standard";
+    mode.channels.append(makePanChannel(0));
+    mode.channels.append(makeTiltChannel(1));
+
+    GDTFKinematicsResult r = buildGDTFKinematics(geo.root, mode);
+    QVERIFY(r.chain != nullptr);
+    QCOMPARE(r.dofCount, 2);
+
+    // Home beam origin Z = -0.15 (Yoke) + -0.08 (Mount) + -0.04 (Head) + -0.05 (Lamp) = -0.32
+    rigmath::Ray home = r.chain->forward_local({0, 0});
+    verifyOrigin(home, 0, 0, -0.32, 0.002);
+}
+
+void GDTFKinematics_Test::intermediateNode_beforeBeam()
+{
+    // Base → Head(Axis, tilt) → Optics(General, z=-0.03) → Lamp(z=-0.02)
+    // The "Optics" grouping node between axis and lamp should contribute
+    // its offset to the beam offset.
+    GDTFGeometryData geo;
+    geo.root = makeNode("Base", GeometryGeneral, PrimitiveBase);
+
+    GDTFGeometryNode head = makeNode("Head", GeometryAxis, PrimitiveHead, -0.10f);
+
+    GDTFGeometryNode optics = makeNode("Optics", GeometryGeneral, PrimitiveUndefined, -0.03f);
+    optics.children.append(makeLamp(25.0f, -0.02f));
+
+    head.children.append(optics);
+    geo.root.children.append(head);
+
+    GDTFDmxModeInfo mode;
+    mode.modeName = "Standard";
+    mode.channels.append(makeTiltChannel(0, -1, -120, 120, "Head"));
+
+    GDTFKinematicsResult r = buildGDTFKinematics(geo.root, mode);
+    QVERIFY(r.chain != nullptr);
+    QCOMPARE(r.dofCount, 1);
+
+    // Home beam origin Z = -0.10 (Head) + -0.03 (Optics) + -0.02 (Lamp) = -0.15
+    rigmath::Ray home = r.chain->forward_local({0});
+    verifyOrigin(home, 0, 0, -0.15, 0.002);
+}
+
+void GDTFKinematics_Test::beamOrigin_matchesSceneGraphWalk()
+{
+    // Standard moving head (no intermediates).
+    // Verify kinematics beam rays match scene-graph-walk beam rays
+    // at multiple DOF angles.
+    GDTFGeometryData geo;
+    geo.root = makeNode("Base", GeometryGeneral, PrimitiveBase);
+    GDTFGeometryNode yoke = makeNode("Yoke", GeometryAxis, PrimitiveYoke, -0.15f);
+    GDTFGeometryNode head = makeNode("Head", GeometryAxis, PrimitiveHead, -0.04f);
+    head.children.append(makeLamp(25.0f, -0.05f));
+    yoke.children.append(head);
+    geo.root.children.append(yoke);
+
+    GDTFDmxModeInfo mode;
+    mode.modeName = "Standard";
+    mode.channels.append(makePanChannel(0));
+    mode.channels.append(makeTiltChannel(1));
+
+    GDTFKinematicsResult r = buildGDTFKinematics(geo.root, mode);
+    QVERIFY(r.chain != nullptr);
+
+    // Test at several angle combinations
+    std::vector<std::vector<double>> testAngles = {
+        {0, 0}, {45, 0}, {0, 45}, {90, -30}, {-120, 60}
+    };
+
+    for (const auto &dofs : testAngles)
+    {
+        // Kinematics beam ray
+        rigmath::Ray kinRay = r.chain->forward_local(dofs);
+
+        // Scene graph walk beam ray
+        auto sgRays = sceneGraphBeamRays(geo.root, r.axisTags, dofs);
+        QCOMPARE((int)sgRays.size(), 1);
+
+        // Origins should match
+        double dx = kinRay.ox - sgRays[0].ox;
+        double dy = kinRay.oy - sgRays[0].oy;
+        double dz = kinRay.oz - sgRays[0].oz;
+        double originDist = std::sqrt(dx*dx + dy*dy + dz*dz);
+        QVERIFY2(originDist < 0.001,
+                 qPrintable(QString("Origin mismatch at dofs=(%1,%2): %3m")
+                            .arg(dofs[0]).arg(dofs[1]).arg(originDist, 0, 'f', 6)));
+
+        // Directions should match
+        double dot = kinRay.dx * sgRays[0].dx + kinRay.dy * sgRays[0].dy
+                     + kinRay.dz * sgRays[0].dz;
+        double angleDeg = std::acos(std::clamp(dot, -1.0, 1.0)) * 180.0 / M_PI;
+        QVERIFY2(angleDeg < 0.5,
+                 qPrintable(QString("Direction mismatch at dofs=(%1,%2): %3°")
+                            .arg(dofs[0]).arg(dofs[1]).arg(angleDeg, 0, 'f', 4)));
+    }
+}
+
+void GDTFKinematics_Test::beamOrigin_matchesSceneGraphWalk_withIntermediates()
+{
+    // POS-6 style tree with intermediate nodes at all levels:
+    //   Base → Base1(offset) → Yoke(Axis, pan) → Mount(offset) → Head(Axis, tilt) → Optics(offset) → Lamp
+    // This is the comprehensive consistency test.
+    GDTFGeometryData geo;
+    geo.root = makeNode("Base", GeometryGeneral, PrimitiveBase);
+
+    GDTFGeometryNode base1 = makeNode("Base 1", GeometryGeneral);
+    setTransformXYZ(base1.localTransform, 0.01f, 0.0f, -0.14f);
+
+    GDTFGeometryNode yoke = makeNode("Yoke", GeometryAxis, PrimitiveYoke, -0.10f);
+
+    GDTFGeometryNode mount = makeNode("Mount", GeometryGeneral, PrimitiveUndefined, -0.06f);
+
+    GDTFGeometryNode head = makeNode("Head", GeometryAxis, PrimitiveHead, -0.04f);
+
+    GDTFGeometryNode optics = makeNode("Optics", GeometryGeneral, PrimitiveUndefined, -0.02f);
+    optics.children.append(makeLamp(25.0f, -0.01f));
+
+    head.children.append(optics);
+    mount.children.append(head);
+    yoke.children.append(mount);
+    base1.children.append(yoke);
+    geo.root.children.append(base1);
+
+    GDTFDmxModeInfo mode;
+    mode.modeName = "Standard";
+    mode.channels.append(makePanChannel(0, -1, -270, 270, "Yoke"));
+    mode.channels.append(makeTiltChannel(1, -1, -135, 135, "Head"));
+
+    GDTFKinematicsResult r = buildGDTFKinematics(geo.root, mode);
+    QVERIFY(r.chain != nullptr);
+    QCOMPARE(r.dofCount, 2);
+
+    // Test at several angle combinations
+    std::vector<std::vector<double>> testAngles = {
+        {0, 0}, {30, 0}, {0, 45}, {90, -30}, {-60, 60}, {180, 0}
+    };
+
+    for (const auto &dofs : testAngles)
+    {
+        rigmath::Ray kinRay = r.chain->forward_local(dofs);
+        auto sgRays = sceneGraphBeamRays(geo.root, r.axisTags, dofs);
+        QCOMPARE((int)sgRays.size(), 1);
+
+        // Origins must match within float→double precision
+        double dx = kinRay.ox - sgRays[0].ox;
+        double dy = kinRay.oy - sgRays[0].oy;
+        double dz = kinRay.oz - sgRays[0].oz;
+        double originDist = std::sqrt(dx*dx + dy*dy + dz*dz);
+        QVERIFY2(originDist < 0.001,
+                 qPrintable(QString("Origin mismatch at dofs=(%1,%2): dist=%3m "
+                                    "kin=(%4,%5,%6) sg=(%7,%8,%9)")
+                            .arg(dofs[0]).arg(dofs[1]).arg(originDist, 0, 'f', 6)
+                            .arg(kinRay.ox, 0, 'f', 6).arg(kinRay.oy, 0, 'f', 6).arg(kinRay.oz, 0, 'f', 6)
+                            .arg(sgRays[0].ox, 0, 'f', 6).arg(sgRays[0].oy, 0, 'f', 6).arg(sgRays[0].oz, 0, 'f', 6)));
+
+        // Directions must match
+        double dot = kinRay.dx * sgRays[0].dx + kinRay.dy * sgRays[0].dy
+                     + kinRay.dz * sgRays[0].dz;
+        double angleDeg = std::acos(std::clamp(dot, -1.0, 1.0)) * 180.0 / M_PI;
+        QVERIFY2(angleDeg < 0.5,
+                 qPrintable(QString("Direction mismatch at dofs=(%1,%2): %3°")
+                            .arg(dofs[0]).arg(dofs[1]).arg(angleDeg, 0, 'f', 4)));
+    }
+
+    // Also verify the home origin includes ALL intermediate offsets
+    rigmath::Ray home = r.chain->forward_local({0, 0});
+    // Expected Z = -0.14 (Base1) + -0.10 (Yoke) + -0.06 (Mount) + -0.04 (Head)
+    //              + -0.02 (Optics) + -0.01 (Lamp) = -0.37
+    // Expected X = 0.01 (Base1)
+    verifyOrigin(home, 0.01, 0, -0.37, 0.002);
+}
+
+// =====================================================================
+// rigmath v1.1 API adoption tests
+// =====================================================================
+//
+// These tests exercise the v1.1 APIs used in SpatialView::rebuildBeamCones:
+//   - KinematicChain::forward_world_all  (single chain walk for all beams)
+//   - rigmath::Beam                      (beam + plane-intersection helpers)
+//   - Beam::hit_plane_z                  (floor clipping)
+//
+// They guard the refactor from regressing, and document the intended
+// behavior of the floor-clip logic for reviewers.
+
+void GDTFKinematics_Test::forwardWorldAll_matchesForwardWorldPerBeam()
+{
+    // Multi-beam LED bar. Verify forward_world_all returns the same rays
+    // as calling forward_world(beam_idx) once per beam. This is the
+    // optimization used in rebuildBeamCones().
+    GDTFGeometryData geo;
+    geo.root = makeNode("Base", GeometryGeneral, PrimitiveBase);
+
+    GDTFGeometryNode head = makeNode("Head", GeometryAxis, PrimitiveHead, -0.10f);
+    for (int i = 0; i < 6; i++)
+    {
+        GDTFGeometryNode ref;
+        ref.name = QString("LED %1").arg(i + 1);
+        ref.type = GeometryReference;
+        ref.primitiveType = PrimitiveCylinder;
+        setIdentityWithOffset(ref.localTransform);
+        ref.localTransform[12] = -0.25f + i * 0.10f;  // X offset
+        ref.localTransform[14] = -0.05f;              // Z offset
+        head.children.append(ref);
+    }
+    geo.root.children.append(head);
+
+    GDTFDmxModeInfo mode;
+    mode.modeName = "Bar";
+    mode.channels.append(makeTiltChannel(0, -1, -120, 120, "Head"));
+
+    auto r = buildGDTFKinematics(geo.root, mode);
+    QVERIFY(r.chain != nullptr);
+    QCOMPARE(r.chain->beam_count(), 6);
+
+    // Fixture mounted at world (2, 3, 4)
+    rigmath::RigidTransform xf = rigmath::RigidTransform::identity();
+    xf.pos[0] = 2.0; xf.pos[1] = 3.0; xf.pos[2] = 4.0;
+
+    std::vector<std::vector<double>> testDofs = {{0.0}, {30.0}, {-60.0}};
+
+    for (const auto &dofs : testDofs)
+    {
+        std::vector<rigmath::Ray> allRays = r.chain->forward_world_all(xf, dofs);
+        QCOMPARE((int)allRays.size(), 6);
+
+        for (int bi = 0; bi < 6; bi++)
+        {
+            rigmath::Ray single = r.chain->forward_world(xf, dofs, bi);
+
+            QVERIFY2(std::abs(allRays[bi].ox - single.ox) < 1e-9,
+                     qPrintable(QString("beam %1 ox mismatch at dof=%2").arg(bi).arg(dofs[0])));
+            QVERIFY2(std::abs(allRays[bi].oy - single.oy) < 1e-9, "oy mismatch");
+            QVERIFY2(std::abs(allRays[bi].oz - single.oz) < 1e-9, "oz mismatch");
+            QVERIFY2(std::abs(allRays[bi].dx - single.dx) < 1e-9, "dx mismatch");
+            QVERIFY2(std::abs(allRays[bi].dy - single.dy) < 1e-9, "dy mismatch");
+            QVERIFY2(std::abs(allRays[bi].dz - single.dz) < 1e-9, "dz mismatch");
+        }
+    }
+}
+
+void GDTFKinematics_Test::beamHitPlaneZ_matchesManualFloorClip()
+{
+    // The old rebuildBeamCones floor-clip math:
+    //   if (oz > 0.05 && dz < -1e-3) tFloor = -oz / dz;
+    // The new code uses rigmath::Beam::hit_plane_z(0).
+    // Verify the two agree on the cases where both produce a valid clip.
+    struct Case {
+        double ox, oy, oz, dx, dy, dz;
+        const char *name;
+    };
+    std::vector<Case> cases = {
+        {0, 0, 5.0,   0,  0, -1.0,        "straight down from 5m"},
+        {1, 2, 3.0,   0.5, 0, -0.866025,  "30° off vertical from 3m"},
+        {0, 0, 10.0,  0.7071, 0, -0.7071, "45° from 10m"},
+        {2, 2, 2.5,   0.1, 0.1, -0.99,    "slightly off-axis from 2.5m"},
+    };
+
+    for (const auto &c : cases)
+    {
+        rigmath::Beam beam;
+        beam.origin    = rigmath::Vec3(c.ox, c.oy, c.oz);
+        beam.direction = rigmath::Vec3(c.dx, c.dy, c.dz);
+
+        rigmath::PlaneHit hit = beam.hit_plane_z(0.0);
+        QVERIFY2(hit.hits, c.name);
+
+        double manualT = -c.oz / c.dz;
+        QVERIFY2(std::abs(hit.t - manualT) < 1e-6,
+                 qPrintable(QString("%1: hit.t=%2 vs manual=%3")
+                            .arg(c.name).arg(hit.t, 0, 'f', 6).arg(manualT, 0, 'f', 6)));
+
+        // Intersection point should land on Z=0
+        QVERIFY2(std::abs(hit.point.z) < 1e-6, "intersection should lie on Z=0");
+    }
+}
+
+void GDTFKinematics_Test::beamHitPlaneZ_rejectsPointingAwayAndParallel()
+{
+    // Cases where the old code would skip clipping (dz >= -1e-3). The
+    // new code via Beam::hit_plane_z should return hits=false so the
+    // caller falls through to the default length.
+
+    // Pointing up — misses Z=0 floor from above
+    {
+        rigmath::Beam beam;
+        beam.origin    = rigmath::Vec3(0, 0, 2.0);
+        beam.direction = rigmath::Vec3(0, 0, 1.0);
+        rigmath::PlaneHit hit = beam.hit_plane_z(0.0);
+        QVERIFY2(!hit.hits, "upward beam should miss floor plane");
+    }
+
+    // Parallel to floor
+    {
+        rigmath::Beam beam;
+        beam.origin    = rigmath::Vec3(0, 0, 2.0);
+        beam.direction = rigmath::Vec3(1.0, 0, 0);
+        rigmath::PlaneHit hit = beam.hit_plane_z(0.0);
+        QVERIFY2(!hit.hits, "horizontal beam should miss floor plane");
+    }
+
+    // Pointing up from below the floor — also a miss from the caller's
+    // perspective (t would be negative)
+    {
+        rigmath::Beam beam;
+        beam.origin    = rigmath::Vec3(0, 0, -1.0);
+        beam.direction = rigmath::Vec3(0, 0, -1.0);
+        rigmath::PlaneHit hit = beam.hit_plane_z(0.0);
+        // Origin is already below 0 and direction is further down —
+        // either hits=false or t<0; rebuildBeamCones guards with
+        // `hit.hits && hit.t > 0.05` so either result is safe.
+        QVERIFY2(!hit.hits || hit.t <= 0.05,
+                 "beam below plane pointing away should not clip");
+    }
 }
 
 QTEST_APPLESS_MAIN(GDTFKinematics_Test)

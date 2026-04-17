@@ -67,6 +67,15 @@ private slots:
 
     // Clear
     void clearAll();
+
+    // Focus points
+    void focusPoint_addRemoveUpdate();
+    void focusPoint_lookupById();
+    void focusPoint_assignUnassignFixture();
+    void focusPoint_xmlRoundTrip();
+    void focusPoint_xmlRoundTripWithAssignments();
+    void focusPoint_signalsOnMutation();
+    void focusPoint_clearRemovesAll();
 };
 
 #endif // SPATIALMODEL_TEST_H

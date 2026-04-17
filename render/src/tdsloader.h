@@ -1,6 +1,6 @@
 /*
   Q Light Controller Plus
-  gltfloader.h
+  tdsloader.h
 
   Copyright (C) Marcus Williford
 
@@ -17,8 +17,8 @@
   limitations under the License.
 */
 
-#ifndef GLTFLOADER_H
-#define GLTFLOADER_H
+#ifndef TDSLOADER_H
+#define TDSLOADER_H
 
 #include "meshloader.h"
 #include <string>
@@ -26,17 +26,20 @@
 namespace qlcrender {
 
 /**
- * Loads glTF/glb binary data into bgfx vertex/index buffers.
- * Extracts POSITION and NORMAL attributes → PosNormalVertex format.
- * Textures and materials are not loaded (deferred to Phase T7).
+ * Loads .3ds (3D Studio) binary data into bgfx vertex/index buffers.
+ * Extracts POSITION from vertex lists and computes flat normals from faces.
+ * Same PosNormalVertex output format as GltfLoader.
+ *
+ * 3DS is the most common model format in GDTF fixtures on gdtf-share.
  */
-class GltfLoader
+class TdsLoader
 {
 public:
     /**
-     * Load a glb binary from memory into a LoadedMesh.
-     * Applies glTF node transforms (scale/rotation/translation) to vertices.
-     * If target dimensions are provided (> 0), scales the result to fit.
+     * Load a .3ds binary from memory into a LoadedMesh.
+     * If targetL/W/H are provided (>0), vertices are scaled per-axis so
+     * the mesh bounding box matches the GDTF Model dimensions (meters).
+     * GDTF convention: Length→X, Width→Y, Height→Z.
      * Returns an invalid mesh on failure.
      */
     static LoadedMesh loadFromMemory(const unsigned char *data, size_t length,
@@ -48,4 +51,4 @@ public:
 
 } // namespace qlcrender
 
-#endif // GLTFLOADER_H
+#endif // TDSLOADER_H

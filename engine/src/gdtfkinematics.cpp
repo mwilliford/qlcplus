@@ -69,24 +69,73 @@ static const GDTFDmxChannelInfo *findChannelForGeometry(
     return nullptr;
 }
 
-// Collect axis nodes in root-to-leaf DFS order.
-static void collectAxes(const GDTFGeometryNode &node,
-                         std::vector<const GDTFGeometryNode *> &axes)
+// Check if a Geometry node is explicitly referenced by a Pan or Tilt
+// DMX channel (strict match on geometryRef, no fallback).
+static bool hasExplicitPanTiltChannel(const GDTFDmxModeInfo &modeInfo,
+                                       const QString &geoName)
 {
-    if (node.type == GeometryAxis)
-        axes.push_back(&node);
-    for (const auto &child : node.children)
-        collectAxes(child, axes);
+    for (const auto &ch : modeInfo.channels)
+    {
+        if (ch.geometryRef == geoName &&
+            (ch.attributeName.startsWith(QStringLiteral("Pan")) ||
+             ch.attributeName.startsWith(QStringLiteral("Tilt"))))
+            return true;
+    }
+    return false;
 }
 
-GDTFKinematicsResult buildGDTFKinematics(const GDTFGeometryData &geoData,
+// Collect articulated nodes in root-to-leaf DFS order.
+// Includes both explicit Axis nodes AND Geometry nodes that have
+// Pan/Tilt DMX channels explicitly assigned to them via geometryRef
+// (some GDTF authors use <Geometry> instead of <Axis> for moving
+// parts, e.g., Martin ERA 700).
+static void collectAxes(const GDTFGeometryNode &node,
+                         std::vector<const GDTFGeometryNode *> &axes,
+                         const GDTFDmxModeInfo &modeInfo)
+{
+    if (node.type == GeometryAxis)
+    {
+        axes.push_back(&node);
+    }
+    else if (node.type == GeometryGeneral)
+    {
+        if (hasExplicitPanTiltChannel(modeInfo, node.name))
+            axes.push_back(&node);
+    }
+    for (const auto &child : node.children)
+        collectAxes(child, axes, modeInfo);
+}
+
+// Find the path from `root` to `target` in the geometry tree (DFS).
+// Returns the sequence of node pointers from root (inclusive) to target (inclusive).
+// Returns empty vector if target is not found.
+static std::vector<const GDTFGeometryNode *> findPathToNode(
+    const GDTFGeometryNode &root, const GDTFGeometryNode *target)
+{
+    std::vector<const GDTFGeometryNode *> path;
+    std::function<bool(const GDTFGeometryNode &)> dfs;
+    dfs = [&](const GDTFGeometryNode &node) -> bool {
+        path.push_back(&node);
+        if (&node == target)
+            return true;
+        for (const auto &child : node.children)
+            if (dfs(child))
+                return true;
+        path.pop_back();
+        return false;
+    };
+    dfs(root);
+    return path;
+}
+
+GDTFKinematicsResult buildGDTFKinematics(const GDTFGeometryNode &geoRoot,
                                           const GDTFDmxModeInfo &modeInfo)
 {
     GDTFKinematicsResult result;
 
-    // Collect axis nodes from the geometry tree
+    // Collect articulated nodes from the geometry tree
     std::vector<const GDTFGeometryNode *> axes;
-    collectAxes(geoData.root, axes);
+    collectAxes(geoRoot, axes, modeInfo);
 
     if (axes.empty())
     {
@@ -112,12 +161,38 @@ GDTFKinematicsResult buildGDTFKinematics(const GDTFGeometryData &geoData,
     auto channelMap = std::make_shared<rigmath::ChannelMap>();
     int channelIdx = 0;  // running index for ChannelMap byte array
 
+    const GDTFGeometryNode *prevAxis = nullptr;
+
     for (const GDTFGeometryNode *axisNode : axes)
     {
         rigmath::Joint j;
         j.name = axisNode->name.toStdString();
         j.type = rigmath::JointType::Rotational;
-        j.parent_to_joint = gdtfTransformToRigmath(axisNode->localTransform);
+
+        // Compose transforms from the previous axis (or root) to this axis,
+        // including all intermediate non-axis geometry nodes.
+        // Without this, offsets from nodes like POS-6's "Base 1" are lost,
+        // causing beam cones to originate at the wrong position.
+        {
+            auto pathToAxis = findPathToNode(geoRoot, axisNode);
+            size_t startIdx = 0;
+            if (prevAxis)
+            {
+                for (size_t k = 0; k < pathToAxis.size(); k++)
+                {
+                    if (pathToAxis[k] == prevAxis)
+                    {
+                        startIdx = k + 1;
+                        break;
+                    }
+                }
+            }
+            rigmath::RigidTransform composed = rigmath::RigidTransform::identity();
+            for (size_t k = startIdx; k < pathToAxis.size(); k++)
+                composed = composed.compose(
+                    gdtfTransformToRigmath(pathToAxis[k]->localTransform));
+            j.parent_to_joint = composed;
+        }
 
         // Find the matching DMX channel for this axis.
         const GDTFDmxChannelInfo *chInfo = nullptr;
@@ -138,30 +213,20 @@ GDTFKinematicsResult buildGDTFKinematics(const GDTFGeometryData &geoData,
             if (chInfo) matchedAttr = kPan;
         }
 
-        // Determine the rotation axis.
+        // Determine the rotation axis from attribute name.
         //
-        // Well-authored GDTF: all axes rotate around local +Z. The
-        // parent_to_joint ROTATION bakes in the effective world-frame
-        // direction (e.g., Ry(90°) for tilt-around-X). Translation is
-        // just the joint offset (yoke arm, head offset) and doesn't
-        // affect axis direction.
+        // The GDTF Position matrix on an axis node defines the joint's
+        // spatial position and orientation in the parent frame — it does
+        // NOT change the rotation axis. The rotation axis is always
+        // determined by the attribute type:
+        //   Pan  → +Z for moving heads, +Y for scanners (mirror reflection)
+        //   Tilt → +X
         //
-        // Poorly-authored GDTF (common on gdtf-share): the Position
-        // matrix has identity rotation for ALL axes, with only translation
-        // offsets. Both pan and tilt end up rotating around Z, which is
-        // wrong. We detect this and infer axis from attribute names.
-        //
-        // QXF synthesis: same as poorly-authored — identity rotation,
-        // axis inferred from attribute.
-        double ax_r, ay_r, az_r;
-        j.parent_to_joint.get_axis_angle(ax_r, ay_r, az_r);
-        bool hasIdentityRotation =
-            (std::abs(ax_r) + std::abs(ay_r) + std::abs(az_r) < 1e-6);
-
-        if (hasIdentityRotation && chInfo)
+        // The renderer transforms this local axis to world space via the
+        // accumulated scene graph transform, so the Position matrix's
+        // rotation is already accounted for in the world-space axis.
+        if (chInfo)
         {
-            // Identity rotation — infer axis from attribute name to match
-            // factory convention. Pan: +Z (or +Y for mirrors). Tilt: +X.
             if (matchedAttr == kPan)
             {
                 bool hasScannerPrim = false;
@@ -177,8 +242,7 @@ GDTFKinematicsResult buildGDTFKinematics(const GDTFGeometryData &geoData,
         }
         else
         {
-            // Non-identity rotation — well-authored GDTF. Use local +Z
-            // (the parent_to_joint rotation encodes the effective direction).
+            // No DMX channel — fixed joint, axis doesn't matter
             j.axis = rigmath::Vec3(0, 0, 1);
         }
 
@@ -215,6 +279,16 @@ GDTFKinematicsResult buildGDTFKinematics(const GDTFGeometryData &geoData,
             j.dof_index = -1;
         }
 
+        // Capture axis DOF tag for the render layer
+        AxisDofTag tag;
+        tag.geometryName = axisNode->name;
+        tag.dofIndex = j.dof_index;
+        tag.axis[0] = static_cast<float>(j.axis.x);
+        tag.axis[1] = static_cast<float>(j.axis.y);
+        tag.axis[2] = static_cast<float>(j.axis.z);
+        result.axisTags.push_back(tag);
+
+        prevAxis = axisNode;
         joints.push_back(j);
     }
 
@@ -224,19 +298,22 @@ GDTFKinematicsResult buildGDTFKinematics(const GDTFGeometryData &geoData,
     const GDTFGeometryNode *lastAxis = axes.back();
     std::vector<rigmath::RigidTransform> beamOffsets;
 
-    std::function<void(const GDTFGeometryNode &)> collectBeams;
-    collectBeams = [&](const GDTFGeometryNode &node) {
+    // Walk subtree accumulating transforms so intermediate grouping nodes
+    // between the last axis and beam nodes don't lose their offsets.
+    std::function<void(const GDTFGeometryNode &, rigmath::RigidTransform)> collectBeams;
+    collectBeams = [&](const GDTFGeometryNode &node, rigmath::RigidTransform accum) {
+        accum = accum.compose(gdtfTransformToRigmath(node.localTransform));
         if (node.type == GeometryLamp || node.type == GeometryLaser)
-            beamOffsets.push_back(gdtfTransformToRigmath(node.localTransform));
+            beamOffsets.push_back(accum);
         // Also check GeometryReference nodes — they often point to shared
         // Beam/Lamp geometries (e.g., LED bar pixels).
         if (node.type == GeometryReference)
-            beamOffsets.push_back(gdtfTransformToRigmath(node.localTransform));
+            beamOffsets.push_back(accum);
         for (const auto &child : node.children)
-            collectBeams(child);
+            collectBeams(child, accum);
     };
     for (const auto &child : lastAxis->children)
-        collectBeams(child);
+        collectBeams(child, rigmath::RigidTransform::identity());
 
     // If no beam nodes found, use identity (beam at chain tip)
     if (beamOffsets.empty())
@@ -352,4 +429,8 @@ void synthesizeGDTFFromQXF(bool hasPan, bool hasTilt,
     lampNode.beamAngle = static_cast<float>(beamAngle);
     lampNode.fieldAngle = static_cast<float>(fieldAngle);
     current->children.append(lampNode);
+
+    // Store mode info inside geoData so downstream code can find it
+    // without needing the separate outModeInfo parameter.
+    outGeoData.dmxModes.append(outModeInfo);
 }

@@ -46,6 +46,18 @@ private slots:
     void pipeline_forwardInverseRoundTrip();
     void pipeline_multiBeamForwardAll();
     void pipeline_channelMapRoundTrip();
+
+    // --- Beam origin vs scene graph consistency tests ---
+    void intermediateNode_beforeFirstAxis();
+    void intermediateNode_betweenAxes();
+    void intermediateNode_beforeBeam();
+    void beamOrigin_matchesSceneGraphWalk();
+    void beamOrigin_matchesSceneGraphWalk_withIntermediates();
+
+    // --- rigmath v1.1 API adoption tests ---
+    void forwardWorldAll_matchesForwardWorldPerBeam();
+    void beamHitPlaneZ_matchesManualFloorClip();
+    void beamHitPlaneZ_rejectsPointingAwayAndParallel();
 };
 
 #endif // GDTFKINEMATICS_TEST_H

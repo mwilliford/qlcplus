@@ -21,33 +21,29 @@
 #define PRIMITIVEGEN_H
 
 #include "meshloader.h"
-#include <unordered_map>
 
 namespace qlcrender {
 
 /**
- * Generates procedural meshes for GDTF PrimitiveType values.
- * Used as fallback when a GDTF fixture has no embedded 3D model.
- * All meshes use PosNormalVertex format for the lit shader.
+ * Stateless factory for GDTF primitive meshes.
+ * Generates procedural meshes at the requested GDTF dimensions.
+ * Dimensions are baked into vertex data — no external scaling needed.
+ *
+ * GDTF dimension mapping: Length→X, Width→Y, Height→Z.
  */
 class PrimitiveGen
 {
 public:
-    PrimitiveGen();
-    ~PrimitiveGen();
-
-    /** Initialize all primitive meshes. Call after bgfx::init(). */
-    void init();
-
-    /** Get a primitive mesh by GDTF primitive type enum value (from GDTFGeometryData). */
-    const LoadedMesh *getPrimitive(int primitiveType) const;
-
-    /** Destroy all meshes. Call before bgfx::shutdown(). */
-    void shutdown();
-
-private:
-    void createCylinder(float radius, float height, int segments);
-    std::unordered_map<int, LoadedMesh> m_meshes;
+    /**
+     * Generate a primitive mesh at the specified GDTF dimensions.
+     * @param primitiveType GDTF primitive type enum (from GDTFGeometryData)
+     * @param length GDTF Model Length in meters (X extent)
+     * @param width  GDTF Model Width in meters (Y extent)
+     * @param height GDTF Model Height in meters (Z extent)
+     * @return LoadedMesh with GPU buffers; caller owns the handles.
+     */
+    static LoadedMesh generate(int primitiveType,
+                               float length, float width, float height);
 };
 
 } // namespace qlcrender

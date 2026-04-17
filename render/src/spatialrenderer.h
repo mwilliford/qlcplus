@@ -82,6 +82,20 @@ public:
     // --- Focus aim marker (visible in Focus mode when an aim point is set) ---
     virtual void setFocusAimMarker(bool visible, const float pos[3]) { (void)visible; (void)pos; }
 
+    // --- Focus points (persistent named aim targets for Focus mode) ---
+    virtual void setFocusPoints(const std::vector<RenderFocusPoint>& points) { (void)points; }
+
+    /** Pick a focus point at screen coordinates. Returns its id (empty if none). */
+    virtual std::string hitTestFocusPoint(float mouseX, float mouseY,
+                                           uint32_t viewportW, uint32_t viewportH) {
+        (void)mouseX; (void)mouseY; (void)viewportW; (void)viewportH;
+        return std::string();
+    }
+
+    // --- DOF articulation (updated per DMX tick) ---
+    virtual void updateFixtureDofAngles(uint32_t fixtureId,
+                                        const std::vector<float> &angles) { (void)fixtureId; (void)angles; }
+
 protected:
     std::set<int32_t> m_selectedIds;
     int m_gizmoMode = 0;

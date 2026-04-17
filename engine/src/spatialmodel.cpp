@@ -44,6 +44,8 @@
 #define KXMLQLCSpatialAttrX2        "X2"
 #define KXMLQLCSpatialAttrY2        "Y2"
 #define KXMLQLCSpatialAttrZ2        "Z2"
+#define KXMLQLCSpatialFocusPoint    "FocusPoint"
+#define KXMLQLCSpatialAssignedFixture "AssignedFixture"
 
 SpatialModel::SpatialModel(QObject *parent)
     : QObject(parent)
@@ -373,6 +375,91 @@ bool SpatialModel::snapToTruss(double x, double y, double z,
 }
 
 // ---------------------------------------------------------------------------
+// Focus points
+// ---------------------------------------------------------------------------
+
+void SpatialModel::addFocusPoint(const FocusPoint &fp)
+{
+    m_focusPoints.append(fp);
+    emit focusPointsChanged();
+}
+
+void SpatialModel::removeFocusPoint(const QString &id)
+{
+    for (int i = 0; i < m_focusPoints.size(); i++)
+    {
+        if (m_focusPoints[i].id == id)
+        {
+            m_focusPoints.removeAt(i);
+            emit focusPointsChanged();
+            return;
+        }
+    }
+}
+
+void SpatialModel::updateFocusPoint(const FocusPoint &fp)
+{
+    for (int i = 0; i < m_focusPoints.size(); i++)
+    {
+        if (m_focusPoints[i].id == fp.id)
+        {
+            m_focusPoints[i] = fp;
+            emit focusPointsChanged();
+            return;
+        }
+    }
+}
+
+QList<SpatialModel::FocusPoint> SpatialModel::focusPoints() const
+{
+    return m_focusPoints;
+}
+
+const SpatialModel::FocusPoint *SpatialModel::focusPoint(const QString &id) const
+{
+    for (const FocusPoint &fp : m_focusPoints)
+    {
+        if (fp.id == id)
+            return &fp;
+    }
+    return nullptr;
+}
+
+bool SpatialModel::assignFixtureToFocusPoint(const QString &fpId,
+                                              const QString &fixtureId)
+{
+    for (FocusPoint &fp : m_focusPoints)
+    {
+        if (fp.id != fpId)
+            continue;
+        if (fp.assignedFixtureIds.contains(fixtureId))
+            return false;  // already assigned
+        fp.assignedFixtureIds.append(fixtureId);
+        emit focusPointsChanged();
+        return true;
+    }
+    return false;  // focus point not found
+}
+
+bool SpatialModel::unassignFixtureFromFocusPoint(const QString &fpId,
+                                                  const QString &fixtureId)
+{
+    for (FocusPoint &fp : m_focusPoints)
+    {
+        if (fp.id != fpId)
+            continue;
+        int removed = fp.assignedFixtureIds.removeAll(fixtureId);
+        if (removed > 0)
+        {
+            emit focusPointsChanged();
+            return true;
+        }
+        return false;
+    }
+    return false;
+}
+
+// ---------------------------------------------------------------------------
 // Ephemeral solver visualization
 // ---------------------------------------------------------------------------
 
@@ -547,6 +634,33 @@ bool SpatialModel::loadXML(QXmlStreamReader &reader)
             m_trusses.append(truss);
             reader.skipCurrentElement();
         }
+        else if (reader.name() == QLatin1String(KXMLQLCSpatialFocusPoint))
+        {
+            QXmlStreamAttributes attrs = reader.attributes();
+            FocusPoint fp;
+            fp.id = attrs.value(KXMLQLCSpatialAttrID).toString();
+            fp.name = attrs.value(KXMLQLCSpatialAttrName).toString();
+            fp.position[0] = attrs.value(KXMLQLCSpatialAttrX).toDouble();
+            fp.position[1] = attrs.value(KXMLQLCSpatialAttrY).toDouble();
+            fp.position[2] = attrs.value(KXMLQLCSpatialAttrZ).toDouble();
+
+            // Read child <AssignedFixture> elements
+            while (reader.readNextStartElement())
+            {
+                if (reader.name() == QLatin1String(KXMLQLCSpatialAssignedFixture))
+                {
+                    QString fid = reader.readElementText();
+                    if (!fid.isEmpty())
+                        fp.assignedFixtureIds.append(fid);
+                }
+                else
+                {
+                    reader.skipCurrentElement();
+                }
+            }
+            if (!fp.id.isEmpty())
+                m_focusPoints.append(fp);
+        }
         else
         {
             reader.skipCurrentElement();
@@ -569,7 +683,7 @@ void SpatialModel::saveXML(QXmlStreamWriter &writer) const
         }
     }
 
-    if (!hasCommitted && m_planes.isEmpty() && m_trusses.isEmpty())
+    if (!hasCommitted && m_planes.isEmpty() && m_trusses.isEmpty() && m_focusPoints.isEmpty())
         return;
 
     writer.writeStartElement(KXMLQLCSpatialModel);
@@ -616,6 +730,19 @@ void SpatialModel::saveXML(QXmlStreamWriter &writer) const
         writer.writeAttribute(KXMLQLCSpatialAttrX2, QString::number(truss.end[0], 'g', 10));
         writer.writeAttribute(KXMLQLCSpatialAttrY2, QString::number(truss.end[1], 'g', 10));
         writer.writeAttribute(KXMLQLCSpatialAttrZ2, QString::number(truss.end[2], 'g', 10));
+        writer.writeEndElement();
+    }
+
+    for (const FocusPoint &fp : m_focusPoints)
+    {
+        writer.writeStartElement(KXMLQLCSpatialFocusPoint);
+        writer.writeAttribute(KXMLQLCSpatialAttrID, fp.id);
+        writer.writeAttribute(KXMLQLCSpatialAttrName, fp.name);
+        writer.writeAttribute(KXMLQLCSpatialAttrX, QString::number(fp.position[0], 'g', 10));
+        writer.writeAttribute(KXMLQLCSpatialAttrY, QString::number(fp.position[1], 'g', 10));
+        writer.writeAttribute(KXMLQLCSpatialAttrZ, QString::number(fp.position[2], 'g', 10));
+        for (const QString &fixId : fp.assignedFixtureIds)
+            writer.writeTextElement(KXMLQLCSpatialAssignedFixture, fixId);
         writer.writeEndElement();
     }
 
@@ -672,5 +799,6 @@ void SpatialModel::clear()
     m_fixtures.clear();
     m_planes.clear();
     m_trusses.clear();
+    m_focusPoints.clear();
     clearSolverViz();
 }

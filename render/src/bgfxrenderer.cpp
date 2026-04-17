@@ -161,8 +161,8 @@ bool BgfxRenderer::init(void* nativeWindowHandle, uint32_t width, uint32_t heigh
     // Enable debug text for initial verification
     bgfx::setDebug(BGFX_DEBUG_TEXT);
 
-    // Initialize GDTF primitive mesh generator
-    m_primitiveGen.init();
+    // Create fallback cube for fixtures without a GDTF scene graph
+    m_fallbackCube = PrimitiveGen::generate(1, 0.2f, 0.2f, 0.2f); // PrimitiveCube
 
     m_initialized = true;
     return true;
@@ -174,7 +174,7 @@ void BgfxRenderer::shutdown()
         return;
 
     // (meshLoader removed — all fixtures render through GDTF scene graph path)
-    m_primitiveGen.shutdown();
+    m_fallbackCube.destroy();
     destroyCubeMesh(m_cubeVbh, m_cubeIbh);
     destroySphereMesh(m_sphereVbh, m_sphereIbh);
 
@@ -242,11 +242,13 @@ void BgfxRenderer::frame()
     renderEllipsoids();
     renderBeamCones();
     renderFocusAimMarker();
+    renderFocusPoints();
     if (m_gizmoMode == 0)
         renderGizmo();
     else
         renderRotateGizmo();
     renderLabels();
+    renderFocusPointLabels();
 
     // Handle screenshot request (fires callback during bgfx::frame)
     if (m_callback.isRequested())
@@ -341,6 +343,19 @@ void BgfxRenderer::setFixtures(const std::vector<RenderFixture>& fixtures)
         else
         {
             m_localAABBs[i] = defaultFixtureAABB();
+        }
+    }
+}
+
+void BgfxRenderer::updateFixtureDofAngles(uint32_t fixtureId,
+                                           const std::vector<float> &angles)
+{
+    for (auto &f : m_fixtures)
+    {
+        if (f.id == fixtureId)
+        {
+            f.dofAngles = angles;
+            return;
         }
     }
 }
@@ -454,6 +469,22 @@ void BgfxRenderer::renderGrid()
         bgfx::discard();
 }
 
+/**
+ * Build a 4x4 column-major rotation matrix around an arbitrary unit axis
+ * using Rodrigues' formula.
+ */
+static void mtxRotateAroundAxis(float *out16, float ax, float ay, float az, float radians)
+{
+    float s = std::sin(radians);
+    float c = std::cos(radians);
+    float t = 1.0f - c;
+    // Column-major storage
+    out16[0]  = t*ax*ax + c;       out16[1]  = t*ax*ay + az*s;  out16[2]  = t*ax*az - ay*s;  out16[3]  = 0.0f;
+    out16[4]  = t*ax*ay - az*s;    out16[5]  = t*ay*ay + c;     out16[6]  = t*ay*az + ax*s;  out16[7]  = 0.0f;
+    out16[8]  = t*ax*az + ay*s;    out16[9]  = t*ay*az - ax*s;  out16[10] = t*az*az + c;     out16[11] = 0.0f;
+    out16[12] = 0.0f;              out16[13] = 0.0f;            out16[14] = 0.0f;            out16[15] = 1.0f;
+}
+
 void BgfxRenderer::renderFixtures()
 {
     static const float selectColor[4] = { 1.0f, 1.0f, 1.0f, 1.0f };  // white highlight
@@ -471,18 +502,19 @@ void BgfxRenderer::renderFixtures()
         // QXF fixtures get synthesized scene graphs in SpatialView.
         if (fixture.sceneGraph && fixture.sceneGraph->valid)
         {
-            renderSceneGraph(fixture.sceneGraph->root, fixture.transform, color);
+            renderSceneGraph(fixture.sceneGraph->root, fixture.transform, color,
+                            fixture.dofAngles.data(),
+                            static_cast<int>(fixture.dofAngles.size()));
         }
         else
         {
             // Fallback: render a cube for fixtures without a scene graph
             // (e.g., missing fixture definitions)
-            const LoadedMesh *prim = m_primitiveGen.getPrimitive(1); // PrimitiveCube
-            if (prim && prim->isValid())
+            if (m_fallbackCube.isValid())
             {
                 bgfx::setTransform(fixture.transform);
-                bgfx::setVertexBuffer(0, prim->vbh);
-                bgfx::setIndexBuffer(prim->ibh);
+                bgfx::setVertexBuffer(0, m_fallbackCube.vbh);
+                bgfx::setIndexBuffer(m_fallbackCube.ibh);
                 bgfx::setUniform(m_u_color, color);
                 uint64_t state = BGFX_STATE_WRITE_RGB | BGFX_STATE_WRITE_A
                                  | BGFX_STATE_WRITE_Z | BGFX_STATE_DEPTH_TEST_LESS;
@@ -497,16 +529,42 @@ void BgfxRenderer::renderFixtures()
 
 void BgfxRenderer::renderSceneGraph(const SceneNode &node,
                                      const float parentTransform[16],
-                                     const float color[4])
+                                     const float color[4],
+                                     const float *dofAngles, int dofCount)
 {
     // Compute world transform: parent * local
     float worldTransform[16];
     bx::mtxMul(worldTransform, node.localTransform, parentTransform);
 
-    // Render this node's mesh if it has one
+    // If this is a DOF joint node, apply the articulation rotation.
+    //
+    // The multiplication chain in bgfx (row-vector convention) is:
+    //   v_world = v_local * articulatedTransform
+    //           = v_local * dofRot * localTransform * parentTransform
+    //
+    // dofRot is applied BEFORE localTransform, so it operates in the
+    // node's own local frame. The DOF axis must be in local coordinates
+    // (not world-transformed). The localTransform (GDTF Position matrix)
+    // then maps the rotated result into the parent frame, and the parent
+    // chain propagates it to world space. This ensures child nodes
+    // (e.g., head under yoke) rotate WITH their parent's DOF.
+    const float *renderTransform = worldTransform;
+    float articulatedTransform[16];
+    if (node.dofIndex >= 0 && dofAngles && node.dofIndex < dofCount)
+    {
+        // Build rotation around the LOCAL DOF axis (not world-transformed)
+        float dofRot[16];
+        mtxRotateAroundAxis(dofRot,
+                            node.dofAxis[0], node.dofAxis[1], node.dofAxis[2],
+                            bx::toRad(dofAngles[node.dofIndex]));
+        bx::mtxMul(articulatedTransform, dofRot, worldTransform);
+        renderTransform = articulatedTransform;
+    }
+
+    // Render this node's mesh (with DOF rotation if applicable)
     if (node.mesh && node.mesh->isValid())
     {
-        bgfx::setTransform(worldTransform);
+        bgfx::setTransform(renderTransform);
         bgfx::setVertexBuffer(0, node.mesh->vbh);
         bgfx::setIndexBuffer(node.mesh->ibh);
         bgfx::setUniform(m_u_color, color);
@@ -523,9 +581,9 @@ void BgfxRenderer::renderSceneGraph(const SceneNode &node,
             bgfx::discard();
     }
 
-    // Recurse into children
+    // Recurse into children (same articulatedTransform)
     for (const auto &child : node.children)
-        renderSceneGraph(child, worldTransform, color);
+        renderSceneGraph(child, renderTransform, color, dofAngles, dofCount);
 }
 
 void BgfxRenderer::setCalibrationOverlays(const std::vector<RenderEllipsoid>& ellipsoids)
@@ -798,6 +856,133 @@ void BgfxRenderer::renderFocusAimMarker()
         | BGFX_STATE_PT_LINES
     );
     bgfx::submit(0, m_colorProgram);
+}
+
+void BgfxRenderer::setFocusPoints(const std::vector<RenderFocusPoint>& points)
+{
+    m_focusPoints = points;
+}
+
+void BgfxRenderer::renderFocusPoints()
+{
+    if (m_focusPoints.empty() || !bgfx::isValid(m_sphereVbh) || !bgfx::isValid(m_litProgram))
+        return;
+
+    for (const auto &fp : m_focusPoints)
+    {
+        // Build transform: T(position) * S(radius).
+        // Selected points render slightly larger with higher-intensity color.
+        float scale = fp.selected ? fp.radius * 1.5f : fp.radius;
+
+        float scaleMtx[16];
+        bx::mtxScale(scaleMtx, scale, scale, scale);
+
+        float transMtx[16];
+        bx::mtxTranslate(transMtx, fp.position[0], fp.position[1], fp.position[2]);
+
+        float worldMtx[16];
+        bx::mtxMul(worldMtx, scaleMtx, transMtx);
+
+        bgfx::setTransform(worldMtx);
+        bgfx::setVertexBuffer(0, m_sphereVbh);
+        bgfx::setIndexBuffer(m_sphereIbh);
+
+        // Brighter when selected
+        float color[4] = { fp.color[0], fp.color[1], fp.color[2], fp.color[3] };
+        if (fp.selected)
+        {
+            color[0] = std::min(1.0f, fp.color[0] * 1.3f);
+            color[1] = std::min(1.0f, fp.color[1] * 1.3f);
+            color[2] = std::min(1.0f, fp.color[2] * 1.3f);
+        }
+        bgfx::setUniform(m_u_color, color);
+
+        bgfx::setState(
+            BGFX_STATE_WRITE_RGB
+            | BGFX_STATE_WRITE_A
+            | BGFX_STATE_WRITE_Z
+            | BGFX_STATE_DEPTH_TEST_LESS
+        );
+        bgfx::submit(0, m_litProgram);
+    }
+}
+
+void BgfxRenderer::renderFocusPointLabels()
+{
+    if (m_focusPoints.empty() || m_width == 0 || m_height == 0)
+        return;
+
+    const uint32_t charW = 8;
+    const uint32_t charH = 16;
+
+    for (const auto &fp : m_focusPoints)
+    {
+        if (fp.label.empty())
+            continue;
+
+        float worldPos[3] = { fp.position[0], fp.position[1], fp.position[2] };
+        float sx, sy;
+        bool visible;
+        if (!worldToScreen(worldPos, sx, sy, visible) || !visible)
+            continue;
+
+        uint32_t col = uint32_t(std::max(0.0f, sx)) / charW;
+        uint32_t row = uint32_t(std::max(0.0f, sy)) / charH;
+
+        // Place label above the marker
+        if (row < 2) row = 0; else row -= 2;
+
+        // Center horizontally — label shows "Name [N]" when fixtures assigned
+        std::string text = fp.label;
+        if (fp.assignedCount > 0)
+        {
+            char buf[16];
+            snprintf(buf, sizeof(buf), " [%d]", fp.assignedCount);
+            text += buf;
+        }
+
+        uint32_t nameLen = uint32_t(text.size());
+        if (col >= nameLen / 2) col -= nameLen / 2;
+
+        // Amber (0xff20e6ff) or bright yellow when selected (0xff00ffff)
+        uint8_t attr = fp.selected ? 0x0e : 0x0e;  // bright yellow on black
+        bgfx::dbgTextPrintf(col, row, attr, "%s", text.c_str());
+    }
+}
+
+std::string BgfxRenderer::hitTestFocusPoint(float mouseX, float mouseY,
+                                             uint32_t viewportW, uint32_t viewportH)
+{
+    (void)viewportW;
+    (void)viewportH;
+    if (m_focusPoints.empty())
+        return std::string();
+
+    // Project each focus point to screen space; pick the nearest within a
+    // small pixel radius. In 3D a proper ray-sphere test would be more
+    // accurate, but the marker is tiny so screen-space distance is fine.
+    constexpr float kHitRadiusPx = 18.0f;
+    float bestDist = kHitRadiusPx;
+    std::string bestId;
+
+    for (const auto &fp : m_focusPoints)
+    {
+        float worldPos[3] = { fp.position[0], fp.position[1], fp.position[2] };
+        float sx, sy;
+        bool visible;
+        if (!worldToScreen(worldPos, sx, sy, visible) || !visible)
+            continue;
+
+        float dx = sx - mouseX;
+        float dy = sy - mouseY;
+        float dist = std::sqrt(dx*dx + dy*dy);
+        if (dist < bestDist)
+        {
+            bestDist = dist;
+            bestId = fp.id;
+        }
+    }
+    return bestId;
 }
 
 void BgfxRenderer::renderEllipsoids()

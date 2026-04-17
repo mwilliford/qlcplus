@@ -401,25 +401,19 @@ void SpatialController::getFocusAim(double *x, double *y, double *z) const
     if (z) *z = m_focusAim[2];
 }
 
-void SpatialController::setFocusAim(double wx, double wy, double wz)
+// Shared helper: compute IK for a set of fixtures and emit DMX writes.
+// Used by both setFocusAim (ephemeral click-to-aim) and aimAtFocusPoint
+// (persistent focus point following).
+static void aimFixturesImpl(SpatialController *self,
+                             Doc *doc,
+                             SpatialModel *sm,
+                             const std::vector<int32_t> &ids,
+                             double wx, double wy, double wz,
+                             QSet<uint> &outControlledChannels)
 {
-    m_focusAim[0] = wx;
-    m_focusAim[1] = wy;
-    m_focusAim[2] = wz;
-    m_focusAimValid = true;
-
-    SpatialModel *sm = m_doc->spatialModel();
-
-    // Iterate all selected fixtures; only moving heads get aimed.
-    std::vector<int32_t> ids;
-    if (m_selectedIdsCallback)
-        ids = m_selectedIdsCallback();
-    else if (m_selectedFixtureId >= 0)
-        ids.push_back(m_selectedFixtureId);
-
     for (int32_t fid : ids)
     {
-        Fixture *fxi = m_doc->fixture(quint32(fid));
+        Fixture *fxi = doc->fixture(quint32(fid));
         if (!fxi)
             continue;
 
@@ -438,10 +432,28 @@ void SpatialController::setFocusAim(double wx, double wy, double wz)
         std::vector<FocusDmxWrite> writes = anglesToDmxWrites(fk, clamped);
         for (const FocusDmxWrite &w : writes)
         {
-            emit focusDmxWrite(w.absAddr, w.value);
-            m_focusControlledChannels.insert(w.absAddr);
+            emit self->focusDmxWrite(w.absAddr, w.value);
+            outControlledChannels.insert(w.absAddr);
         }
     }
+}
+
+void SpatialController::setFocusAim(double wx, double wy, double wz)
+{
+    m_focusAim[0] = wx;
+    m_focusAim[1] = wy;
+    m_focusAim[2] = wz;
+    m_focusAimValid = true;
+
+    // Iterate all selected fixtures; only moving heads get aimed.
+    std::vector<int32_t> ids;
+    if (m_selectedIdsCallback)
+        ids = m_selectedIdsCallback();
+    else if (m_selectedFixtureId >= 0)
+        ids.push_back(m_selectedFixtureId);
+
+    aimFixturesImpl(this, m_doc, m_doc->spatialModel(), ids,
+                    wx, wy, wz, m_focusControlledChannels);
 
     emit focusAimChanged();
 }
@@ -456,4 +468,135 @@ void SpatialController::clearFocusAim()
     m_focusAim[0] = m_focusAim[1] = m_focusAim[2] = 0.0;
 
     emit focusAimChanged();
+}
+
+// ---------------------------------------------------------------------------
+// Focus points (persistent named aim targets)
+// ---------------------------------------------------------------------------
+
+QString SpatialController::createFocusPoint(double wx, double wy, double wz,
+                                             const QString &name)
+{
+    SpatialModel *sm = m_doc->spatialModel();
+
+    // Generate a unique id by taking the highest existing "fp<N>" plus one.
+    // This survives save/load because ids embedded in the XML are preserved.
+    int maxNum = m_nextFocusPointIdNum - 1;
+    for (const auto &fp : sm->focusPoints())
+    {
+        if (fp.id.startsWith(QStringLiteral("fp")))
+        {
+            bool ok = false;
+            int n = fp.id.mid(2).toInt(&ok);
+            if (ok && n > maxNum)
+                maxNum = n;
+        }
+    }
+    int nextNum = maxNum + 1;
+    m_nextFocusPointIdNum = nextNum + 1;
+
+    SpatialModel::FocusPoint fp;
+    fp.id = QStringLiteral("fp%1").arg(nextNum);
+    fp.name = name.isEmpty() ? QStringLiteral("Point %1").arg(nextNum + 1) : name;
+    fp.position[0] = wx;
+    fp.position[1] = wy;
+    fp.position[2] = wz;
+    sm->addFocusPoint(fp);
+
+    return fp.id;
+}
+
+void SpatialController::deleteFocusPoint(const QString &id)
+{
+    if (id.isEmpty())
+        return;
+    SpatialModel *sm = m_doc->spatialModel();
+    sm->removeFocusPoint(id);
+    if (m_selectedFocusPointId == id)
+    {
+        m_selectedFocusPointId.clear();
+        emit selectedFocusPointChanged();
+    }
+}
+
+void SpatialController::moveFocusPoint(const QString &id,
+                                        double wx, double wy, double wz)
+{
+    SpatialModel *sm = m_doc->spatialModel();
+    const auto *existing = sm->focusPoint(id);
+    if (!existing)
+        return;
+    SpatialModel::FocusPoint updated = *existing;
+    updated.position[0] = wx;
+    updated.position[1] = wy;
+    updated.position[2] = wz;
+    sm->updateFocusPoint(updated);
+}
+
+void SpatialController::renameFocusPoint(const QString &id, const QString &name)
+{
+    SpatialModel *sm = m_doc->spatialModel();
+    const auto *existing = sm->focusPoint(id);
+    if (!existing || existing->name == name)
+        return;
+    SpatialModel::FocusPoint updated = *existing;
+    updated.name = name;
+    sm->updateFocusPoint(updated);
+}
+
+bool SpatialController::assignFixtureToFocusPoint(const QString &fpId, int fixtureId)
+{
+    if (fixtureId < 0) return false;
+    SpatialModel *sm = m_doc->spatialModel();
+    return sm->assignFixtureToFocusPoint(fpId, QString::number(fixtureId));
+}
+
+bool SpatialController::unassignFixtureFromFocusPoint(const QString &fpId, int fixtureId)
+{
+    if (fixtureId < 0) return false;
+    SpatialModel *sm = m_doc->spatialModel();
+    return sm->unassignFixtureFromFocusPoint(fpId, QString::number(fixtureId));
+}
+
+void SpatialController::aimAtFocusPoint(const QString &id)
+{
+    SpatialModel *sm = m_doc->spatialModel();
+    const auto *fp = sm->focusPoint(id);
+    if (!fp)
+        return;
+
+    // Translate assigned fixture id strings to int32_t for IK helper.
+    std::vector<int32_t> ids;
+    ids.reserve(fp->assignedFixtureIds.size());
+    for (const QString &fidStr : fp->assignedFixtureIds)
+    {
+        bool ok = false;
+        int32_t fid = fidStr.toInt(&ok);
+        if (ok)
+            ids.push_back(fid);
+    }
+
+    if (ids.empty())
+        return;
+
+    // Reuse the same IK helper that powers click-to-aim. The aim point
+    // becomes the "current" focus aim so the renderer shows the marker.
+    m_focusAim[0] = fp->position[0];
+    m_focusAim[1] = fp->position[1];
+    m_focusAim[2] = fp->position[2];
+    m_focusAimValid = true;
+
+    aimFixturesImpl(this, m_doc, sm, ids,
+                    fp->position[0], fp->position[1], fp->position[2],
+                    m_focusControlledChannels);
+
+    emit focusAimChanged();
+}
+
+void SpatialController::setSelectedFocusPointId(const QString &id)
+{
+    if (m_selectedFocusPointId == id)
+        return;
+    m_selectedFocusPointId = id;
+    emit selectedFocusPointChanged();
 }
