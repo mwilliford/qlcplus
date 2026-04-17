@@ -8,7 +8,7 @@ set(RIGMATH_BUILD_SOLVER ON CACHE BOOL "" FORCE)
 FetchContent_Declare(
     rigmath
     GIT_REPOSITORY git@github.com:mwilliford/rigmath-core.git
-    GIT_TAG        v1.1.0
+    GIT_TAG        v2.0.4
 )
 FetchContent_MakeAvailable(rigmath)
 

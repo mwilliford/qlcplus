@@ -18,6 +18,7 @@
 */
 
 #include <QDebug>
+#include <limits>
 #include <cmath>
 
 #include "calibrationmodel.h"
@@ -477,7 +478,17 @@ bool CalibrationModel::solve()
         {
             DOFConstraint dc;
             dc.value = c.value;
-            dc.certainty = c.certainty;  // legacy path
+            // v2.0.4 removed DOFConstraint::certainty. Translate the legacy
+            // 0..1 certainty into sigma:
+            //   certainty >= 1.0 → hard lock (sigma <= 0)
+            //   certainty == 0.0 → no prior (sigma = +inf)
+            //   0 < certainty < 1 → soft prior, sigma = 1/certainty
+            if (c.certainty >= 1.0)
+                dc.sigma = 0.0;
+            else if (c.certainty <= 0.0)
+                dc.sigma = std::numeric_limits<double>::infinity();
+            else
+                dc.sigma = 1.0 / c.certainty;
             prob.setConstraint(sid, c.dof, dc);
             if (c.certainty < 1.0)
                 allLocked = false;
@@ -498,40 +509,40 @@ bool CalibrationModel::solve()
 
             if constexpr (std::is_same_v<T, AimObs>)
             {
-                prob.addAimObservationSigma(o.fixture.toStdString(),
+                prob.addAimObservation(o.fixture.toStdString(),
                                             o.dmxNormalized, o.target, o.sigma);
             }
             else if constexpr (std::is_same_v<T, CrossingObs>)
             {
                 std::vector<std::string> fids;
                 for (const auto &f : o.fixtures) fids.push_back(f.toStdString());
-                prob.addCrossingObservationSigma(fids, o.dmxValues,
+                prob.addCrossingObservation(fids, o.dmxValues,
                                                   o.axis, o.value, o.sigma);
             }
             else if constexpr (std::is_same_v<T, PositionObs>)
             {
-                prob.addPositionObservationSigma(o.fixture.toStdString(),
+                prob.addPositionObservation(o.fixture.toStdString(),
                                                   o.axis, o.value, o.sigma);
             }
             else if constexpr (std::is_same_v<T, RotationObs>)
             {
                 // Rotation sigma is stored in degrees, solver wants radians
                 double sigma_rad = o.sigma * (M_PI / 180.0);
-                prob.addRotationObservationSigma(o.fixture.toStdString(),
+                prob.addRotationObservation(o.fixture.toStdString(),
                                                   o.axis, o.valueDeg, sigma_rad);
             }
             else if constexpr (std::is_same_v<T, BeamDirectionObs>)
             {
                 // BeamDirection sigma is degrees; solver wants radians.
                 double sigma_rad = o.sigma * (M_PI / 180.0);
-                prob.addBeamDirectionObservationSigma(
+                prob.addBeamDirectionObservation(
                     o.fixture.toStdString(), o.dmxNormalized,
                     o.elevationDeg, o.azimuthDeg,
                     o.hasElevation, o.hasAzimuth, sigma_rad);
             }
             else if constexpr (std::is_same_v<T, DistanceObs>)
             {
-                prob.addDistanceObservationSigma(o.fixtureA.toStdString(),
+                prob.addDistanceObservation(o.fixtureA.toStdString(),
                                                   o.fixtureB.toStdString(),
                                                   o.distance, o.sigma);
             }
