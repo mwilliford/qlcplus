@@ -42,6 +42,7 @@
 #include "qlcfile.h"
 #include "qlcconfig.h"
 
+#include <rigmath/beam.hpp>
 #include <rigmath/kinematic_chain.hpp>
 
 #ifdef Q_OS_MACOS
@@ -1070,36 +1071,42 @@ void SpatialView::rebuildBeamCones()
         QLCPhysical phy = mode->physical();
         rigmath::RigidTransform xf = sm->fixtureTransform(QString::number(fid));
 
-        // Beam half-angle (use widest end of zoom range, default 5°)
-        double halfAngle = phy.lensDegreesMax() > 0
-                             ? phy.lensDegreesMax() / 2.0
-                             : 5.0;
+        // Beam full-cone angle (use widest end of zoom range, default 10°)
+        double beamAngleDeg = phy.lensDegreesMax() > 0
+                                ? phy.lensDegreesMax()
+                                : 10.0;
+        double halfAngle = beamAngleDeg / 2.0;
 
-        // Emit one cone per beam emitter in the chain.
-        int numBeams = fk.beamCount();
-        if (numBeams == 0)
-            numBeams = 1;
+        // Walk the kinematics chain once; get world-space rays for every beam
+        // emitter. Cheaper than calling forward_world(beam_idx) in a loop.
+        std::vector<rigmath::Ray> rays = fk.chain->forward_world_all(xf, dofs);
 
-        for (int bi = 0; bi < numBeams; bi++)
+        for (const rigmath::Ray &worldRay : rays)
         {
-            rigmath::Ray worldRay = fk.chain->forward_world(xf, dofs, bi);
+            // Wrap the ray in a rigmath::Beam and use its plane-intersection
+            // helper for floor clipping. Beam::hit_plane_z handles the
+            // parallel / behind-plane / pointing-away edge cases internally.
+            rigmath::Beam beam;
+            beam.origin     = rigmath::Vec3(worldRay.ox, worldRay.oy, worldRay.oz);
+            beam.direction  = rigmath::Vec3(worldRay.dx, worldRay.dy, worldRay.dz);
+            beam.beam_angle = beamAngleDeg;
 
-            // Clip beam length at the Z=0 floor plane
+            // Clip beam length at the Z=0 floor plane. If the beam misses
+            // the floor (parallel, pointing up, or fixture at/below floor
+            // such that t ≈ 0), fall through to the 10 m default.
             float beamLength = 10.0f;
-            if (worldRay.oz > 0.05 && worldRay.dz < -1e-3)
-            {
-                double tFloor = -worldRay.oz / worldRay.dz;
-                beamLength = float(std::min(tFloor, 15.0));
-            }
+            rigmath::PlaneHit hit = beam.hit_plane_z(0.0);
+            if (hit.hits && hit.t > 0.05)
+                beamLength = float(std::min(hit.t, 15.0));
 
             qlcrender::RenderBeamCone cone;
             cone.fixtureId = uint32_t(fid);
-            cone.origin[0] = float(worldRay.ox);
-            cone.origin[1] = float(worldRay.oy);
-            cone.origin[2] = float(worldRay.oz);
-            cone.direction[0] = float(worldRay.dx);
-            cone.direction[1] = float(worldRay.dy);
-            cone.direction[2] = float(worldRay.dz);
+            cone.origin[0] = float(beam.origin.x);
+            cone.origin[1] = float(beam.origin.y);
+            cone.origin[2] = float(beam.origin.z);
+            cone.direction[0] = float(beam.direction.x);
+            cone.direction[1] = float(beam.direction.y);
+            cone.direction[2] = float(beam.direction.z);
             cone.halfAngleDeg = float(halfAngle);
             cone.length = beamLength;
             cone.color[0] = 0.3f;

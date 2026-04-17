@@ -106,6 +106,28 @@ static void collectAxes(const GDTFGeometryNode &node,
         collectAxes(child, axes, modeInfo);
 }
 
+// Find the path from `root` to `target` in the geometry tree (DFS).
+// Returns the sequence of node pointers from root (inclusive) to target (inclusive).
+// Returns empty vector if target is not found.
+static std::vector<const GDTFGeometryNode *> findPathToNode(
+    const GDTFGeometryNode &root, const GDTFGeometryNode *target)
+{
+    std::vector<const GDTFGeometryNode *> path;
+    std::function<bool(const GDTFGeometryNode &)> dfs;
+    dfs = [&](const GDTFGeometryNode &node) -> bool {
+        path.push_back(&node);
+        if (&node == target)
+            return true;
+        for (const auto &child : node.children)
+            if (dfs(child))
+                return true;
+        path.pop_back();
+        return false;
+    };
+    dfs(root);
+    return path;
+}
+
 GDTFKinematicsResult buildGDTFKinematics(const GDTFGeometryNode &geoRoot,
                                           const GDTFDmxModeInfo &modeInfo)
 {
@@ -139,12 +161,38 @@ GDTFKinematicsResult buildGDTFKinematics(const GDTFGeometryNode &geoRoot,
     auto channelMap = std::make_shared<rigmath::ChannelMap>();
     int channelIdx = 0;  // running index for ChannelMap byte array
 
+    const GDTFGeometryNode *prevAxis = nullptr;
+
     for (const GDTFGeometryNode *axisNode : axes)
     {
         rigmath::Joint j;
         j.name = axisNode->name.toStdString();
         j.type = rigmath::JointType::Rotational;
-        j.parent_to_joint = gdtfTransformToRigmath(axisNode->localTransform);
+
+        // Compose transforms from the previous axis (or root) to this axis,
+        // including all intermediate non-axis geometry nodes.
+        // Without this, offsets from nodes like POS-6's "Base 1" are lost,
+        // causing beam cones to originate at the wrong position.
+        {
+            auto pathToAxis = findPathToNode(geoRoot, axisNode);
+            size_t startIdx = 0;
+            if (prevAxis)
+            {
+                for (size_t k = 0; k < pathToAxis.size(); k++)
+                {
+                    if (pathToAxis[k] == prevAxis)
+                    {
+                        startIdx = k + 1;
+                        break;
+                    }
+                }
+            }
+            rigmath::RigidTransform composed = rigmath::RigidTransform::identity();
+            for (size_t k = startIdx; k < pathToAxis.size(); k++)
+                composed = composed.compose(
+                    gdtfTransformToRigmath(pathToAxis[k]->localTransform));
+            j.parent_to_joint = composed;
+        }
 
         // Find the matching DMX channel for this axis.
         const GDTFDmxChannelInfo *chInfo = nullptr;
@@ -240,6 +288,7 @@ GDTFKinematicsResult buildGDTFKinematics(const GDTFGeometryNode &geoRoot,
         tag.axis[2] = static_cast<float>(j.axis.z);
         result.axisTags.push_back(tag);
 
+        prevAxis = axisNode;
         joints.push_back(j);
     }
 
@@ -249,19 +298,22 @@ GDTFKinematicsResult buildGDTFKinematics(const GDTFGeometryNode &geoRoot,
     const GDTFGeometryNode *lastAxis = axes.back();
     std::vector<rigmath::RigidTransform> beamOffsets;
 
-    std::function<void(const GDTFGeometryNode &)> collectBeams;
-    collectBeams = [&](const GDTFGeometryNode &node) {
+    // Walk subtree accumulating transforms so intermediate grouping nodes
+    // between the last axis and beam nodes don't lose their offsets.
+    std::function<void(const GDTFGeometryNode &, rigmath::RigidTransform)> collectBeams;
+    collectBeams = [&](const GDTFGeometryNode &node, rigmath::RigidTransform accum) {
+        accum = accum.compose(gdtfTransformToRigmath(node.localTransform));
         if (node.type == GeometryLamp || node.type == GeometryLaser)
-            beamOffsets.push_back(gdtfTransformToRigmath(node.localTransform));
+            beamOffsets.push_back(accum);
         // Also check GeometryReference nodes — they often point to shared
         // Beam/Lamp geometries (e.g., LED bar pixels).
         if (node.type == GeometryReference)
-            beamOffsets.push_back(gdtfTransformToRigmath(node.localTransform));
+            beamOffsets.push_back(accum);
         for (const auto &child : node.children)
-            collectBeams(child);
+            collectBeams(child, accum);
     };
     for (const auto &child : lastAxis->children)
-        collectBeams(child);
+        collectBeams(child, rigmath::RigidTransform::identity());
 
     // If no beam nodes found, use identity (beam at chain tip)
     if (beamOffsets.empty())
