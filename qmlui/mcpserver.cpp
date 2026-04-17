@@ -161,20 +161,42 @@ void McpServer::registerTool(const ToolDef &tool)
     m_tools.append(tool);
 }
 
-QByteArray McpServer::handlePost(const QHttpServerRequest &request)
+// ---------------------------------------------------------------------------
+// Response helpers — used throughout tool handlers
+// ---------------------------------------------------------------------------
+
+static QJsonObject mcpText(const QString &text)
+{
+    return QJsonObject{
+        {"content", QJsonArray{QJsonObject{{"type", "text"}, {"text", text}}}}
+    };
+}
+
+static QJsonObject mcpError(const QString &text)
+{
+    return QJsonObject{
+        {"content", QJsonArray{QJsonObject{{"type", "text"}, {"text", text}}}},
+        {"isError", true}
+    };
+}
+
+static QString firstMissing(const QJsonObject &args, const QStringList &required)
+{
+    for (const QString &key : required) {
+        if (!args.contains(key)) return key;
+    }
+    return {};
+}
+
+// ---------------------------------------------------------------------------
+
+QByteArray McpServer::processRequest(const QByteArray &body, const QString &sessionId)
 {
     QJsonParseError parseError;
-    QJsonDocument jsonDoc = QJsonDocument::fromJson(request.body(), &parseError);
+    QJsonDocument jsonDoc = QJsonDocument::fromJson(body, &parseError);
     if (parseError.error != QJsonParseError::NoError) {
         QJsonObject err = makeError(0, -32700, "Parse error: " + parseError.errorString());
         return QJsonDocument(err).toJson(QJsonDocument::Compact);
-    }
-
-    // Extract session ID from header
-    QString sessionId;
-    auto headers = request.headers();
-    if (headers.contains("Mcp-Session-Id")) {
-        sessionId = QString::fromUtf8(headers.value("Mcp-Session-Id"));
     }
 
     QJsonObject requestObj = jsonDoc.object();
@@ -197,12 +219,10 @@ QByteArray McpServer::handlePost(const QHttpServerRequest &request)
     // Dispatch
     QJsonObject response = dispatch(requestObj, sessionId);
 
-    // For initialize, create session (note: can't set response headers from here,
-    // but the session ID is returned in the JSON body for now)
+    // For initialize, create session (session ID is returned in the JSON body for the client to extract)
     if (method == "initialize" && response.contains("result")) {
         QString newSessionId = QUuid::createUuid().toString(QUuid::WithoutBraces);
         m_sessions.insert(newSessionId, QJsonObject{});
-        // Embed session ID in result for client to extract
         QJsonObject result = response["result"].toObject();
         result["_sessionId"] = newSessionId;
         response["result"] = result;
@@ -210,6 +230,15 @@ QByteArray McpServer::handlePost(const QHttpServerRequest &request)
     }
 
     return QJsonDocument(response).toJson(QJsonDocument::Compact);
+}
+
+QByteArray McpServer::handlePost(const QHttpServerRequest &request)
+{
+    QString sessionId;
+    auto headers = request.headers();
+    if (headers.contains("Mcp-Session-Id"))
+        sessionId = QString::fromUtf8(headers.value("Mcp-Session-Id"));
+    return processRequest(request.body(), sessionId);
 }
 
 QJsonObject McpServer::dispatch(const QJsonObject &request, const QString &sessionId)
@@ -788,6 +817,10 @@ QJsonObject McpServer::toolScreenshot(const QJsonObject &args)
 
 QJsonObject McpServer::toolClick(const QJsonObject &args)
 {
+    QString missing = firstMissing(args, {"x", "y"});
+    if (!missing.isEmpty())
+        return mcpError("Missing required argument: " + missing);
+
     QString windowName;
     QWindow *targetWindow = resolveWindow(args, windowName);
 
@@ -1067,6 +1100,9 @@ QJsonObject McpServer::toolShowSpatialView(const QJsonObject &args)
 
 QJsonObject McpServer::toolSelectFixture(const QJsonObject &args)
 {
+    if (!args.contains("id"))
+        return mcpError("Missing required argument: id");
+
     int id = args.value("id").toInt(-1);
     bool add = args.value("add").toBool(false);
 
@@ -1118,6 +1154,10 @@ QJsonObject McpServer::toolSetCamera(const QJsonObject &args)
 
 QJsonObject McpServer::toolDrag(const QJsonObject &args)
 {
+    QString missing = firstMissing(args, {"x1", "y1", "x2", "y2"});
+    if (!missing.isEmpty())
+        return mcpError("Missing required argument: " + missing);
+
     float x1 = float(args.value("x1").toDouble());
     float y1 = float(args.value("y1").toDouble());
     float x2 = float(args.value("x2").toDouble());
@@ -1135,7 +1175,12 @@ QJsonObject McpServer::toolDrag(const QJsonObject &args)
 
 QJsonObject McpServer::toolSetGizmoMode(const QJsonObject &args)
 {
+    if (!args.contains("mode"))
+        return mcpError("Missing required argument: mode");
     int mode = args.value("mode").toInt(0);
+    if (mode < 0 || mode > 1)
+        return mcpError(QString("Invalid mode %1: must be 0 (Translate) or 1 (Rotate)").arg(mode));
+
     spatialViewSetGizmoMode(mode);
     QString name = (mode == 0) ? "Translate" : "Rotate";
     return QJsonObject{
@@ -1145,7 +1190,12 @@ QJsonObject McpServer::toolSetGizmoMode(const QJsonObject &args)
 
 QJsonObject McpServer::toolAlignSelection(const QJsonObject &args)
 {
-    QString axis = args.value("axis").toString("X");
+    if (!args.contains("axis"))
+        return mcpError("Missing required argument: axis");
+    QString axis = args.value("axis").toString();
+    if (axis != "X" && axis != "Y" && axis != "Z")
+        return mcpError(QString("Invalid axis '%1': must be X, Y, or Z").arg(axis));
+
     spatialViewAlignSelection(axis);
     return QJsonObject{
         {"content", QJsonArray{QJsonObject{{"type", "text"}, {"text", "Aligned selection on " + axis}}}}
@@ -1172,7 +1222,12 @@ QJsonObject McpServer::toolAddTruss(const QJsonObject &args)
 
 QJsonObject McpServer::toolSetSpatialMode(const QJsonObject &args)
 {
+    if (!args.contains("mode"))
+        return mcpError("Missing required argument: mode");
     int mode = args.value("mode").toInt(0);
+    if (mode < 0 || mode > 3)
+        return mcpError(QString("Invalid mode %1: must be 0-3 (Layout/Calibrate/Focus/Live)").arg(mode));
+
     spatialViewSetMode(mode);
     QStringList modeNames = {"Layout", "Calibrate", "Focus", "Live"};
     QString name = (mode >= 0 && mode < modeNames.size()) ? modeNames[mode] : "Unknown";
@@ -1185,25 +1240,12 @@ QJsonObject McpServer::toolSetSpatialMode(const QJsonObject &args)
 
 // --- Focus Point tools (SV-4 Phase 1) ---
 
-// Helper: wrap a plain-text response (non-error).
-static QJsonObject mcpText(const QString &text)
-{
-    return QJsonObject{
-        {"content", QJsonArray{QJsonObject{{"type", "text"}, {"text", text}}}}
-    };
-}
-
-// Helper: wrap an error response.
-static QJsonObject mcpError(const QString &text)
-{
-    return QJsonObject{
-        {"content", QJsonArray{QJsonObject{{"type", "text"}, {"text", text}}}},
-        {"isError", true}
-    };
-}
-
 QJsonObject McpServer::toolCreateFocusPoint(const QJsonObject &args)
 {
+    QString missing = firstMissing(args, {"x", "y", "z"});
+    if (!missing.isEmpty())
+        return mcpError("Missing required argument: " + missing);
+
     double x = args.value("x").toDouble();
     double y = args.value("y").toDouble();
     double z = args.value("z").toDouble();
@@ -1235,7 +1277,11 @@ QJsonObject McpServer::toolListFocusPoints(const QJsonObject &)
 
 QJsonObject McpServer::toolDeleteFocusPoint(const QJsonObject &args)
 {
+    if (!args.contains("id"))
+        return mcpError("Missing required argument: id");
     QString id = args.value("id").toString();
+    if (id.isEmpty())
+        return mcpError("Argument 'id' must not be empty");
     if (!spatialViewDeleteFocusPoint(id))
         return mcpError(QString("Focus point not found: %1").arg(id));
     return mcpText(QString("Deleted focus point %1").arg(id));
@@ -1243,6 +1289,10 @@ QJsonObject McpServer::toolDeleteFocusPoint(const QJsonObject &args)
 
 QJsonObject McpServer::toolMoveFocusPoint(const QJsonObject &args)
 {
+    QString missing = firstMissing(args, {"id", "x", "y", "z"});
+    if (!missing.isEmpty())
+        return mcpError("Missing required argument: " + missing);
+
     QString id = args.value("id").toString();
     double x = args.value("x").toDouble();
     double y = args.value("y").toDouble();
@@ -1254,6 +1304,10 @@ QJsonObject McpServer::toolMoveFocusPoint(const QJsonObject &args)
 
 QJsonObject McpServer::toolRenameFocusPoint(const QJsonObject &args)
 {
+    QString missing = firstMissing(args, {"id", "name"});
+    if (!missing.isEmpty())
+        return mcpError("Missing required argument: " + missing);
+
     QString id = args.value("id").toString();
     QString name = args.value("name").toString();
     if (!spatialViewRenameFocusPoint(id, name))
@@ -1263,6 +1317,10 @@ QJsonObject McpServer::toolRenameFocusPoint(const QJsonObject &args)
 
 QJsonObject McpServer::toolAssignFixtureToFocusPoint(const QJsonObject &args)
 {
+    QString missing = firstMissing(args, {"id", "fixtureId"});
+    if (!missing.isEmpty())
+        return mcpError("Missing required argument: " + missing);
+
     QString id = args.value("id").toString();
     int fixtureId = args.value("fixtureId").toInt(-1);
     bool ok = spatialViewAssignFixtureToFocusPoint(id, fixtureId);
@@ -1285,7 +1343,11 @@ QJsonObject McpServer::toolUnassignFixtureFromFocusPoint(const QJsonObject &args
 
 QJsonObject McpServer::toolAimAtFocusPoint(const QJsonObject &args)
 {
+    if (!args.contains("id"))
+        return mcpError("Missing required argument: id");
     QString id = args.value("id").toString();
+    if (id.isEmpty())
+        return mcpError("Argument 'id' must not be empty");
     if (!spatialViewAimAtFocusPoint(id))
         return mcpError(QString("Focus point not found: %1").arg(id));
     return mcpText(QString("Aiming assigned fixtures at %1").arg(id));

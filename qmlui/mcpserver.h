@@ -72,6 +72,8 @@ public:
     bool start();
     void stop();
 
+    QByteArray processRequest(const QByteArray &body, const QString &sessionId = {});
+
     struct ToolDef {
         QString name;
         QString description;
