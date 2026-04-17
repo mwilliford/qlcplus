@@ -191,6 +191,17 @@ a palette reference so "aim at Point 1" also sets color/gobo/intensity.
 
 ## SV-5: Live Mode + Venue Import
 
+### MVR Import/Export + `.bhx` — see [`../docs/PLAN-mvr.md`](../../docs/PLAN-mvr.md)
+
+Detailed four-phase plan lives in the monorepo at `docs/PLAN-mvr.md`. Investigation notes, pseudocode, CMake/test wiring, and done-criteria are all there.
+
+- [ ] **MVR-1** — Read-only MVR import (fixtures + focus points + positions)
+- [ ] **MVR-2** — MVR export of current rig (fixtures + transforms + embedded GDTFs)
+- [ ] **MVR-3** — QXF→GDTF on-disk serialization (so QXF-only fixtures can round-trip through MVR)
+- [ ] **MVR-4** — `.bhx` file format (valid MVR zip + sibling `programming/`, `console/`, `io/`, `calibration/` folders; replaces `.aqw`)
+
+Synthetic test-MVR generator moved into MVR-1's test plan (`engine/test/mvrio/`).
+
 ### Passive DMX Visualizer Mode
 
 Receive Art-Net/sACN from an external console and render the 3D result — no show programming needed. Nearly free since all pieces exist.
@@ -199,20 +210,6 @@ Receive Art-Net/sACN from an external console and render the 3D result — no sh
 - [ ] **Universe passthrough wiring**: `Universe::setPassthrough(true)` already exists. Add UI flow: "Listen on Universe N" → configure artnet/E1.31 input plugin + enable passthrough for that universe
 - [ ] **SpatialView Live mode reads universe buffer**: on each frame, read `Universe::postGMValues()` → translate DMX bytes → update fixture geometry via kinematic chain
 - [ ] **No fixture engine changes needed**: passthrough + existing input plugins is sufficient
-
-### MVR Non-Fixture Elements
-
-When importing an MVR, beyond Fixture nodes:
-
-- [ ] **FocusPoint** — required. Fixture nodes reference FocusPoints by UUID (`<Focus>` field). Parse and resolve UUIDs; store in SpatialModel. Render as a small marker in SpatialView.
-- [ ] **GroupObject** — parse for hierarchy traversal; nothing to render. Needed for scene graph reconstruction.
-- [ ] **Truss / Support / SceneObject** — static 3D geometry. Each references an embedded 3D model file (glTF/3DS in the MVR ZIP). Extract from ZIP, load via MeshLoader, add to bgfx scene as non-interactive static mesh. Skip if glTF-only for now (defer 3DS/OBJ venue geometry to later).
-- [ ] **VideoScreen / Projector** — ignore for now.
-
-### MVR Test Files
-
-- [ ] **Synthetic test MVR**: write a generator using libMVRgdtf write API (see `build-v5/_deps/libmvrgdtf-src/unittest/MvrUnittest.cpp` for pattern). Creates 2-3 GDTF fixtures + 1 FocusPoint + 1 truss SceneObject.
-- [ ] **Real-world test MVR**: export from grandMA3 onPC (free download) or grab from BlenderDMX GitHub repo sample scenes.
 
 ## Bugs: Chat panel
 
