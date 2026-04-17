@@ -18,9 +18,9 @@
 #include "doc.h"
 #include "fixture.h"
 #include "fixturekinematics.h"
+#include "fixtureattributes.h"
 #include "qlcfixturemode.h"
 #include "qlcchannel.h"
-#include "qlccapability.h"
 
 #include <rigmath/kinematic_chain.hpp>
 #include <rigmath/rigid_transform.hpp>
@@ -810,94 +810,36 @@ void SpatialController::setSelectedFixturePanTiltPercent(double panPct, double t
     if (m_selectedFixtureId < 0) return;
     Fixture *fxi = m_doc->fixture(quint32(m_selectedFixtureId));
     if (!fxi) return;
-    const QLCFixtureMode *mode = fxi->fixtureMode();
-    if (!mode) return;
 
-    auto clampPct = [](double v) { return v < 0.0 ? 0.0 : (v > 100.0 ? 100.0 : v); };
-    panPct = clampPct(panPct);
-    tiltPct = clampPct(tiltPct);
-
-    const uint universe = fxi->universe();
-    const uint baseAddr = fxi->address();
-
-    auto writeAxis = [&](QLCChannel::Group g, double pct) {
-        const quint32 msbCh = mode->channelNumber(g, QLCChannel::MSB);
-        if (msbCh == QLCChannel::invalid()) return;
-        const uchar msb = uchar(std::min(255, int(pct * 2.55 + 0.5)));
-        const uint absMsb = universe * 512U + baseAddr + uint(msbCh);
-        emit focusDmxWrite(absMsb, msb);
-        m_focusControlledChannels.insert(absMsb);
-
-        // Zero the LSB if present so the coarse value isn't jittered by stale fine bits.
-        const quint32 lsbCh = mode->channelNumber(g, QLCChannel::LSB);
-        if (lsbCh != QLCChannel::invalid())
-        {
-            const uint absLsb = universe * 512U + baseAddr + uint(lsbCh);
-            emit focusDmxWrite(absLsb, 0);
-            m_focusControlledChannels.insert(absLsb);
-        }
-    };
-    writeAxis(QLCChannel::Pan,  panPct);
-    writeAxis(QLCChannel::Tilt, tiltPct);
+    FixtureAttributes fa(fxi,
+        [this](uint addr, uchar v){ emit focusDmxWrite(addr, v); });
+    fa.setPanPercent(panPct);
+    fa.setTiltPercent(tiltPct);
+    // Track these as focus-mode overrides so they release on Programmer release.
+    for (uint a : fa.controlledChannels())
+        m_focusControlledChannels.insert(a);
 }
 
 // ---------------------------------------------------------------------------
 // Highlight (Focus-mode visibility helper)
 // ---------------------------------------------------------------------------
 
-// Find a DMX value that opens the shutter channel. Prefers a capability with
-// Preset == ShutterOpen (midpoint of its range); falls back to scanning
-// capability names for "open"; last resort: 255 (conventional but wrong for
-// fixtures whose DMX 255 means "strobe" or "lamp off" — those should use
-// ShutterOpen preset properly).
-static uchar findShutterOpenValue(const QLCChannel *ch)
-{
-    if (!ch) return 255;
-    for (QLCCapability *cap : ch->capabilities())
-    {
-        if (cap->preset() == QLCCapability::ShutterOpen)
-            return uchar((int(cap->min()) + int(cap->max())) / 2);
-    }
-    for (QLCCapability *cap : ch->capabilities())
-    {
-        if (cap->name().startsWith(QStringLiteral("Open"), Qt::CaseInsensitive))
-            return uchar((int(cap->min()) + int(cap->max())) / 2);
-    }
-    return 255;
-}
-
 void SpatialController::lightFixture(int32_t fid)
 {
-    if (m_highlightedFixtureIds.contains(fid)) return;  // already lit
+    if (m_highlightedFixtureIds.contains(fid)) return;
 
     Fixture *fxi = m_doc->fixture(quint32(fid));
     if (!fxi) return;
-    const QLCFixtureMode *mode = fxi->fixtureMode();
-    if (!mode) return;
 
-    const uint universe = fxi->universe();
-    const uint baseAddr = fxi->address();
-    const auto &channels = mode->channels();
-    QSet<uint> chans;
-    for (int i = 0; i < channels.size(); i++)
-    {
-        const QLCChannel *ch = channels.at(i);
-        if (!ch) continue;
-        const uint absAddr = universe * 512U + baseAddr + uint(i);
-        if (ch->group() == QLCChannel::Intensity)
-        {
-            emit focusDmxWrite(absAddr, 255);
-            chans.insert(absAddr);
-        }
-        else if (ch->group() == QLCChannel::Shutter)
-        {
-            emit focusDmxWrite(absAddr, findShutterOpenValue(ch));
-            chans.insert(absAddr);
-        }
-    }
+    FixtureAttributes fa(fxi,
+        [this](uint addr, uchar v){ emit focusDmxWrite(addr, v); });
+    if (fa.hasDimmer())  fa.setDimmerFull();
+    if (fa.hasShutter()) fa.openShutter();
+
     m_highlightedFixtureIds.insert(fid);
-    m_highlightChannelsPerFixture[fid] = chans;
-    qDebug() << "[Highlight] lit fix" << fid << fxi->name() << "(" << chans.size() << "channels )";
+    m_highlightChannelsPerFixture[fid] = fa.controlledChannels();
+    qDebug() << "[Highlight] lit fix" << fid << fxi->name()
+             << "(" << fa.controlledChannels().size() << "channels)";
 }
 
 void SpatialController::unlightFixture(int32_t fid)

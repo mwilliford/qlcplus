@@ -50,6 +50,7 @@ set(SRC_FILES
     spatialview.cpp spatialview.h
     spatialviewwindow.cpp spatialviewwindow.h
     fixturekinematics.cpp fixturekinematics.h
+    fixtureattributes.cpp fixtureattributes.h
     $<$<PLATFORM_ID:Darwin>:spatialview_macos.mm>
     mainviewdmx.cpp mainviewdmx.h
     modelselector.cpp modelselector.h

@@ -90,34 +90,78 @@
 - [x] Hold-F gesture for ephemeral aim (replaces click-to-aim)
 - [x] `selectedFocusPointId` promoted to Q_PROPERTY (QML reactivity fix)
 - [x] "Assign selected fixture" button styled blue when enabled
-- [x] Highlight (H key): industry-standard toggle that opens shutter and sets
-      dimmer to 100% on the selected fixtures (or the selected focus point's
-      assigned fixtures if no fixture is selected). Follows selection changes.
-      Auto-clears on Focus mode exit.
+- [x] Highlight (H key): initial snapshot semantics (superseded in Phase 3 by
+      per-fixture latched state for cross-beam workflows — see below).
 
-### Phase 3: Polish — TODO
-- [ ] **Commit aim / highlight state to Scene** — Focus mode's aim + highlight
-      are live DMX overrides that release on mode exit. Add a "Save as Scene"
-      button in the Focus panel that captures the current override state as a
-      QLC+ Scene (SceneValue per channel), so the aim persists across modes
-      and can be played back later. Required for practical use: after aiming,
-      the user needs a way to keep the beam where they put it.
+### Phase 3: Calibrate features + programmer model — DONE (2026-04-17)
+- [x] **Pan/Tilt trackpad** in Calibrate mode (single moving fixture selected):
+      2D draggable square + precision spinboxes. Seeded from live DMX so the
+      dot starts where the fixture actually is. Double-click = center. Writes
+      DMX via SimpleDesk override. `preventStealing` on the MouseArea so drags
+      extend past the trackpad rect. `Q_PROPERTY` binding with `NOTIFY
+      livePanTiltChanged` so the dot follows F-drag in real time.
+- [x] **F-hold + H toggle extended to Calibrate** via a separate
+      `m_dmxControlModeCallback` (Calibrate + Focus). Live DMX visualisation
+      predicate now includes Live mode as well.
+- [x] **Per-fixture Highlight** — `m_highlightedFixtureIds` +
+      `m_highlightChannelsPerFixture`. Each fixture has its own latched lit
+      state. H toggles the currently-selected fixtures' state without
+      touching other lit fixtures — enables cross-beam calibration (light
+      fix 1, click fix 2, light that too, aim each while both stay amber).
+- [x] **Beam cones for highlighted-but-not-selected fixtures** — rebuildBeamCones
+      renders UNION(selected, highlighted). Lit fixtures stay visible after
+      deselecting.
+- [x] **Per-cone color in bgfx renderer** — was hard-coded foggy-white;
+      now per-cone color uniform per draw call. Amber = lit, cyan = selected
+      only. Alpha modulated by live DMX visibility (dimmer × shutter-open).
+- [x] **Programmer-persistent DMX model** (grandMA / Eos / Hog convention):
+      DMX overrides persist across ALL mode switches. Fixtures hold their
+      aim/highlight through Layout (where they still render at home pose
+      in the UI) / Calibrate / Focus / Live. Only explicit user action
+      releases — no implicit clearing on navigation.
+- [x] **"■ Release all overrides" button** — grandMA "Off" / Eos "Release"
+      equivalent. Single click drops aim + highlight, DMX falls back to
+      whatever show is running.
+- [x] **Keyboard focus forwarding** — F and H keys routed to the 3D view
+      even when QML side panel has focus (application event filter on
+      SpatialViewWindow).
+- [x] **Crossing observations** — "Meet @ z=" row in Calibrate panel,
+      enabled when ≥2 fixtures selected. Default z=0 (floor). Captures
+      live normalized DMX per fixture and records a plane-constraint
+      observation: "these N beams meet at some unknown (x,y) where z=z₀".
+      Solver jointly optimises fixture poses and the shared crossing point.
+- [x] **Live DMX capture for Aim + Crossing observations** — fixed latent
+      UB where we were passing empty `dmx_normalized` vectors to the rigmath
+      solver. Now reads `Universe::postGMValues()` at observation time and
+      normalizes each DOF's MSB to 0..1.
+- [x] **`FixtureAttributes` helper class** — semantic facade over raw DMX
+      writes. Methods: `setPanPercent`, `setTiltPercent`, `setDimmerFull`,
+      `openShutter`. Tracks controlled addresses for release. Factored out
+      of Highlight and Trackpad call sites. Sets up future Live Attribute
+      Bank (color/gobo/beam encoders).
+
+### Phase 3: still-open polish
+- [ ] **Commit aim / highlight to Scene** — Focus/Calibrate overrides are
+      live-only; need a "Save as Scene" button that captures current
+      programmer state (selected fixtures' overridden DMX channels) as a
+      QLC+ Scene. Required for the aim to persist across sessions.
 - [ ] Multi-plane targeting (walls, custom planes) via `rigmath::Beam::hit_plane(point, normal)`
 - [ ] Fan/spread controls for multi-fixture aim
 - [ ] Speed-limited aim ramp (smooth DMX transition instead of instant jump)
-- [ ] Calibration verification workflow (aim all at one point, check convergence)
-- [ ] **Per-fixture highlight pin** — optional: an alternative to the current
-      snapshot-at-toggle semantics, letting each fixture have an independent
-      "keep lit" state that ignores both selection AND highlight-toggle. Matches
-      grandMA's stage-lock concept. Only needed if the snapshot approach proves
-      too coarse in practice.
+- [ ] Calibration verification workflow (aim all at one known point,
+      report convergence + per-fixture residual)
+- [ ] **Per-fixture highlight pin** — optional UX alternative to the current
+      per-selection latching, for cases where the user wants a fixture to
+      stay lit independently of selection AND toggle state.
 
-### Known bugs (tracked elsewhere)
-- [ ] IK branch-selection bug in rigmath: `KinematicChain::inverse_world` may
-      pick the 180°-flipped solution when the target is far from current pose.
-      Likely cause: residual treats the beam as an infinite line rather than a
-      forward ray. Same class of fix as the v1.1 AimFactor forward-ray fix but
-      for IK instead of calibration. Addressed separately in rigmath repo.
+### rigmath upgrades
+- [x] v1.1.0 → v2.0.4 (2026-04-17). Breaking: `add*ObservationSigma` →
+      `add*Observation`; `DOFConstraint::certainty` removed (sigma-only).
+      v2.0.4 adds API-boundary validation to every `add*Observation` — bad
+      input returns -1 instead of crashing inside ceres autodiff.
+- [x] Filed IK branch-selection bug (180° flip on far targets — residual
+      treats beam as infinite line instead of forward ray). Being addressed
+      separately upstream.
 
 ## Future: Live Attribute Bank (Focus mode)
 
