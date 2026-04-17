@@ -84,6 +84,14 @@ Popup
             case App.ImportMode:
                 dialogTitle = qsTr("Import from project")
             break
+            case App.ImportMvrMode:
+                dialogTitle = qsTr("Import MVR scene")
+                dialogFileMode = FileDialog.OpenFile
+                dialogNameFilters = [
+                    qsTr("MVR scene") + " (*.mvr)",
+                    qsTr("All files") + " (*)"
+                ]
+            break
         }
 
         if (Qt.platform.os === "linux")
@@ -124,6 +132,13 @@ Popup
                     importLoader.source = ""
                     importLoader.source = "qrc:/PopupImportProject.qml"
                 }
+            }
+            break
+            case App.ImportMvrMode:
+            {
+                var result = qlcplus.importMvr(dialogSelectedFile)
+                mvrResultPopup.resultText = result
+                mvrResultPopup.open()
             }
             break
         }
@@ -357,6 +372,46 @@ Popup
                     {
                         importLoader.source = ""
                     }
+                }
+            }
+        }
+
+        ContextMenuEntry
+        {
+            id: fileImportMvr
+            imgSource: "qrc:/import.svg"
+            entryText: qsTr("Import MVR scene...")
+            onEntered: submenuItem = null
+
+            onClicked:
+            {
+                openDialog(App.ImportMvrMode)
+                menuRoot.close()
+            }
+
+            CustomPopupDialog
+            {
+                id: mvrResultPopup
+                width: mainView.width / 2
+                title: qsTr("MVR import")
+                standardButtons: Dialog.Close
+
+                property string resultText: ""
+
+                message:
+                {
+                    if (resultText.length === 0)
+                        return ""
+                    var parts = resultText.split("|")
+                    if (parts[0] === "error")
+                        return qsTr("Import failed: ") + parts[1]
+                    var fix = parts[1]
+                    var fp = parts[2]
+                    var missing = parts[3] || ""
+                    var msg = qsTr("Imported %1 fixture(s) and %2 focus point(s).").arg(fix).arg(fp)
+                    if (missing.length > 0)
+                        msg += "\n\n" + qsTr("Skipped (missing GDTF): ") + missing
+                    return msg
                 }
             }
         }

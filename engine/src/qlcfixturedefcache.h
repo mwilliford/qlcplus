@@ -78,6 +78,20 @@ public:
                               const QString& model) const;
 
     /**
+     * Look up a GDTF-backed fixture definition by its source filename.
+     *
+     * Used by MVR import to resolve a Fixture's `<GDTFSpec>` reference (which
+     * names a `.gdtf` file embedded in the MVR archive) back to the
+     * QLCFixtureDef that the cache built when loading that same file.
+     *
+     * @param filename The GDTF filename (basename only, with or without
+     *                 `.gdtf` extension). Case-insensitive on macOS/Windows.
+     * @return Matching fixture def or nullptr if no cached def was loaded
+     *         from a file with that basename.
+     */
+    QLCFixtureDef* fixtureDefByGdtfFile(const QString& filename) const;
+
+    /**
      * Get a list of available manufacturer names.
      */
     QStringList manufacturers() const;

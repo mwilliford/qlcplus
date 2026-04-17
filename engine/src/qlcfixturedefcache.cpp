@@ -18,6 +18,7 @@
 */
 
 #include <QCoreApplication>
+#include <QFileInfo>
 #include <QXmlStreamReader>
 #include <QDebug>
 #include <QList>
@@ -64,6 +65,32 @@ QLCFixtureDef* QLCFixtureDefCache::fixtureDef(
     }
 
     return NULL;
+}
+
+QLCFixtureDef* QLCFixtureDefCache::fixtureDefByGdtfFile(const QString& filename) const
+{
+    if (filename.isEmpty())
+        return nullptr;
+
+    const QString target = QFileInfo(filename).fileName();
+    if (target.isEmpty())
+        return nullptr;
+
+    QListIterator <QLCFixtureDef*> it(m_defs);
+    while (it.hasNext() == true)
+    {
+        QLCFixtureDef* def = it.next();
+        const QString src = def->definitionSourceFile();
+        if (src.isEmpty())
+            continue;
+        if (QFileInfo(src).fileName().compare(target, Qt::CaseInsensitive) == 0)
+        {
+            def->checkLoaded(m_mapAbsolutePath);
+            return def;
+        }
+    }
+
+    return nullptr;
 }
 
 QStringList QLCFixtureDefCache::manufacturers() const

@@ -69,6 +69,7 @@ add_library(${module_name} SHARED
     keypadparser.cpp keypadparser.h
     mastertimer.cpp mastertimer.h
     monitorproperties.cpp monitorproperties.h
+    mvrio.cpp mvrio.h
     outputpatch.cpp outputpatch.h
     qlccapability.cpp qlccapability.h
     qlcchannel.cpp qlcchannel.h

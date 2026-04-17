@@ -92,7 +92,8 @@ public:
         OpenMode = 0,
         SaveMode,
         SaveAsMode,
-        ImportMode
+        ImportMode,
+        ImportMvrMode
     };
     Q_ENUM(FileDialogOpModes)
 
@@ -389,6 +390,14 @@ public:
 
     /** Perform the actual import of the selected items */
     Q_INVOKABLE void importFromWorkspace();
+
+    /**
+     * Import fixtures, focus points and geometry from an MVR (My Virtual Rig)
+     * archive. Additive — existing workspace state is preserved. Returns a
+     * JSON-ish summary string for the UI: "ok|<fixtureCount>|<focusCount>|<missingGdtfs csv>"
+     * on success, or "error|<message>" on failure.
+     */
+    Q_INVOKABLE QString importMvr(const QString &fileName);
 
 private:
     ImportManager *m_importManager;

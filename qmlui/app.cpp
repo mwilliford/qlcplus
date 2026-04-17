@@ -37,6 +37,7 @@
 #include <QPainter>
 #include <QScreen>
 #include <QFileInfo>
+#include <QUrl>
 #include <unistd.h>
 
 #include "app.h"
@@ -49,6 +50,7 @@
 #include "folderbrowser.h"
 #include "videoprovider.h"
 #include "importmanager.h"
+#include "mvrio.h"
 #include "contextmanager.h"
 #include "virtualconsole.h"
 #include "fixturebrowser.h"
@@ -1180,6 +1182,27 @@ void App::importFromWorkspace()
 
     delete m_importManager;
     m_importManager = nullptr;
+}
+
+QString App::importMvr(const QString &fileName)
+{
+    // The QML FileDialog hands us a QUrl converted to QString —
+    // strip the "file://" scheme if present.
+    QString path = fileName;
+    if (path.startsWith(QStringLiteral("file://")))
+        path = QUrl(path).toLocalFile();
+
+    MvrIO io(m_doc);
+    const bool ok = io.importMvr(path);
+    if (!ok)
+        return QStringLiteral("error|") + io.lastError();
+
+    // Doc::addFixture emits fixtureAdded; FixtureManager handles UI refresh.
+    const QStringList missing = io.missingGdtfs();
+    return QStringLiteral("ok|%1|%2|%3")
+           .arg(io.importedFixtureCount())
+           .arg(io.importedFocusPointCount())
+           .arg(missing.join(QLatin1Char(',')));
 }
 
 /*********************************************************************
