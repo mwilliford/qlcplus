@@ -159,9 +159,10 @@
       `add*Observation`; `DOFConstraint::certainty` removed (sigma-only).
       v2.0.4 adds API-boundary validation to every `add*Observation` — bad
       input returns -1 instead of crashing inside ceres autodiff.
-- [x] Filed IK branch-selection bug (180° flip on far targets — residual
-      treats beam as infinite line instead of forward ray). Being addressed
-      separately upstream.
+- [x] IK branch-selection bug fixed: `kinematic_chain_numerical.cpp` now uses
+      `v - |v|·dir` residual (zero only on the forward ray) instead of the
+      v2.0.1 cross-product residual (zero on the infinite line — backward
+      basin caused 180° flips on far targets).
 
 ## Future: Live Attribute Bank (Focus mode)
 
