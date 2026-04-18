@@ -9,11 +9,7 @@ install(FILES qt.conf DESTINATION ${INSTALLROOT}/${DATADIR})
 install(FILES ../../resources/icons/qlcplus.icns DESTINATION ${INSTALLROOT}/${DATADIR})
 install(FILES qlcplus.entitlements DESTINATION ${INSTALLROOT}/${DATADIR} RENAME .entitlements)
 
-if(qmlui)
-    install(FILES Info.plist.qmlui DESTINATION ${INSTALLROOT} RENAME Info.plist)
-else()
-    install(FILES Info.plist DESTINATION ${INSTALLROOT})
-endif()
+install(FILES Info.plist.qmlui DESTINATION ${INSTALLROOT} RENAME Info.plist)
 install(CODE "execute_process(COMMAND sed -i -e \"s/__QLC_VERSION__/${APPVERSION}/g\" ${INSTALLROOT}/Info.plist)")
 
 set(APPLE_CODESIGN_ENTITLEMENTS "qlcplus.entitlements")
@@ -42,15 +38,7 @@ set(QT_FRAMEWORK_NAMES
     "QtSvg"
     "QtWidgets"
     "QtWebSockets"
-)
-if(QT_MAJOR_VERSION GREATER 5)
-    list(APPEND QT_FRAMEWORK_NAMES "QtQml")
-else()
-    list(APPEND QT_FRAMEWORK_NAMES "QtScript")
-endif()
-
-if(qmlui)
-    list(APPEND QT_FRAMEWORK_NAMES
+    "QtQml"
     "QtLabsFolderListModel"
     "QtMultimediaQuick"
     "QtQmlModels"
@@ -80,8 +68,7 @@ if(qmlui)
     "Qt3DQuickScene3D"
     "Qt3DRender"
     "QtConcurrent"
-    )
-endif()
+)
 
 # Loop through each framework and copy it to installation
 foreach(FW_NAME IN LISTS QT_FRAMEWORK_NAMES)
@@ -113,11 +100,9 @@ install(FILES ${QT_PLUGINS_DIR}/platforms/libqcocoa.dylib DESTINATION ${INSTALLR
 # styles
 install(FILES ${QT_PLUGINS_DIR}/styles/libqmacstyle.dylib DESTINATION ${INSTALLROOT}/${PLUGINDIR}/styles)
 
-if(qmlui)
-    install(FILES ${QT_PLUGINS_DIR}/geometryloaders/libdefaultgeometryloader.dylib  DESTINATION ${INSTALLROOT}/${PLUGINDIR}/geometryloaders)
-    install(FILES ${QT_PLUGINS_DIR}/renderers/libopenglrenderer.dylib  DESTINATION ${INSTALLROOT}/${PLUGINDIR}/renderers)
-    install(FILES ${QT_PLUGINS_DIR}/sceneparsers/libassimpsceneimport.dylib  DESTINATION ${INSTALLROOT}/${PLUGINDIR}/sceneparsers)
-endif()
+install(FILES ${QT_PLUGINS_DIR}/geometryloaders/libdefaultgeometryloader.dylib  DESTINATION ${INSTALLROOT}/${PLUGINDIR}/geometryloaders)
+install(FILES ${QT_PLUGINS_DIR}/renderers/libopenglrenderer.dylib  DESTINATION ${INSTALLROOT}/${PLUGINDIR}/renderers)
+install(FILES ${QT_PLUGINS_DIR}/sceneparsers/libassimpsceneimport.dylib  DESTINATION ${INSTALLROOT}/${PLUGINDIR}/sceneparsers)
 
 # install support libraries
 set(FFTW_LIBNAME "libfftw3.3.dylib")
@@ -136,14 +121,3 @@ install(FILES ${LIBUSB1_LIBDIR}/libusb-1.0.0.dylib DESTINATION ${INSTALLROOT}/${
 #install(FILES ${MAD_LIBDIR}/libmad.0.dylib DESTINATION ${INSTALLROOT}/${LIBSDIR})
 install(FILES ${SNDFILE_LIBDIR}/libsndfile.1.dylib DESTINATION ${INSTALLROOT}/${LIBSDIR})
 install(FILES ${SNDFILE_LIBDIR}/libsndfile.1.0.37.dylib DESTINATION ${INSTALLROOT}/${LIBSDIR})
-
-#if(qmlui)
-#    set(qmldeps_files
-#        ${QT_QML_DIR}/Qt
-#        ${QT_QML_DIR}/QtQml
-#        ${QT_QML_DIR}/QtQuick
-#        ${QT_QML_DIR}/Qt3D
-#        ${QT_QML_DIR}/QtMultimedia
-#    )
-#    install(DIRECTORY ${qmldeps_files} DESTINATION ${INSTALLROOT}/${DATADIR}/qml)
-#endif()

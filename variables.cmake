@@ -13,16 +13,8 @@ add_definitions(-DUNICODE)
 set(APPNAME "Q Light Controller Plus")
 set(FXEDNAME "Fixture Definition Editor")
 
-if(ANDROID OR IOS)
-    set(qmlui ON)
-endif()
-
-if(qmlui)
-    add_definitions(-DQMLUI)
-    set(APPVERSION "5.2.2 GIT")
-else()
-    set(APPVERSION "4.14.5 GIT")
-endif()
+add_definitions(-DQMLUI)
+set(APPVERSION "5.2.2 GIT")
 
 if(UNIX)
     set(OLA_GIT "/usr/src/ola") # OLA directories

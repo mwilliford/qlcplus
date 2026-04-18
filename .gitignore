@@ -34,9 +34,6 @@ moc_predefs.h
 # Binaries
 *.exe
 *_test
-main/qlcplus
-fixtureeditor/qlcplus-fixtureeditor
-launcher/qlcplus-launcher
 hotplugmonitor/test/test
 qmlui/qlcplus-qml
 *.qm

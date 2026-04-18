@@ -33,45 +33,20 @@ set(WEBACCESS_SOURCES
     webaccessauth.cpp webaccessauth.h
     webaccessconfiguration.cpp webaccessconfiguration.h
     webaccesssimpledesk.cpp webaccesssimpledesk.h
+    webaccess-qml.cpp webaccess-qml.h
     ${QM_FILES}
 )
 
-if(qmlui)
-    list(APPEND WEBACCESS_SOURCES
-        webaccess-qml.cpp webaccess-qml.h
-    )
-else()
-    list(APPEND WEBACCESS_SOURCES
-        webaccess.cpp webaccess.h
-    )
-endif()
-
-if(qmlui)
-    set(webaccess_lib_type STATIC)
-else()
-    set(webaccess_lib_type SHARED)
-endif()
-
-add_library(${module_name} ${webaccess_lib_type} ${WEBACCESS_SOURCES})
+add_library(${module_name} STATIC ${WEBACCESS_SOURCES})
 
 target_include_directories(${module_name} PUBLIC
     ${CMAKE_CURRENT_SOURCE_DIR}
     ../../engine/audio/src
     ../../engine/src
+    ../../qmlui
+    ../../qmlui/virtualconsole
     qhttpserver
 )
-
-if(qmlui)
-    target_include_directories(${module_name} PUBLIC
-        ../../qmlui
-        ../../qmlui/virtualconsole
-    )
-else()
-    target_include_directories(${module_name} PUBLIC
-        ../../ui/src
-        ../../ui/src/virtualconsole
-    )
-endif()
 
 target_compile_definitions(${module_name} PUBLIC
     NO_SSL
@@ -88,26 +63,9 @@ target_link_libraries(${module_name} PUBLIC
     Qt${QT_MAJOR_VERSION}::Quick
     Qt${QT_MAJOR_VERSION}::Widgets
     Qt${QT_MAJOR_VERSION}::WebSockets
+    Qt${QT_MAJOR_VERSION}::Qml
     qlcplusengine
 )
-
-if(qmlui OR (QT_VERSION_MAJOR GREATER 5))
-    target_link_libraries(${module_name} PUBLIC
-        Qt${QT_MAJOR_VERSION}::Qml
-    )
-endif()
-
-if(NOT (qmlui OR (QT_VERSION_MAJOR GREATER 5)))
-    target_link_libraries(${module_name} PUBLIC
-        Qt${QT_MAJOR_VERSION}::Script
-    )
-endif()
-
-if(NOT qmlui)
-    target_link_libraries(${module_name} PUBLIC
-        qlcplusui
-    )
-endif()
 
 if(WIN32)
     target_include_directories(${module_name} PUBLIC /)

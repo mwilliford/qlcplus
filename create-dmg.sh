@@ -5,10 +5,6 @@ APP_DIR=~/QLC+.app
 BIN_DIR=$APP_DIR/Contents/MacOS
 QML_DIR=$APP_DIR/Contents/Resources/qml
 
-if [ "$1" == "qmlui" ]; then
-    OPTS="-Dqmlui=on"
-fi
-
 # cleanup previous builds
 rm -rf $APP_DIR
 rm *.dmg
@@ -26,7 +22,7 @@ fi
 if [ -n "$QTDIR" ]; then
     CMAKE_OSX_DEPLOYMENT_TARGET=12.0
     [ -d "$QTDIR/lib/cmake/Qt5Core" ] && CMAKE_OSX_DEPLOYMENT_TARGET=10.13
-    cmake -DCMAKE_PREFIX_PATH="$QTDIR/lib/cmake" -DCMAKE_OSX_DEPLOYMENT_TARGET=$CMAKE_OSX_DEPLOYMENT_TARGET $OPTS ..
+    cmake -DCMAKE_PREFIX_PATH="$QTDIR/lib/cmake" -DCMAKE_OSX_DEPLOYMENT_TARGET=$CMAKE_OSX_DEPLOYMENT_TARGET ..
 else
     echo "QTDIR not set. Aborting."
     exit 1
@@ -58,27 +54,18 @@ VERSION=$(grep -E '^#define APPVERSION' engine/src/qlcconfig.h | sed -E 's/^#def
 
 echo "Fix non-Qt dependencies..."
 platforms/macos/fix_dylib_deps.sh $APP_DIR/Contents/Frameworks/libsndfile.1.dylib
-if [ -f "$BIN_DIR/qlcplus" ]; then
-    platforms/macos/fix_dylib_deps.sh $BIN_DIR/qlcplus
-    platforms/macos/fix_dylib_deps.sh $BIN_DIR/qlcplus-fixtureeditor
-else
-    platforms/macos/fix_dylib_deps.sh $BIN_DIR/qlcplus-qml
-fi
+platforms/macos/fix_dylib_deps.sh $BIN_DIR/qlcplus-qml
 
 echo "Run macdeployqt..."
-if [ "$1" == "qmlui" ]; then
-    $QTDIR/bin/macdeployqt $APP_DIR -qmldir=qmlui/qml
+$QTDIR/bin/macdeployqt $APP_DIR -qmldir=qmlui/qml
 
-    # Remove uneeded QML stuff
-    rm -rf $QML_DIR/QtQuick/Controls/FluentWinUI3
-    rm -rf $QML_DIR/QtQuick/Controls/Imagine
-    rm -rf $QML_DIR/QtQuick/Controls/iOS
-    rm -rf $QML_DIR/QtQuick/Controls/Material
-    rm -rf $QML_DIR/QtQuick/Controls/Universal
-    rm -rf $QML_DIR/QtQuick/Particles
-else
-    $QTDIR/bin/macdeployqt $APP_DIR
-fi
+# Remove uneeded QML stuff
+rm -rf $QML_DIR/QtQuick/Controls/FluentWinUI3
+rm -rf $QML_DIR/QtQuick/Controls/Imagine
+rm -rf $QML_DIR/QtQuick/Controls/iOS
+rm -rf $QML_DIR/QtQuick/Controls/Material
+rm -rf $QML_DIR/QtQuick/Controls/Universal
+rm -rf $QML_DIR/QtQuick/Particles
 
 if [ -n "$SIGNATURE" ]; then
     # sign package with codesign (macdeployqt fails in that too)
@@ -100,12 +87,7 @@ if [ -n "$SIGNATURE" ]; then
     codesign --sign "$SIGNATURE" --timestamp --deep --entitlements $ENTITLEMENTS --options runtime $APP_DIR
 
     # workaround first time sign failure
-    if [ -f "$BIN_DIR/qlcplus" ]; then
-        codesign --force --sign "$SIGNATURE" --timestamp --entitlements $ENTITLEMENTS --options runtime $BIN_DIR/qlcplus
-        codesign --force --sign "$SIGNATURE" --timestamp --entitlements $ENTITLEMENTS --options runtime $BIN_DIR/qlcplus-launcher
-    else
-        codesign --force --sign "$SIGNATURE" --timestamp --entitlements $ENTITLEMENTS --options runtime $BIN_DIR/qlcplus-qml
-    fi
+    codesign --force --sign "$SIGNATURE" --timestamp --entitlements $ENTITLEMENTS --options runtime $BIN_DIR/qlcplus-qml
 fi
 
 # Create Apple Disk iMaGe from ~/QLC+.app/

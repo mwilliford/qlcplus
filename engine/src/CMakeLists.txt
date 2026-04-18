@@ -182,23 +182,13 @@ if(APPLE)
     )
 endif()
 
-if(qmlui OR (QT_VERSION_MAJOR GREATER 5))
-    target_sources(${module_name} PRIVATE rgbscriptv4.cpp rgbscriptv4.h)
+target_sources(${module_name} PRIVATE rgbscriptv4.cpp rgbscriptv4.h)
+target_link_libraries(${module_name} PUBLIC Qt${QT_MAJOR_VERSION}::Qml)
 
-    target_link_libraries(${module_name} PUBLIC Qt${QT_MAJOR_VERSION}::Qml)
-else()
-    target_sources(${module_name} PRIVATE rgbscript.cpp rgbscript.h)
-    target_link_libraries(${module_name} PUBLIC Qt${QT_MAJOR_VERSION}::Script)
-endif()
-
-if(qmlui)
-    target_sources(${module_name} PRIVATE
-        scriptrunner.cpp scriptrunner.h
-        scriptv4.cpp scriptv4.h
-    )
-else()
-    target_sources(${module_name} PRIVATE script.cpp script.h)
-endif()
+target_sources(${module_name} PRIVATE
+    scriptrunner.cpp scriptrunner.h
+    scriptv4.cpp scriptv4.h
+)
 
 if((NOT ANDROID AND NOT IOS) AND (${FFTW3_FOUND}))
     target_compile_definitions(${module_name} PUBLIC HAS_FFTW3)

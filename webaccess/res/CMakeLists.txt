@@ -19,18 +19,7 @@ set(WEBFILES_QML
     webaccess-v5.html
 )
 
-set(WEBFILES_CLASSIC
-    simpledesk.css
-    simpledesk.js
-    virtualconsole.css
-    virtualconsole.js
-)
-
-if(qmlui)
-    set(WEBFILES ${WEBFILES_COMMON} ${WEBFILES_QML})
-else()
-    set(WEBFILES ${WEBFILES_COMMON} ${WEBFILES_CLASSIC})
-endif()
+set(WEBFILES ${WEBFILES_COMMON} ${WEBFILES_QML})
 
 # Set the path for the webfiles target
 set(WEBFILES_PATH "${INSTALLROOT}/${WEBFILESDIR}")

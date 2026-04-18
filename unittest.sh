@@ -3,8 +3,8 @@
 # Define the source and destination directories
 SOURCE_DIR="."
 DEST_DIR="./build"
-if [ -d "$2" ]; then
-  DEST_DIR="$2"
+if [ -d "$1" ]; then
+  DEST_DIR="$1"
 fi
 
 echo "Using the destination directory $DEST_DIR"
@@ -38,5 +38,5 @@ done
 cp $SOURCE_DIR/platforms/linux/unittest.sh $DEST_DIR/
 
 pushd $DEST_DIR
-./unittest.sh $1
+./unittest.sh
 popd

@@ -1,18 +1,10 @@
 #!/bin/bash
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 
-# Parse arguments: [v4|v5] [filename.qxw ...]
-# If first arg is a file, default to v5 and pass it through
-VERSION="v5"
-if [ "${1:-}" = "v4" ] || [ "${1:-}" = "v5" ]; then
-    VERSION="$1"
-    shift
-fi
-
-BUILD_DIR="$SCRIPT_DIR/build-$VERSION"
+BUILD_DIR="$SCRIPT_DIR/build"
 
 if [ ! -d "$BUILD_DIR" ]; then
-    echo "Build directory $BUILD_DIR not found. Run: ./build.sh $VERSION"
+    echo "Build directory $BUILD_DIR not found. Run: ./build.sh"
     exit 1
 fi
 
@@ -31,16 +23,15 @@ fi
 # (relative to the executable via ../PlugIns). Symlink the build PlugIns dir
 # into the bundle so the app can find them.
 APP_BUNDLE="$BUILD_DIR/qmlui/qlcplus-qml.app"
-if [ "$VERSION" = "v5" ] && [ -d "$APP_BUNDLE" ] && [ -d "$PLUGIN_DIR" ]; then
+if [ -d "$APP_BUNDLE" ] && [ -d "$PLUGIN_DIR" ]; then
     BUNDLE_PLUGINS="$APP_BUNDLE/Contents/PlugIns"
     [ ! -e "$BUNDLE_PLUGINS" ] && ln -sf "$PLUGIN_DIR" "$BUNDLE_PLUGINS"
 fi
 
 # Determine the Resources directory.
-# For a macOS .app bundle (v5), Resources lives inside the bundle.
-# For a flat build (v4 or non-bundle), it's at $BUILD_DIR/Resources.
-APP_BUNDLE="$BUILD_DIR/qmlui/qlcplus-qml.app"
-if [ "$VERSION" = "v5" ] && [ -d "$APP_BUNDLE" ]; then
+# For a macOS .app bundle, Resources lives inside the bundle.
+# For a flat build (non-bundle), it's at $BUILD_DIR/Resources.
+if [ -d "$APP_BUNDLE" ]; then
     RESOURCES_DIR="$APP_BUNDLE/Contents/Resources"
     mkdir -p "$RESOURCES_DIR"
 else
@@ -80,34 +71,24 @@ for subdir in fixtures generic stage; do
     dstdir="$MESHES_BUILD/$subdir"
     mkdir -p "$dstdir"
     if [ -d "$srcdir" ]; then
-        # Symlink files in this directory
         for f in "$srcdir"/*; do
             base="$(basename "$f")"
             if [ -f "$f" ]; then
                 [ ! -e "$dstdir/$base" ] && ln -sf "$f" "$dstdir/$base"
             elif [ -d "$f" ]; then
-                # Symlink entire subdirectory (e.g., fixtures/bgfx/)
                 [ ! -e "$dstdir/$base" ] && ln -sf "$f" "$dstdir/$base"
             fi
         done
     fi
 done
 
-if [ "$VERSION" = "v4" ]; then
+if [ -d "$APP_BUNDLE" ]; then
     QT_PLUGIN_PATH="/opt/homebrew/opt/qt/share/qt/plugins" \
-    DYLD_LIBRARY_PATH="$BUILD_DIR/engine/src:$BUILD_DIR/ui/src:$BUILD_DIR/webaccess/src" \
-        exec "$BUILD_DIR/main/qlcplus" "$@"
+    DYLD_LIBRARY_PATH="$BUILD_DIR/engine/src:$BUILD_DIR/webaccess/src:$BUILD_DIR/render/src" \
+        exec "$APP_BUNDLE/Contents/MacOS/qlcplus-qml" "$@"
 else
-    # v5 builds as a macOS .app bundle
-    APP_BUNDLE="$BUILD_DIR/qmlui/qlcplus-qml.app"
-    if [ -d "$APP_BUNDLE" ]; then
-        QT_PLUGIN_PATH="/opt/homebrew/opt/qt/share/qt/plugins" \
-        DYLD_LIBRARY_PATH="$BUILD_DIR/engine/src:$BUILD_DIR/webaccess/src:$BUILD_DIR/render/src" \
-            exec "$APP_BUNDLE/Contents/MacOS/qlcplus-qml" "$@"
-    else
-        # Fallback for non-bundle builds
-        QT_PLUGIN_PATH="/opt/homebrew/opt/qt/share/qt/plugins" \
-        DYLD_LIBRARY_PATH="$BUILD_DIR/engine/src:$BUILD_DIR/webaccess/src:$BUILD_DIR/render/src" \
-            exec "$BUILD_DIR/qmlui/qlcplus-qml" "$@"
-    fi
+    # Fallback for non-bundle builds
+    QT_PLUGIN_PATH="/opt/homebrew/opt/qt/share/qt/plugins" \
+    DYLD_LIBRARY_PATH="$BUILD_DIR/engine/src:$BUILD_DIR/webaccess/src:$BUILD_DIR/render/src" \
+        exec "$BUILD_DIR/qmlui/qlcplus-qml" "$@"
 fi

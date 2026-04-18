@@ -3,15 +3,7 @@ set -e
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 
-# Parse version argument: v5 (default) or v4
-VERSION="${1:-v5}"
-case "$VERSION" in
-    v4) QMLUI_FLAG="" ;;
-    v5) QMLUI_FLAG="-Dqmlui=ON" ;;
-    *)  echo "Usage: $0 [v4|v5]"; exit 1 ;;
-esac
-
-BUILD_DIR="$SCRIPT_DIR/build-$VERSION"
+BUILD_DIR="$SCRIPT_DIR/build"
 mkdir -p "$BUILD_DIR"
 cd "$BUILD_DIR"
 
@@ -44,15 +36,14 @@ include(FindPackageHandleStandardArgs)
 find_package_handle_standard_args(WrapOpenGL DEFAULT_MSG WrapOpenGL_FOUND)
 OVERRIDE
 
-# Match CI flags: cmake -S . -B build -DCMAKE_PREFIX_PATH=... [-Dqmlui=ON]
+# Match CI flags: cmake -S . -B build -DCMAKE_PREFIX_PATH=...
 cmake "$SCRIPT_DIR" \
     -DCMAKE_PREFIX_PATH=/opt/homebrew/opt/qt \
     -DCMAKE_BUILD_TYPE=Debug \
-    -DCMAKE_MODULE_PATH="$BUILD_DIR/cmake_overrides" \
-    $QMLUI_FLAG
+    -DCMAKE_MODULE_PATH="$BUILD_DIR/cmake_overrides"
 
 cmake --build . --parallel $(sysctl -n hw.ncpu)
 
 echo ""
-echo "Build complete ($VERSION). Run with:"
-echo "  $SCRIPT_DIR/run.sh $VERSION"
+echo "Build complete. Run with:"
+echo "  $SCRIPT_DIR/run.sh"

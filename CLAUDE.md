@@ -4,7 +4,7 @@
 
 **License: Apache 2.0** (open source). This repo is a fork of QLC+ and must remain open source. Do NOT include server implementation details, API keys, proprietary algorithms, or references to server internals in code, comments, or docs. The client communicates with the server via the public WebSocket protocol defined in `../docs/protocol.md`.
 
-Forked QLC+ 4.14.3 with embedded AI agent client. Branch: `feature/agent-client`.
+Forked QLC+ 5.x (QML UI only — v4 Widgets UI has been removed) with embedded AI agent client. Branch: `feature/agent-client`.
 
 ## Quick Start
 
@@ -22,15 +22,15 @@ All agent code is isolated to these files (everything else is upstream QLC+):
 engine/src/
 ├── agentconnection.h/.cpp   ← WebSocket client, command handlers, workspace sync, deltas
 
-ui/src/
-├── agentchatpanel.h/.cpp    ← Floating chat window (Monitor-style)
-├── app.h/.cpp               ← Modified: creates AgentConnection, toolbar button, SimpleDesk bridge
+qmlui/
+├── app.h/.cpp               ← Modified: creates AgentConnection, SimpleDesk bridge
+├── qml/AgentChatPanel.qml   ← QML chat panel
 ```
 
 Build system changes:
 - `CMakeLists.txt` — added `WebSockets` to find_package
 - `engine/src/CMakeLists.txt` — added agentconnection + Qt::WebSockets link
-- `ui/src/CMakeLists.txt` — added agentchatpanel
+- `qmlui/CMakeLists.txt` — registers AgentChatPanel QML module
 
 ## Key Design Decisions
 

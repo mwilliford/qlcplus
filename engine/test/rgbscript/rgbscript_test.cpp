@@ -23,11 +23,7 @@
 #include "rgbscript_test.h"
 #include "rgbscriptscache.h"
 
-#ifdef QT_QML_LIB
-  #include "rgbscriptv4.h"
-#else
-  #include "rgbscript.h"
-#endif
+#include "rgbscriptv4.h"
 #undef private
 
 #include "doc.h"

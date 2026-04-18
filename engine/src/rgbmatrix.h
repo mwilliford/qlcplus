@@ -30,11 +30,7 @@
 #include <QMap>
 #include <QMutex>
 
-#ifdef QT_QML_LIB
-  #include "rgbscriptv4.h"
-#else
-  #include "rgbscript.h"
-#endif
+#include "rgbscriptv4.h"
 #include "function.h"
 
 class FixtureGroup;

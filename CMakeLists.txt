@@ -1,7 +1,5 @@
 cmake_minimum_required(VERSION 3.16)
-project(qlcplus VERSION 4.14.2 LANGUAGES C CXX)
-
-option(qmlui "Build for QLC+ 5 QML UI" OFF)
+project(qlcplus VERSION 5.2.2 LANGUAGES C CXX)
 
 # Set Release build type by default
 if(NOT CMAKE_BUILD_TYPE)
@@ -22,10 +20,6 @@ if(UNIX)
     endif()
 endif()
 
-if (ANDROID OR IOS)
-    set(qmlui ON)
-endif()
-
 if (ANDROID)
     set(ANDROID_PACKAGE_STAGING_DIR "${CMAKE_BINARY_DIR}/android-package")
     # Tell Qt/Gradle to use the build-tree template
@@ -44,12 +38,9 @@ find_package(QT NAMES Qt5 Qt6 REQUIRED COMPONENTS Core)
 find_package(Qt${QT_VERSION_MAJOR} REQUIRED COMPONENTS Gui HttpServer Multimedia MultimediaWidgets Network PrintSupport Qml Quick QuickWidgets Svg Test Widgets LinguistTools WebSockets)
 # CorePrivate exposes QZipReader/QZipWriter (Q_CORE_EXPORT'd private API) for BhxIO.
 find_package(Qt${QT_VERSION_MAJOR} REQUIRED COMPONENTS CorePrivate)
-if(qmlui)
-    find_package(Qt${QT_VERSION_MAJOR} REQUIRED COMPONENTS 3DCore 3DInput 3DLogic 3DQuick 3DQuickExtras 3DRender WebSockets)
-    if(ANDROID)
-        find_package(Qt${QT_VERSION_MAJOR} REQUIRED COMPONENTS Concurrent OpenGL)
-    endif()
-
+find_package(Qt${QT_VERSION_MAJOR} REQUIRED COMPONENTS 3DCore 3DInput 3DLogic 3DQuick 3DQuickExtras 3DRender)
+if(ANDROID)
+    find_package(Qt${QT_VERSION_MAJOR} REQUIRED COMPONENTS Concurrent OpenGL)
 endif()
 
 message("Found Qt version ${QT_VERSION_MAJOR}: ${QT_DIR}")
@@ -77,47 +68,22 @@ add_subdirectory(engine)
 add_subdirectory(resources)
 add_subdirectory(plugins)
 add_subdirectory(webaccess)
-if(qmlui)
-    message("Building QLC+ 5 QML UI")
-    add_subdirectory(render)
-    add_subdirectory(qmlui)
-else()
-    message("Building QLC+ 4 QtWidget UI")
-    add_subdirectory(ui)
-    add_subdirectory(main)
-    add_subdirectory(fixtureeditor)
-endif()
-if(APPLE AND NOT qmlui)
-    add_subdirectory(launcher)
-endif()
+add_subdirectory(render)
+add_subdirectory(qmlui)
 
 add_subdirectory(tools/credstore-test)
 
 # Unit testing thru "make check"
-if(qmlui)
-    if(WIN32)
-       add_custom_target(unittests
-            COMMAND unittest.bat "qmlui" ${CMAKE_CURRENT_BINARY_DIR}
-            WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
-        )
-    else()
-       add_custom_target(unittests
-            COMMAND ./unittest.sh "qmlui" ${CMAKE_CURRENT_BINARY_DIR}
-            WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
-        )
-    endif()
+if(WIN32)
+   add_custom_target(unittests
+        COMMAND unittest.bat ${CMAKE_CURRENT_BINARY_DIR}
+        WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
+    )
 else()
-    if(WIN32)
-       add_custom_target(unittests
-            COMMAND unittest.bat "ui" ${CMAKE_CURRENT_BINARY_DIR}
-            WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
-        )
-    else()
-       add_custom_target(unittests
-            COMMAND ./unittest.sh "ui" ${CMAKE_CURRENT_BINARY_DIR}
-            WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
-        )
-    endif()
+   add_custom_target(unittests
+        COMMAND ./unittest.sh ${CMAKE_CURRENT_BINARY_DIR}
+        WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
+    )
 endif()
 
 add_custom_target(check
@@ -131,17 +97,10 @@ if(WIN32)
         WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
     )
 else()
-    if(qmlui)
-       add_custom_target(coverage
-            COMMAND ./coverage.sh "qmlui"
-            WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
-        )
-    else()
-       add_custom_target(coverage
-            COMMAND ./coverage.sh "ui"
-            WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
-        )
-    endif()
+   add_custom_target(coverage
+        COMMAND ./coverage.sh
+        WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
+    )
 endif()
 
 add_custom_target(lcov
@@ -149,17 +108,10 @@ add_custom_target(lcov
 )
 
 # Translations
-if (qmlui)
-  add_custom_target(translations ALL
-    COMMAND ./translate.sh release qmlui
-    COMMENT "Translating qmlui translations..."
-    WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR})
-else ()
-  add_custom_target(translations ALL
-    COMMAND ./translate.sh release ui
-    COMMENT "Translating ui translations..."
-    WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR})
-endif()
+add_custom_target(translations ALL
+  COMMAND ./translate.sh release
+  COMMENT "Translating qmlui translations..."
+  WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR})
 
 ## Install the qm files
 if (appimage)
@@ -184,23 +136,8 @@ set_directory_properties(PROPERTIES ADDITIONAL_MAKE_CLEAN_FILES "${CMAKE_CURRENT
 
 # run
 if(UNIX)
-    if(qmlui)
-       add_custom_target(run
-            COMMAND ${CMAKE_COMMAND} -E env LD_LIBRARY_PATH=engine/src:$ENV{LD_LIBRARY_PATH} qmlui/qlcplus-qml
-            WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}
-        )
-    else()
-       add_custom_target(run
-            COMMAND ${CMAKE_COMMAND} -E env LD_LIBRARY_PATH=engine/src:ui/src:webaccess/src:$ENV{LD_LIBRARY_PATH} main/qlcplus
-            WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}
-        )
-    endif()
-endif()
-
-# run-fxe
-if(UNIX AND NOT qmlui)
-    add_custom_target(run-fxe
-        COMMAND ${CMAKE_COMMAND} -E env LD_LIBRARY_PATH=engine/src:ui/src:webaccess/src:$ENV{LD_LIBRARY_PATH} ./fixtureeditor/qlcplus-fixtureeditor
+    add_custom_target(run
+        COMMAND ${CMAKE_COMMAND} -E env LD_LIBRARY_PATH=engine/src:$ENV{LD_LIBRARY_PATH} qmlui/qlcplus-qml
         WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}
     )
 endif()

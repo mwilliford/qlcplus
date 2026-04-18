@@ -23,7 +23,7 @@ fi
 "$SCRIPT_DIR/kill.sh"
 
 # Check binary exists
-if [ ! -f "$CLIENT_DIR/build-v5/qmlui/qlcplus-qml.app/Contents/MacOS/qlcplus-qml" ]; then
+if [ ! -f "$CLIENT_DIR/build/qmlui/qlcplus-qml.app/Contents/MacOS/qlcplus-qml" ]; then
     echo "ERROR: Binary not found. Run ./build.sh first."
     exit 1
 fi

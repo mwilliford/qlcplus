@@ -4,14 +4,6 @@ CURRUSER=$(whoami)
 TESTPREFIX=""
 SLEEPCMD=""
 RUN_UI_TESTS="0"
-THISCMD=`basename "$0"`
-
-TARGET=${1:-}
-
-if [ "$TARGET" != "ui" ] && [ "$TARGET" != "qmlui" ]; then
-  echo >&2 "Usage: $THISCMD ui|qmlui"
-  exit 1
-fi
 
 if [ "$CURRUSER" == "runner" ] \
     || [ "$CURRUSER" == "buildbot" ] \
@@ -91,45 +83,6 @@ do
         exit ${RESULT}
     fi
 done
-
-#############################################################################
-# UI tests
-#############################################################################
-
-# Skip ui in qmlui mode
-if [ "$RUN_UI_TESTS" -eq "1" ] && [ "$TARGET" != "qmlui" ]; then
-
-TESTDIR=ui/test
-TESTS=$(find ${TESTDIR} -maxdepth 1 -mindepth 1 -type d)
-for test in ${TESTS}
-do
-    # Ignore .git
-    if [ $(echo ${test} | grep ".git") ]; then
-        continue
-    fi
-
-    # Ignore CMakeFiles
-    if [ $(echo ${test} | grep "CMakeFiles") ]; then
-        continue
-    fi
-
-    # Isolate just the test name
-    test=$(echo ${test} | sed 's/ui\/test\///')
-
-    $SLEEPCMD
-    # Execute the test
-    pushd ${TESTDIR}/${test}
-    eval DYLD_FALLBACK_LIBRARY_PATH=../../../engine/src:../../src:$DYLD_FALLBACK_LIBRARY_PATH \
-        LD_LIBRARY_PATH=../../../engine/src:../../src:$LD_LIBRARY_PATH $TESTPREFIX ./${test}_test
-    RESULT=${?}
-    popd
-    if [ ${RESULT} != 0 ]; then
-        echo "${RESULT} UI unit tests failed. Please fix before commit."
-        exit ${RESULT}
-    fi
-done
-
-fi
 
 #############################################################################
 # Enttec wing tests

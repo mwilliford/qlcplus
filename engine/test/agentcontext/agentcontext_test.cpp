@@ -25,7 +25,7 @@
 #include "fixture.h"
 #include "chaser.h"
 #include "scene.h"
-#include "script.h"
+#include "scriptv4.h"
 #include "qlcpalette.h"
 #include "efx.h"
 #include "doc.h"

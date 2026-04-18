@@ -3,8 +3,8 @@ set -euo pipefail
 
 # Usage:
 #   ./translate.sh update
-#   ./translate.sh release [qmlui|ui]
-#   ./translate.sh create <ll_CC> [qmlui|ui]
+#   ./translate.sh release
+#   ./translate.sh create <ll_CC>
 
 which_qt() {
   local base="$1"
@@ -16,16 +16,15 @@ LUPDATE="$(which_qt lupdate)"
 : "${LUPDATE:?lupdate not found}"
 
 ACTION="${1:-}"
-UI_LANGS="de_DE es_ES fr_FR it_IT nl_NL cz_CZ pt_BR ca_ES ja_JP"
-QMLUI_LANGS="de_DE es_ES fr_FR it_IT nl_NL ru_RU ca_ES ja_JP uk_UA pl_PL"
+LANGS="de_DE es_ES fr_FR it_IT nl_NL ru_RU ca_ES ja_JP uk_UA pl_PL"
 
 die() { echo "Error: $*" >&2; exit 1; }
 usage() {
   cat <<EOF
 Usage:
   $0 update
-  $0 release [qmlui|ui]
-  $0 create <ll_CC> [qmlui|ui]
+  $0 release
+  $0 create <ll_CC>
 EOF
 }
 
@@ -35,16 +34,6 @@ is_cmake_build_dir() {
     *"/build" | *"/build/"* | *"/build-"* ) return 0 ;;
   esac
   [[ -e "$1/CMakeCache.txt" || -d "$1/CMakeFiles" ]]
-}
-
-find_ts_for_lang() {
-  # args: lang, flavor
-  local lang="$1"; local flavor="$2"
-  if [[ "$flavor" == "qmlui" ]]; then
-    find . -type f -path "./qmlui/*" -name "*_${lang}.ts"
-  else
-    find . -type f -not -path "./qmlui/*" -name "*_${lang}.ts"
-  fi
 }
 
 case "$ACTION" in
@@ -75,19 +64,10 @@ case "$ACTION" in
     ;;
 
   release)
-    FLAVOR="${2:-ui}"
-    [[ "$FLAVOR" == "ui" || "$FLAVOR" == "qmlui" ]] || die "Flavor must be 'ui' or 'qmlui'"
-    LANGS="$UI_LANGS"; [[ "$FLAVOR" == "qmlui" ]] && LANGS="$QMLUI_LANGS"
-
     echo "$LANGS" | tr ' ' '\n' | while IFS= read -r lang; do
-      echo "Releasing $lang ($FLAVOR)"
-      # Gather files
+      echo "Releasing $lang"
       files_tmp="$(mktemp)"
-      if [[ "$FLAVOR" == "qmlui" ]]; then
-        find . -type f -path "./qmlui/*" -name "*_${lang}.ts" > "$files_tmp"
-      else
-        find . -type f -not -path "./qmlui/*" -name "*_${lang}.ts" > "$files_tmp"
-      fi
+      find . -type f -path "./qmlui/*" -name "*_${lang}.ts" > "$files_tmp"
       if ! [ -s "$files_tmp" ]; then
         echo "  No TS files for $lang, skipping."
         rm -f "$files_tmp"
@@ -102,23 +82,18 @@ case "$ACTION" in
     ;;
 
   create)
-    NEW_LANG="${2:-}"; FLAVOR="${3:-ui}"
+    NEW_LANG="${2:-}"
     [[ -n "$NEW_LANG" ]] || { usage; exit 1; }
-    [[ "$FLAVOR" == "ui" || "$FLAVOR" == "qmlui" ]] || die "Flavor must be 'ui' or 'qmlui'"
     [[ "$NEW_LANG" =~ ^[a-z]{2}_[A-Z]{2}$ ]] || die "Language code must be ll_CC (e.g., it_IT, pt_BR)"
 
-    echo "Creating TS files for $NEW_LANG ($FLAVOR) ..."
+    echo "Creating TS files for $NEW_LANG ..."
 
-    # Collect reference TS files for the flavor
+    # Collect reference TS files
     refs_tmp="$(mktemp)"
-    if [[ "$FLAVOR" == "qmlui" ]]; then
-      find . -type f -path "./qmlui/*" -name "*_[a-z][a-z]_[A-Z][A-Z].ts" > "$refs_tmp"
-    else
-      find . -type f -not -path "./qmlui/*" -name "*_[a-z][a-z]_[A-Z][A-Z].ts" > "$refs_tmp"
-    fi
+    find . -type f -path "./qmlui/*" -name "*_[a-z][a-z]_[A-Z][A-Z].ts" > "$refs_tmp"
 
     if ! [ -s "$refs_tmp" ]; then
-      echo "No reference .ts files found for flavor '$FLAVOR'."
+      echo "No reference .ts files found."
       echo "Creating default: ./qlcplus_${NEW_LANG}.ts"
       "$LUPDATE" . -ts "./qlcplus_${NEW_LANG}.ts"
       echo "Create complete."
@@ -137,7 +112,6 @@ case "$ACTION" in
 
     created_any=0
     while IFS='|' read -r d base; do
-      # skip CMake build dirs
       if is_cmake_build_dir "$d"; then
         echo "Skipping CMake build dir: $d"
         continue

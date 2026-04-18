@@ -3,7 +3,7 @@
 # To measure unit test coverage, perform these steps:
 # 0. export CCACHE_DISABLE=1        # (only if you use compiler cache)
 # 1. rm -rf build && mkdir build    # Remove original build directory and recreate it. You can skip this step if you want to preserve the build directory.
-# 2. cd ./build && cmake -DCMAKE_PREFIX_PATH="/home/<user>/Qt/5.15.2/gcc_64/lib/cmake|/usr/lib/x86_64-linux-gnu/cmake/Qt5" [-Dqmlui=ON] -Dcoverage=ON ..
+# 2. cd ./build && cmake -DCMAKE_PREFIX_PATH="/home/<user>/Qt/6.x/gcc_64/lib/cmake" -Dcoverage=ON ..
 # 3. make -j8
 # 4. make lcov
 #
@@ -12,15 +12,6 @@
 
 set -e
 ARCH=$(uname)
-THISCMD=`basename "$0"`
-
-TARGET=${1:-}
-
-if [ "$TARGET" != "ui" ] && [ "$TARGET" != "qmlui" ]; then
-  echo >&2 "Usage: $THISCMD ui|qmlui"
-  exit 1
-fi
-
 
 #############################################################################
 # Test directories to find coverage measurements from
@@ -31,10 +22,6 @@ DEST_DIR="build" # Do NOT change to "./build" or "build/"
 COUNT=0
 test[$COUNT]="$DEST_DIR/engine/src"
 COUNT=$((COUNT+1))
-if [ "$TARGET" == "ui" ]; then
-    test[$COUNT]="$DEST_DIR/ui/src"
-COUNT=$((COUNT+1))
-fi
 test[$COUNT]="$DEST_DIR/plugins/artnet/test"
 COUNT=$((COUNT+1))
 test[$COUNT]="$DEST_DIR/plugins/enttecwing/src"
@@ -96,7 +83,7 @@ done
 # Run unit tests
 #############################################################################
 
-./unittest.sh $TARGET
+./unittest.sh
 FAILED=$?
 if [ ${FAILED} != 0 ]; then
     echo "Will not measure coverage because ${FAILED} unit tests failed."

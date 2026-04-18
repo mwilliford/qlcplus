@@ -37,11 +37,6 @@ install(FILES ${mmedia_files} DESTINATION ${mmedia_path})
 
 # NullSoft installer files
 set(nsis_path "${INSTALLROOT}/${DATADIR}")
-if(qmlui)
-    set(nsis_files qlcplus5Qt6.nsi)
-else()
-    set(nsis_files qlcplus4Qt6.nsi)
-endif()
-install(FILES ${nsis_files} DESTINATION ${nsis_path})
+install(FILES qlcplus5Qt6.nsi DESTINATION ${nsis_path})
 
 # install(FILES ../Sample.qxw DESTINATION ${INSTALLROOT}/${DATADIR})

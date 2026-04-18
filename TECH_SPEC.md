@@ -3,9 +3,9 @@
 ## Runtime
 
 - C++ / Qt6 (cmake build, `/opt/homebrew/opt/qt`)
-- Forked from QLC+ 4.14.3, branch `feature/agent-client`
-- Build: `./build.sh` (cmake + make with AGL workaround for macOS)
-- Run: `./run.sh` (sets DYLD_LIBRARY_PATH for local libs)
+- Forked from QLC+ 5.x (QML UI only; v4 Widgets UI has been removed), branch `feature/agent-client`
+- Build: `./build.sh` (cmake + ninja/make)
+- Run: `./run.sh` (launches `build/qmlui/qlcplus-qml.app/Contents/MacOS/qlcplus-qml`)
 
 ## Agent Files (all other files are upstream QLC+)
 
@@ -61,35 +61,25 @@ All create handlers check `msg["autoStart"].toBool()` and call `fn->start()` if 
 - `sendDelta()` checks `m_state == Connected && !m_suppressDelta` before sending
 - `Doc::loading/loaded` signals connected in constructor (not in `connectDocSignals`) — always active
 
-### UI Layer: AgentChatPanel
+### UI Layer: AgentChatPanel (QML)
 
-**`ui/src/agentchatpanel.h`** — Inherits `QWidget` (not QDockWidget). Singleton via `s_instance`.
-- `static createAndShow(parent, connection)` — creates with `Qt::Window` flag, `WA_DeleteOnClose`, restores geometry from QSettings
-- `static instance()` — returns singleton
-
-**`ui/src/agentchatpanel.cpp`** — Implementation:
-- Layout: status bar (QLabel + QPushButton) → QTextBrowser (dark theme, monospace) → input bar (QLineEdit + QPushButton)
-- Streaming: `onChatToken()` appends text at cursor end. `onChatEnd()` finalizes with newline.
-- HTML formatting: user messages green, agent messages blue, commands orange, errors red
-- Geometry saved in `closeEvent()` and destructor to QSettings key `agentchatpanel/geometry`
+**`qmlui/qml/AgentChatPanel.qml`** — QML panel bound to AgentConnection via context property.
+- Layout: status bar → scrollable message list → input bar
+- Streaming: subscribes to `chatTokenReceived` / `chatStreamEnded` signals
+- Styling matches qmlui theme
 
 ### App Integration
 
-**`ui/src/app.h`** — Added:
-- `AgentConnection *m_agentConnection` member
-- `void slotAgentPanel()` public slot
-
-**`ui/src/app.cpp`** — Changes in `init()`:
-- Creates `AgentConnection(m_doc, this)` — always exists, manages its own lifecycle
-- Connects `simpleDeskRequested` signal to lambda that calls `SimpleDesk::instance()->setAbsoluteChannelValue()`
-- Adds "AI Agent" QAction to toolbar → triggers `slotAgentPanel()` → calls `AgentChatPanel::createAndShow()`
-- Destructor deletes `AgentChatPanel::instance()` if open
+**`qmlui/app.h / app.cpp`** — in `startup()`:
+- Creates `AgentConnection(m_doc, this)`
+- Exposes it to QML as `agentConnection` context property
+- Connects `simpleDeskRequested` signal to lambda that calls into SimpleDesk
 
 ### Build System Changes
 
 - **`CMakeLists.txt`** (root) — Added `WebSockets` to `find_package(Qt...)`
 - **`engine/src/CMakeLists.txt`** — Added `agentconnection.cpp agentconnection.h` to sources, `Qt::WebSockets` to link
-- **`ui/src/CMakeLists.txt`** — Added `agentchatpanel.cpp agentchatpanel.h` to sources
+- **`qmlui/CMakeLists.txt`** — Registers AgentChatPanel QML module
 
 ## Key QLC+ Engine APIs Used
 
@@ -112,11 +102,11 @@ All create handlers check `msg["autoStart"].toBool()` and call `fn->start()` if 
 | `InputOutputMap` | `engine/src/inputoutputmap.h` | `grandMasterValue()`, `grandMasterValueMode()`, `grandMasterChannelMode()`, `setGrandMasterValue()`, `blackout()`, `setBlackout()` |
 | `GrandMaster` | `engine/src/grandmaster.h` | `valueModeToString()`, `channelModeToString()` |
 | `MonitorProperties` | `engine/src/monitorproperties.h` | `gridSize()`, `gridUnits()`, `labelsVisible()`, `fixtureItemsID()`, `fixtureProperties(fid)` |
-| `SimpleDesk` | `ui/src/simpledesk.h` | `instance()`, `setAbsoluteChannelValue(address, value)` |
+| `SimpleDesk` | `qmlui/simpledesk.h` | `instance()`, `setAbsoluteChannelValue(address, value)` |
 
 ## Design Patterns
 
 - **Delta suppression**: `m_suppressDelta = true` wraps all engine mutations from server commands. Prevents echoing our own changes back as workspace_delta messages.
-- **Signal bridge for cross-layer**: AgentConnection (engine) can't access SimpleDesk (ui). Emits `simpleDeskRequested` signal, App connects it to `SimpleDesk::instance()`.
+- **Signal bridge for cross-layer**: AgentConnection (engine) can't access SimpleDesk (qmlui). Emits `simpleDeskRequested` signal, App connects it to `SimpleDesk::instance()`.
 - **File load = disconnect**: `Doc::loading` signal triggers disconnect. User reconnects manually after loading. Prevents stale state and delta floods.
-- **Singleton chat panel**: `AgentChatPanel::createAndShow()` / `instance()`, same pattern as `Monitor`. `WA_DeleteOnClose` with geometry persistence.
+- **QML chat panel**: Exposed via QML context property, driven by signal emissions on `AgentConnection`.

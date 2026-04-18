@@ -12,11 +12,7 @@ cd build
 # Build
 # export QTDIR=/c/projects/Qt/6.9.0/mingw_64/
 if [ -n "$QTDIR" ]; then
- if [ "$1" == "qmlui" ]; then
-    cmake -DCMAKE_PREFIX_PATH="$QTDIR/lib/cmake" -Dqmlui=on ..
- else
     cmake -DCMAKE_PREFIX_PATH="$QTDIR/lib/cmake" ..
- fi
 else
     echo "QTDIR not set. Aborting."
     exit 1
@@ -40,12 +36,8 @@ cd ..
 
 echo "Run windeployqt..."
 cd $APP_DIR
-if [ "$1" == "qmlui" ]; then
-  $QTDIR/bin/windeployqt --qmldir $ROOT_DIR/qmlui/qml qlcplusengine.dll Plugins/dmxusb.dll qlcplus-qml.exe
-  rm sceneparsers/gltfsceneexport.dll
-else
-  $QTDIR/bin/windeployqt qlcplusengine.dll qlcplusui.dll qlcpluswebaccess.dll Plugins/dmxusb.dll qlcplus.exe
-fi
+$QTDIR/bin/windeployqt --qmldir $ROOT_DIR/qmlui/qml qlcplusengine.dll Plugins/dmxusb.dll qlcplus-qml.exe
+rm sceneparsers/gltfsceneexport.dll
 
 # remove uneeded stuff
 rm -rf generic networkinformation qmltooling renderplugins tls translations
@@ -53,4 +45,3 @@ rm -rf generic networkinformation qmltooling renderplugins tls translations
 
 # Create Installer
 makensis -X'SetCompressor /FINAL lzma' qlcplus*.nsi
- 
