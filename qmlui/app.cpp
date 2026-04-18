@@ -1205,6 +1205,25 @@ QString App::importMvr(const QString &fileName)
            .arg(missing.join(QLatin1Char(',')));
 }
 
+QString App::exportMvr(const QString &fileName)
+{
+    QString path = fileName;
+    if (path.startsWith(QStringLiteral("file://")))
+        path = QUrl(path).toLocalFile();
+    if (!path.endsWith(QStringLiteral(".mvr"), Qt::CaseInsensitive))
+        path += QStringLiteral(".mvr");
+
+    MvrIO io(m_doc);
+    const bool ok = io.exportMvr(path);
+    if (!ok)
+        return QStringLiteral("error|") + io.lastError();
+
+    return QStringLiteral("ok|%1|%2|%3")
+           .arg(io.exportedFixtureCount())
+           .arg(io.exportedGdtfCount())
+           .arg(io.skippedOnExport().join(QLatin1Char(',')));
+}
+
 /*********************************************************************
  * Fixture editor
  *********************************************************************/

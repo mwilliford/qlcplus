@@ -20,12 +20,15 @@
 #ifndef GDTFPARSER_H
 #define GDTFPARSER_H
 
+#include <QByteArray>
 #include <QString>
 #include <memory>
 
 #include "qlcfixturedef.h"
 
 class GDTFGeometryData;
+
+namespace VectorworksMVR { class IGdtfFixture; }
 
 /** @addtogroup engine Engine
  * @{
@@ -58,6 +61,19 @@ public:
     bool loadGDTF(const QString &path, QLCFixtureDef *fixtureDef);
 
     /**
+     * Parse a .gdtf archive held in memory and populate a QLCFixtureDef.
+     *
+     * Used by MVR import: libMVRgdtf hands us the embedded GDTF bytes without
+     * a file path. Same extraction pipeline as loadGDTF(path) — only the
+     * initial archive-open call differs.
+     *
+     * @param data Raw GDTF (zip) archive bytes.
+     * @param fixtureDef The fixture definition to populate (must not be NULL).
+     * @return true if successful.
+     */
+    bool loadGDTFFromBuffer(const QByteArray &data, QLCFixtureDef *fixtureDef);
+
+    /**
      * Take ownership of the extracted geometry data.
      * Returns nullptr if loadGDTF() hasn't been called or failed.
      * After calling this, the parser no longer owns the data.
@@ -68,6 +84,13 @@ public:
     QString lastError() const;
 
 private:
+    /** Shared body: extract def + geometry from an already-populated
+     *  IGdtfFixture interface. Called by both loadGDTF and
+     *  loadGDTFFromBuffer. */
+    bool populateFromInterface(VectorworksMVR::IGdtfFixture *gdtf,
+                               QLCFixtureDef *fixtureDef,
+                               const QString &sourceLabel);
+
     QString m_lastError;
     std::unique_ptr<GDTFGeometryData> m_geometryData;
 };

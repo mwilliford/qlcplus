@@ -21,6 +21,7 @@
 #ifndef QLCFIXTUREDEF_H
 #define QLCFIXTUREDEF_H
 
+#include <QByteArray>
 #include <QString>
 #include <QList>
 #include <QFile>
@@ -241,14 +242,26 @@ protected:
      * GDTF Geometry Data
      *********************************************************************/
 public:
-    /** Non-owning pointer to GDTF geometry data (owned by QLCFixtureDefCache).
-     *  Non-null for GDTF-loaded fixtures. Null for QXF fixtures (use
-     *  synthesizeGDTFFromQXF() to create approximate GDTF data at point of use). */
+    /** Owning pointer to GDTF geometry data. Non-null for GDTF-loaded
+     *  fixtures. Null for QXF fixtures (use synthesizeGDTFFromQXF() to create
+     *  approximate GDTF data at point of use). Lifetime follows the def. */
     const GDTFGeometryData *gdtfGeometryData() const { return m_gdtfGeoData; }
-    void setGdtfGeometryData(const GDTFGeometryData *data) { m_gdtfGeoData = data; }
+
+    /** Take ownership of geometry data. Replaces and deletes any previous
+     *  geometry. Pass nullptr to clear. */
+    void setGdtfGeometryData(GDTFGeometryData *data);
+
+    /** Raw `.gdtf` archive bytes, if available. Populated when the def was
+     *  parsed from memory (e.g. embedded in an imported MVR); empty for defs
+     *  loaded from a disk path or synthesized from QXF. MVR-2 export uses
+     *  these bytes to embed the GDTF back into the exported archive without
+     *  needing the original file. */
+    QByteArray rawGdtfBytes() const { return m_rawGdtfBytes; }
+    void setRawGdtfBytes(const QByteArray &bytes) { m_rawGdtfBytes = bytes; }
 
 private:
-    const GDTFGeometryData *m_gdtfGeoData = nullptr;
+    GDTFGeometryData *m_gdtfGeoData = nullptr;
+    QByteArray m_rawGdtfBytes;
 
     /*********************************************************************
      * Load & Save

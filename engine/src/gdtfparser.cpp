@@ -386,7 +386,6 @@ bool GDTFParser::loadGDTF(const QString &path, QLCFixtureDef *fixtureDef)
         return false;
     }
 
-    // Create GDTF fixture interface via libMVRgdtf's COM factory
     IGdtfFixturePtr gdtf;
     VCOMError err = gdtf.Query(IID_IGdtfFixture);
     if (err != kVCOMError_NoError)
@@ -395,7 +394,6 @@ bool GDTFParser::loadGDTF(const QString &path, QLCFixtureDef *fixtureDef)
         return false;
     }
 
-    // Parse the .gdtf file
     err = gdtf->ReadFromFile(path.toUtf8().constData());
     if (err != kVCOMError_NoError)
     {
@@ -403,6 +401,43 @@ bool GDTFParser::loadGDTF(const QString &path, QLCFixtureDef *fixtureDef)
         return false;
     }
 
+    return populateFromInterface(gdtf, fixtureDef, path);
+}
+
+bool GDTFParser::loadGDTFFromBuffer(const QByteArray &data, QLCFixtureDef *fixtureDef)
+{
+    if (fixtureDef == nullptr)
+    {
+        m_lastError = QStringLiteral("fixtureDef is null");
+        return false;
+    }
+    if (data.isEmpty())
+    {
+        m_lastError = QStringLiteral("GDTF buffer is empty");
+        return false;
+    }
+
+    IGdtfFixturePtr gdtf;
+    VCOMError err = gdtf.Query(IID_IGdtfFixture);
+    if (err != kVCOMError_NoError)
+    {
+        m_lastError = QStringLiteral("Failed to create IGdtfFixture interface (err=%1)").arg(err);
+        return false;
+    }
+
+    err = gdtf->FromBuffer(data.constData(), static_cast<size_t>(data.size()));
+    if (err != kVCOMError_NoError)
+    {
+        m_lastError = QStringLiteral("Failed to parse GDTF buffer (err=%1)").arg(err);
+        return false;
+    }
+
+    return populateFromInterface(gdtf, fixtureDef, QStringLiteral("<buffer>"));
+}
+
+bool GDTFParser::populateFromInterface(IGdtfFixture *gdtf, QLCFixtureDef *fixtureDef,
+                                        const QString &sourceLabel)
+{
     // --- Basic info ---
     fixtureDef->setManufacturer(QString::fromUtf8(gdtf->GetManufacturer()));
     fixtureDef->setModel(QString::fromUtf8(gdtf->GetName()));
@@ -695,7 +730,7 @@ bool GDTFParser::loadGDTF(const QString &path, QLCFixtureDef *fixtureDef)
     gdtf->GetParsingErrorCount(errCount);
     if (errCount > 0)
     {
-        qWarning() << "GDTF parsing warnings for" << path << ":" << errCount << "issues";
+        qWarning() << "GDTF parsing warnings for" << sourceLabel << ":" << errCount << "issues";
     }
 
     qDebug() << "GDTF loaded:" << fixtureDef->manufacturer() << fixtureDef->model()

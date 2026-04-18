@@ -1187,6 +1187,10 @@ bool Fixture::loadXML(QXmlStreamReader &xmlDoc, Doc *doc,
         {
             name = xmlDoc.readElementText();
         }
+        else if (xmlDoc.name() == KXMLFixtureMvrUuid)
+        {
+            setMvrUuid(xmlDoc.readElementText());
+        }
         else if (xmlDoc.name() == KXMLFixtureUniverse)
         {
             universe = xmlDoc.readElementText().toInt();
@@ -1403,6 +1407,9 @@ bool Fixture::saveXML(QXmlStreamWriter *doc) const
     doc->writeTextElement(KXMLFixtureID, QString::number(id()));
     /* Name */
     doc->writeTextElement(KXMLFixtureName, m_name);
+    /* MVR UUID (round-trip stability) */
+    if (!m_mvrUuid.isEmpty())
+        doc->writeTextElement(KXMLFixtureMvrUuid, m_mvrUuid);
     /* Universe */
     doc->writeTextElement(KXMLFixtureUniverse, QString::number(universe()));
     if (crossUniverse())

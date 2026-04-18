@@ -92,6 +92,14 @@ Popup
                     qsTr("All files") + " (*)"
                 ]
             break
+            case App.ExportMvrMode:
+                dialogTitle = qsTr("Export MVR scene")
+                dialogFileMode = FileDialog.SaveFile
+                dialogNameFilters = [
+                    qsTr("MVR scene") + " (*.mvr)",
+                    qsTr("All files") + " (*)"
+                ]
+            break
         }
 
         if (Qt.platform.os === "linux")
@@ -139,6 +147,13 @@ Popup
                 var result = qlcplus.importMvr(dialogSelectedFile)
                 mvrResultPopup.resultText = result
                 mvrResultPopup.open()
+            }
+            break
+            case App.ExportMvrMode:
+            {
+                var exResult = qlcplus.exportMvr(dialogSelectedFile)
+                mvrExportResultPopup.resultText = exResult
+                mvrExportResultPopup.open()
             }
             break
         }
@@ -411,6 +426,46 @@ Popup
                     var msg = qsTr("Imported %1 fixture(s) and %2 focus point(s).").arg(fix).arg(fp)
                     if (missing.length > 0)
                         msg += "\n\n" + qsTr("Skipped (missing GDTF): ") + missing
+                    return msg
+                }
+            }
+        }
+
+        ContextMenuEntry
+        {
+            id: fileExportMvr
+            imgSource: "qrc:/import.svg"
+            entryText: qsTr("Export MVR scene...")
+            onEntered: submenuItem = null
+
+            onClicked:
+            {
+                openDialog(App.ExportMvrMode)
+                menuRoot.close()
+            }
+
+            CustomPopupDialog
+            {
+                id: mvrExportResultPopup
+                width: mainView.width / 2
+                title: qsTr("MVR export")
+                standardButtons: Dialog.Close
+
+                property string resultText: ""
+
+                message:
+                {
+                    if (resultText.length === 0)
+                        return ""
+                    var parts = resultText.split("|")
+                    if (parts[0] === "error")
+                        return qsTr("Export failed: ") + parts[1]
+                    var fix = parts[1]
+                    var gdtf = parts[2]
+                    var skipped = parts[3] || ""
+                    var msg = qsTr("Exported %1 fixture(s) with %2 GDTF archive(s).").arg(fix).arg(gdtf)
+                    if (skipped.length > 0)
+                        msg += "\n\n" + qsTr("Skipped (no embeddable GDTF): ") + skipped
                     return msg
                 }
             }

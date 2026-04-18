@@ -46,6 +46,7 @@ class Doc;
  */
 
 #define KXMLFixture                 QStringLiteral("Fixture")
+#define KXMLFixtureMvrUuid          QStringLiteral("MVRUUID")
 #define KXMLFixtureName             QStringLiteral("Name")
 #define KXMLFixtureUniverse         QStringLiteral("Universe")
 #define KXMLFixtureCrossUniverse    QStringLiteral("CrossUniverse")
@@ -367,6 +368,21 @@ public:
 
 private:
     AgentContext m_agentContext;
+
+    /*********************************************************************
+     * MVR UUID
+     *********************************************************************/
+public:
+    /** Stable identity for MVR round-trips. Populated on MVR import (from the
+     *  source archive's `<Fixture UUID>`) and preserved in the workspace XML
+     *  so a later MVR export writes the same UUID. Empty for fixtures that
+     *  have never touched an MVR — export generates a deterministic UUID
+     *  from the fixture ID in that case. Canonical 8-4-4-4-12 hex. */
+    QString mvrUuid() const { return m_mvrUuid; }
+    void setMvrUuid(const QString &uuid) { m_mvrUuid = uuid; }
+
+private:
+    QString m_mvrUuid;
 
     /*********************************************************************
      * Channel info

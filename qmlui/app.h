@@ -93,7 +93,8 @@ public:
         SaveMode,
         SaveAsMode,
         ImportMode,
-        ImportMvrMode
+        ImportMvrMode,
+        ExportMvrMode
     };
     Q_ENUM(FileDialogOpModes)
 
@@ -398,6 +399,13 @@ public:
      * on success, or "error|<message>" on failure.
      */
     Q_INVOKABLE QString importMvr(const QString &fileName);
+
+    /**
+     * Export the current Doc's fixture rig to an MVR (My Virtual Rig) archive.
+     * Returns a summary string: "ok|<fixtureCount>|<gdtfCount>|<skipped csv>"
+     * on success, or "error|<message>" on failure.
+     */
+    Q_INVOKABLE QString exportMvr(const QString &fileName);
 
 private:
     ImportManager *m_importManager;

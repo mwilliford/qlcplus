@@ -39,6 +39,7 @@ add_library(${module_name} SHARED
     gdtfkinematics.cpp gdtfkinematics.h
     gdtfparser.cpp gdtfparser.h
     gdtfshareclient.cpp gdtfshareclient.h
+    gdtfwriter.cpp gdtfwriter.h
     bus.cpp bus.h
     channelmodifier.cpp channelmodifier.h
     channelsgroup.cpp channelsgroup.h

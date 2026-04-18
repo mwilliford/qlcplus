@@ -62,6 +62,7 @@ Doc::Doc(QObject* parent, int universes)
     : QObject(parent)
     , m_workspacePath("")
     , m_fixtureDefCache(new QLCFixtureDefCache)
+    , m_projectFixtureDefCache(new QLCFixtureDefCache)
     , m_modifiersCache(new QLCModifiersCache)
     , m_rgbScriptsCache(new RGBScriptsCache(this))
     , m_ioPluginCache(new IOPluginCache(this))
@@ -118,6 +119,9 @@ Doc::~Doc()
 
     delete m_fixtureDefCache;
     m_fixtureDefCache = NULL;
+
+    delete m_projectFixtureDefCache;
+    m_projectFixtureDefCache = NULL;
 
     delete m_rgbScriptsCache;
     m_rgbScriptsCache = NULL;
@@ -201,6 +205,9 @@ void Doc::clearContents()
     if (m_calibrationModel != NULL)
         m_calibrationModel->clear();
 
+    if (m_projectFixtureDefCache != NULL)
+        m_projectFixtureDefCache->clear();
+
     m_loadStatus = Cleared;
 
     emit cleared();
@@ -253,6 +260,24 @@ QLCFixtureDefCache* Doc::fixtureDefCache() const
 void Doc::setFixtureDefinitionCache(QLCFixtureDefCache *cache)
 {
     m_fixtureDefCache = cache;
+}
+
+QLCFixtureDefCache* Doc::projectFixtureDefCache() const
+{
+    return m_projectFixtureDefCache;
+}
+
+QLCFixtureDef* Doc::resolveFixtureDef(const QString &manufacturer,
+                                      const QString &model) const
+{
+    if (m_projectFixtureDefCache != NULL)
+    {
+        if (QLCFixtureDef *def = m_projectFixtureDefCache->fixtureDef(manufacturer, model))
+            return def;
+    }
+    if (m_fixtureDefCache != NULL)
+        return m_fixtureDefCache->fixtureDef(manufacturer, model);
+    return NULL;
 }
 
 QLCModifiersCache* Doc::modifiersCache() const

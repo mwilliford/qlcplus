@@ -67,32 +67,6 @@ QLCFixtureDef* QLCFixtureDefCache::fixtureDef(
     return NULL;
 }
 
-QLCFixtureDef* QLCFixtureDefCache::fixtureDefByGdtfFile(const QString& filename) const
-{
-    if (filename.isEmpty())
-        return nullptr;
-
-    const QString target = QFileInfo(filename).fileName();
-    if (target.isEmpty())
-        return nullptr;
-
-    QListIterator <QLCFixtureDef*> it(m_defs);
-    while (it.hasNext() == true)
-    {
-        QLCFixtureDef* def = it.next();
-        const QString src = def->definitionSourceFile();
-        if (src.isEmpty())
-            continue;
-        if (QFileInfo(src).fileName().compare(target, Qt::CaseInsensitive) == 0)
-        {
-            def->checkLoaded(m_mapAbsolutePath);
-            return def;
-        }
-    }
-
-    return nullptr;
-}
-
 QStringList QLCFixtureDefCache::manufacturers() const
 {
     QSet <QString> makers;
@@ -412,9 +386,6 @@ void QLCFixtureDefCache::clear()
 {
     while (m_defs.isEmpty() == false)
         delete m_defs.takeFirst();
-
-    qDeleteAll(m_gdtfGeometry);
-    m_gdtfGeometry.clear();
 }
 
 QDir QLCFixtureDefCache::systemDefinitionDirectory()
@@ -504,21 +475,12 @@ bool QLCFixtureDefCache::loadGDTF(const QString& path)
     fxi->setIsUser(true);
     fxi->setDefinitionSourceFile(path);
     fxi->setLoaded(true);
-
-    // Store geometry data before potentially deleting fxi
-    GDTFGeometryData *geoData = parser.takeGeometryData();
-    QString geoKey = fxi->manufacturer() + QChar('\0') + fxi->model();
+    fxi->setGdtfGeometryData(parser.takeGeometryData());
 
     if (addFixtureDef(fxi) == false)
     {
         qDebug() << Q_FUNC_INFO << "Deleting duplicate GDTF" << path;
         delete fxi;
-        delete geoData;
-    }
-    else if (geoData != nullptr)
-    {
-        m_gdtfGeometry.insert(geoKey, geoData);
-        fxi->setGdtfGeometryData(geoData);
     }
     fxi = NULL;
 
@@ -550,9 +512,3 @@ int QLCFixtureDefCache::loadGDTFCache(const QString &cacheDir)
     return loaded;
 }
 
-const GDTFGeometryData *QLCFixtureDefCache::gdtfGeometry(
-    const QString &manufacturer, const QString &model) const
-{
-    QString key = manufacturer + QChar('\0') + model;
-    return m_gdtfGeometry.value(key, nullptr);
-}

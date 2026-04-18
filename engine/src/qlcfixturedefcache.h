@@ -27,7 +27,6 @@
 
 class QXmlStreamReader;
 class QLCFixtureDef;
-struct GDTFGeometryData;
 
 /** @addtogroup engine Engine
  * @{
@@ -76,20 +75,6 @@ public:
      */
     QLCFixtureDef* fixtureDef(const QString& manufacturer,
                               const QString& model) const;
-
-    /**
-     * Look up a GDTF-backed fixture definition by its source filename.
-     *
-     * Used by MVR import to resolve a Fixture's `<GDTFSpec>` reference (which
-     * names a `.gdtf` file embedded in the MVR archive) back to the
-     * QLCFixtureDef that the cache built when loading that same file.
-     *
-     * @param filename The GDTF filename (basename only, with or without
-     *                 `.gdtf` extension). Case-insensitive on macOS/Windows.
-     * @return Matching fixture def or nullptr if no cached def was loaded
-     *         from a file with that basename.
-     */
-    QLCFixtureDef* fixtureDefByGdtfFile(const QString& filename) const;
 
     /**
      * Get a list of available manufacturer names.
@@ -208,17 +193,9 @@ public:
      *  Used at startup to pick up fixtures downloaded from gdtf-share.com. */
     int loadGDTFCache(const QString& cacheDir);
 
-    /**
-     * Get GDTF geometry data for a fixture definition (if loaded from .gdtf).
-     * Returns nullptr for QXF/D4 fixtures.
-     */
-    const GDTFGeometryData *gdtfGeometry(const QString &manufacturer,
-                                         const QString &model) const;
-
 private:
     QString m_mapAbsolutePath;
     QList <QLCFixtureDef*> m_defs;
-    QMap<QString, GDTFGeometryData*> m_gdtfGeometry;  // key: "manufacturer\0model"
 };
 
 /** @} */

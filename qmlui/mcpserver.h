@@ -129,6 +129,7 @@ private:
 
     QJsonObject toolCalibrateAddObs(const QJsonObject &args);
     QJsonObject toolCalibrateRunSolve(const QJsonObject &args);
+    QJsonObject toolImportMvr(const QJsonObject &args);
 
     // Helpers
     QJsonObject makeResult(int id, const QJsonObject &result);

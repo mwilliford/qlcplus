@@ -836,8 +836,6 @@ void SpatialView::rebuildFixtures()
     SpatialModel *sm = m_doc->spatialModel();
     std::vector<qlcrender::RenderFixture> fixtures;
 
-    QLCFixtureDefCache *defCache = m_doc->fixtureDefCache();
-
     for (const QString &id : sm->fixtureIds())
     {
         Fixture *fxi = m_doc->fixture(id.toUInt());
@@ -853,7 +851,7 @@ void SpatialView::rebuildFixtures()
         {
             const QString &mfg = fxi->fixtureDef()->manufacturer();
             const QString &mdl = fxi->fixtureDef()->model();
-            const GDTFGeometryData *geoData = defCache->gdtfGeometry(mfg, mdl);
+            const GDTFGeometryData *geoData = fxi->fixtureDef()->gdtfGeometryData();
 
             // QXF fixture without GDTF data — synthesize and cache
             if (!geoData)

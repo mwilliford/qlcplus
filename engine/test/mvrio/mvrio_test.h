@@ -31,6 +31,20 @@ private slots:
     // Import — real libMVRgdtf round-trip using a synthesized MVR
     void importEmptyMvr_succeedsWithZeroFixtures();
     void importMvr_missingGdtfIsSkippedNotAborted();
+
+    // Project-scoped GDTF registry — the import routes embedded GDTFs into
+    // Doc::projectFixtureDefCache() rather than the user's global cache.
+    void importMvr_dedupsGdtfWithinSameFile();
+    void importMvr_projectCacheIsolatedFromGlobalCache();
+    void clearContents_purgesProjectCacheButNotGlobal();
+
+    // Export — MVR-2
+    void exportMvr_emptyDocProducesOpenableArchive();
+    void exportMvr_roundTripPreservesFixturesAndPositions();
+    void exportMvr_dedupsGdtfAcrossFixtures();
+    void exportMvr_fallsBackToIdentityWithoutSpatialModel();
+    void exportMvr_synthesizesGdtfForQxfOnlyFixtures();
+    void exportMvr_preservesMvrUuidOnRoundTrip();
 };
 
 #endif // MVRIO_TEST_H

@@ -30,6 +30,7 @@
 #include "qlcchannel.h"
 #include "qlcfile.h"
 #include "fixture.h"
+#include "gdtfgeometrydata.h"
 
 QLCFixtureDef::QLCFixtureDef()
     : m_isLoaded(false)
@@ -56,6 +57,17 @@ QLCFixtureDef::~QLCFixtureDef()
 
     while (m_modes.isEmpty() == false)
         delete m_modes.takeFirst();
+
+    delete m_gdtfGeoData;
+    m_gdtfGeoData = nullptr;
+}
+
+void QLCFixtureDef::setGdtfGeometryData(GDTFGeometryData *data)
+{
+    if (m_gdtfGeoData == data)
+        return;
+    delete m_gdtfGeoData;
+    m_gdtfGeoData = data;
 }
 
 QLCFixtureDef& QLCFixtureDef::operator=(const QLCFixtureDef& fixture)

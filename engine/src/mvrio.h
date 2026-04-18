@@ -21,16 +21,20 @@
 #define MVRIO_H
 
 #include <QObject>
+#include <QSet>
 #include <QString>
 #include <QStringList>
 
 #include <rigmath/rigid_transform.hpp>
 
 class Doc;
+class Fixture;
 
 // Forward-declare the libMVRgdtf struct so callers don't need its header.
 namespace VectorworksMVR {
     struct STransformMatrix;
+    class ISceneObj;
+    class IMediaRessourceVectorInterface;
 }
 
 /**
@@ -55,18 +59,17 @@ public:
      * Import fixtures, focus points, and static geometry from an MVR file.
      *
      * Behaviour:
-     *  - libMVRgdtf auto-extracts attached GDTF files next to the MVR (in
-     *    a sibling `MVR_Export/` directory). We copy any `.gdtf` files into
-     *    QLC+'s per-user GDTF cache and reload the fixture-def cache so the
-     *    imported fixtures can be resolved.
+     *  - Every GDTF attached to the MVR is parsed directly from memory into
+     *    the Doc's *project* fixture-def cache (`Doc::projectFixtureDefCache`).
+     *    The user's global GDTF library is never written to — MVR content is
+     *    treated as self-contained, matching commercial consoles.
      *  - Each Fixture node is created as a QLC+ Fixture with universe+address
      *    from the MVR addresses and a RigidTransform written to the
      *    SpatialModel committed layer.
      *  - Focus points are added to the SpatialModel; fixture↔focus-point
      *    assignments are resolved in a second pass.
-     *  - Fixtures whose referenced GDTF is missing from the archive and not
-     *    already in the local cache are skipped with a warning — import is
-     *    not aborted.
+     *  - Fixtures whose referenced GDTF failed to parse (or wasn't embedded)
+     *    are skipped with a warning — import is not aborted.
      *
      * Import is additive: existing workspace state is untouched.
      *
@@ -77,7 +80,39 @@ public:
      */
     bool importMvr(const QString &mvrPath);
 
-    /** Human-readable error from the most recent import, or empty string. */
+    /**
+     * Export the current Doc's fixture rig to an MVR file.
+     *
+     * Behaviour:
+     *  - Produces a single layer ("Rig") with one `<Fixture>` entry per
+     *    patched Fixture in the Doc.
+     *  - Each fixture's transform comes from `SpatialModel::committedTransform`
+     *    when available; fixtures with no committed transform get the
+     *    identity at the world origin.
+     *  - GDTFs are embedded directly in the archive — from raw bytes stored
+     *    on the `QLCFixtureDef` (MVR-imported defs) when present, otherwise
+     *    read from the def's `definitionSourceFile()` if it points at an
+     *    on-disk `.gdtf`. Each GDTF is embedded at most once per export.
+     *  - Fixtures backed by a QXF-only def (no GDTF source) are skipped
+     *    with a warning — proper synthesis is deferred to MVR-3.
+     *  - Fixtures without a stored `mvrUuid()` get a freshly generated one
+     *    written back to the Fixture so subsequent round-trips are stable.
+     *
+     * @return true on success; on failure `lastError()` describes the problem.
+     */
+    bool exportMvr(const QString &mvrPath);
+
+    /** Names of fixtures that were skipped during the last export because
+     *  no embeddable GDTF was available (QXF-only defs pending MVR-3). */
+    QStringList skippedOnExport() const { return m_skippedOnExport; }
+
+    /** Number of fixtures written by the most recent export. */
+    int exportedFixtureCount() const { return m_exportedFixtures; }
+
+    /** Number of GDTF archives embedded by the most recent export. */
+    int exportedGdtfCount() const { return m_exportedGdtfs; }
+
+    /** Human-readable error from the most recent import/export, or empty. */
     QString lastError() const { return m_lastError; }
 
     /** Number of fixtures successfully created by the most recent import. */
@@ -136,6 +171,11 @@ private:
     int m_importedFocusPoints = 0;
     QStringList m_missingGdtfs;
 
+    // Populated during exportMvr()
+    int m_exportedFixtures = 0;
+    int m_exportedGdtfs = 0;
+    QStringList m_skippedOnExport;
+
     // Internal helpers — implemented in mvrio.cpp
     struct ImportState;
     bool importMvrInternal(const QString &mvrPath, ImportState &state);
@@ -143,9 +183,30 @@ private:
     bool importFixture(void *fixtureSceneObj, ImportState &state);
     bool importFocusPoint(void *fpSceneObj, ImportState &state);
 
-    /** Copy any MVR-extracted `.gdtf` files into the QLC+ GDTF cache dir
-     *  and force a reload of the fixture-def cache. Returns the cache dir. */
-    QString ingestExtractedGdtfs(const QString &mvrPath);
+    /** Parse every GDTF that libMVRgdtf extracted for this archive into the
+     *  Doc's project fixture-def cache, keyed by GDTFSpec filename so the
+     *  scene walk can resolve `<Fixture GDTFSpec="...">` nodes. Results are
+     *  written into `state.defsByGdtfFile`. The user's global gdtf-cache is
+     *  not touched. Must be called while the IMediaRessourceVectorInterface
+     *  is still alive (libMVRgdtf deletes the export dir on close). */
+    void parseEmbeddedGdtfs(ImportState &state);
+
+    /** Embed the GDTF for a single fixture into the MVR archive, skipping
+     *  any filename already present in `alreadyEmbedded`. Returns the
+     *  filename used inside the archive, or empty string if nothing was
+     *  embedded (QXF-only fixtures or unreadable source). */
+    QString embedGdtfForFixture(VectorworksMVR::IMediaRessourceVectorInterface *mvr,
+                                Fixture *fxi,
+                                QSet<QString> &alreadyEmbedded);
+
+    /** Write a single fixture into the given layer. Returns true on success.
+     *  `gdtfFilename` is the archive-relative filename that the fixture's
+     *  `<GDTFSpec>` should reference (empty if the fixture had no embeddable
+     *  GDTF — export still writes the record so the rig is preserved). */
+    bool writeFixture(VectorworksMVR::IMediaRessourceVectorInterface *mvr,
+                      VectorworksMVR::ISceneObj *layer,
+                      Fixture *fxi,
+                      const QString &gdtfFilename);
 };
 
 #endif // MVRIO_H

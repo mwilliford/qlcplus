@@ -141,7 +141,7 @@ signals:
      * Engine components
      *********************************************************************/
 public:
-    /** Get the fixture definition cache object */
+    /** Get the fixture definition cache object (user library: QXF, gdtf-share). */
     QLCFixtureDefCache *fixtureDefCache() const;
 
     /** Set the fixure definition cache reference. This is useful
@@ -149,6 +149,18 @@ public:
      *  Note: deletion of an existing cache must be performed before calling
      *        this method, otherwise it creates a memory leak */
     void setFixtureDefinitionCache(QLCFixtureDefCache *cache);
+
+    /** Per-workspace fixture definition cache. Populated by MVR import
+     *  (and later .bhx load) with GDTFs embedded in the project file.
+     *  Cleared on clearContents(). The user library (fixtureDefCache())
+     *  is never written to from these paths. */
+    QLCFixtureDefCache *projectFixtureDefCache() const;
+
+    /** Look up a fixture definition by (manufacturer, model), checking the
+     *  project cache first and falling back to the user library. Used for
+     *  paths that may encounter defs embedded in an MVR/.bhx. */
+    QLCFixtureDef *resolveFixtureDef(const QString &manufacturer,
+                                     const QString &model) const;
 
     /** Get the channel modifiers cache object */
     QLCModifiersCache *modifiersCache() const;
@@ -176,6 +188,7 @@ public:
 
 private:
     QLCFixtureDefCache *m_fixtureDefCache;
+    QLCFixtureDefCache *m_projectFixtureDefCache;
     QLCModifiersCache *m_modifiersCache;
     RGBScriptsCache *m_rgbScriptsCache;
     IOPluginCache *m_ioPluginCache;

@@ -708,6 +708,20 @@ void McpServer::registerBuiltinTools()
         },
         [this](const QJsonObject &args) { return toolCalibrateRunSolve(args); }
     });
+
+    registerTool({
+        "import_mvr",
+        "Import an MVR (My Virtual Rig) file into the current workspace. "
+        "Returns fixture count, focus point count, and any missing GDTF names.",
+        QJsonObject{
+            {"type", "object"},
+            {"properties", QJsonObject{
+                {"path", QJsonObject{{"type", "string"}, {"description", "Absolute path to the .mvr file"}}},
+            }},
+            {"required", QJsonArray{"path"}}
+        },
+        [this](const QJsonObject &args) { return toolImportMvr(args); }
+    });
 }
 
 // Find a window by title substring from the application's window list.
@@ -1421,6 +1435,28 @@ QJsonObject McpServer::toolCalibrateRunSolve(const QJsonObject &)
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
+
+QJsonObject McpServer::toolImportMvr(const QJsonObject &args)
+{
+    const QString path = args["path"].toString();
+    if (path.isEmpty())
+        return mcpError("import_mvr: missing 'path' argument");
+
+    // Call App::importMvr() via QMetaObject on the QQuickWindow (which is App).
+    // Returns "ok|fixCount|fpCount|missing1,missing2" or "error|message".
+    QString result;
+    bool ok = QMetaObject::invokeMethod(
+        m_window,
+        "importMvr",
+        Qt::DirectConnection,
+        Q_RETURN_ARG(QString, result),
+        Q_ARG(QString, path));
+
+    if (!ok)
+        return mcpError("import_mvr: invokeMethod failed (App::importMvr not found)");
+
+    return mcpText(result);
+}
 
 QJsonObject McpServer::makeResult(int id, const QJsonObject &result)
 {
