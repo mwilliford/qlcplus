@@ -339,6 +339,15 @@ Design doc: `../docs/PRD-rigmath-integration.md` (TBD). Plan: `../.claude/plans/
 - [ ] **CalibrationModel class**: Holds rigmath C++ fixture instances from pushed config.
 - [ ] **Client-side `aim_at`**: Real-time world→DMX via rigmath C++ inverse kinematics, no server round-trip.
 
+## Upstream Sync (mcallegari/qlcplus master)
+
+Last rebase onto upstream HEAD: 2026-04-18 (brought in 12 commits, zero conflicts). Follow-ups worth considering now that upstream is merged:
+
+- [ ] `4ebdfbb7a engine: add RGBMatrix colors and pattern override` — upstream added override fields on RGBMatrix. Check whether `AgentConnection::serializeFunction()` RGBMatrix branch should emit them so the agent sees the new state.
+- [ ] Retest user-visible qmlui fixes brought in by the rebase (`60de0fa40` double-click on fixture items, `56da98d4a`/`f9982542e` context detach/reattach, `b121171e9` VC Audio Triggers DMX refresh, `f0ca913f9` VC Speed Dial attached names). Agent code is untouched but behaviour is.
+
+Routine going forward: `git fetch upstream && git rebase upstream/master` on the feature branch.
+
 ## Build / CI
 
 - [ ] **Migrate macOS CI to Qt6**: macOS workflow uses Qt 5.15.2 (macos-13 Intel). Linux and Windows already use Qt 6.8.1. Migrate to Qt6 + macos-14 (ARM). Qt6 supports both ARM and Intel via universal binaries, so Intel support is NOT dropped — just needs `CMAKE_OSX_ARCHITECTURES="arm64;x86_64"` for universal build. Alternatively, build ARM-only and drop Intel (macOS 13+ is the practical minimum for Qt6).
