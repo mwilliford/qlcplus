@@ -259,7 +259,7 @@ void MonitorProperties_Test::saveAsLegacyRoundTrip()
 
 void MonitorProperties_Test::saveAsZUpRoundTrip()
 {
-    // Load legacy → save as Z-up (.aqw) → reload → positions should be identical
+    // Load legacy → save as Z-up (.bhx) → reload → positions should be identical
     MonitorProperties mp;
     QXmlStreamReader reader(LEGACY_XML);
     reader.readNextStartElement();

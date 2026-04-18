@@ -6,7 +6,7 @@
   and a running agent server. The server must be started separately.
 
   Environment variables:
-    AGENT_TEST_WORKSPACE   — path to test .aqw file
+    AGENT_TEST_WORKSPACE   — path to test .qxw file
     AGENT_TEST_SERVER_URL  — WebSocket URL (default: ws://localhost:18080/ws/agent)
     ANTHROPIC_API_KEY      — if set, agent behavior tests run; otherwise they are skipped
 
@@ -51,7 +51,7 @@ static QString testWorkspacePath()
     if (!envPath.isEmpty())
         return envPath;
     // Default: look relative to build directory
-    return QStringLiteral("../../../../test_integration.aqw");
+    return QStringLiteral("../../../../test_integration.qxw");
 }
 
 static QUrl testServerUrl()

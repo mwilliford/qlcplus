@@ -20,6 +20,8 @@
 #ifndef MVRIO_H
 #define MVRIO_H
 
+#include <QByteArray>
+#include <QMap>
 #include <QObject>
 #include <QSet>
 #include <QString>
@@ -101,6 +103,20 @@ public:
      * @return true on success; on failure `lastError()` describes the problem.
      */
     bool exportMvr(const QString &mvrPath);
+
+    /**
+     * Export like exportMvr() but also embed arbitrary extra files alongside
+     * the MVR rig. Each entry in @p extraStreams is written into the archive
+     * at the map key's path (e.g. "programming/functions.xml", "manifest.json").
+     *
+     * Used by BhxIO to produce a `.bhx` archive: MVR rig at the root +
+     * QLC+-native streams in sibling folders. The result is still a valid
+     * MVR — unknown files in the zip are ignored by every MVR reader.
+     *
+     * @return true on success; on failure lastError() describes the problem.
+     */
+    bool exportMvrWithExtras(const QString &mvrPath,
+                              const QMap<QString, QByteArray> &extraStreams);
 
     /** Names of fixtures that were skipped during the last export because
      *  no embeddable GDTF was available (QXF-only defs pending MVR-3). */

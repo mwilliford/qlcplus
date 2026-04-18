@@ -35,6 +35,7 @@ add_library(${module_name} SHARED
     agentcredentialstore.cpp agentcredentialstore.h
     agentsession.cpp agentsession.h
     avolitesd4parser.cpp avolitesd4parser.h
+    bhxio.cpp bhxio.h
     gdtfgeometrydata.h
     gdtfkinematics.cpp gdtfkinematics.h
     gdtfparser.cpp gdtfparser.h
@@ -120,6 +121,9 @@ target_link_libraries(${module_name} PUBLIC
     Qt${QT_MAJOR_VERSION}::Network
     Qt${QT_MAJOR_VERSION}::WebSockets
 )
+
+# BhxIO uses QZipReader/QZipWriter (Qt private API, Q_CORE_EXPORT'd, stable).
+target_link_libraries(${module_name} PRIVATE Qt${QT_MAJOR_VERSION}::CorePrivate)
 
 target_link_libraries(${module_name} PRIVATE qlcplusaudio)
 target_link_libraries(${module_name} PUBLIC rigmath rigmath_solver)

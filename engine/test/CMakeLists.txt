@@ -2,6 +2,7 @@ project(test)
 
 add_subdirectory(agentcontext)
 add_subdirectory(agentintegration)
+add_subdirectory(bhxio)
 add_subdirectory(calibrationmodel)
 add_subdirectory(gdtfkinematics)
 add_subdirectory(gdtfwriter)

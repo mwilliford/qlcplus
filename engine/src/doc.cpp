@@ -22,6 +22,7 @@
 #include <QXmlStreamWriter>
 #include <QStringList>
 #include <QString>
+#include <QBuffer>
 #include <QDebug>
 #include <QList>
 #include <QTime>
@@ -30,6 +31,7 @@
 #include <QRandomGenerator>
 #endif
 
+#include "qlcfile.h"
 #include "qlcfixturemode.h"
 #include "qlcfixturedef.h"
 
@@ -1325,6 +1327,25 @@ bool Doc::loadXML(QXmlStreamReader &doc, bool loadIO)
     m_loadStatus = Loading;
     emit loading();
 
+    dispatchEngineChildren(doc, loadIO);
+
+    postLoad();
+
+    // Migrate fixture positions from MonitorProperties if no <SpatialModel> was found
+    if (m_spatialModel == NULL || spatialModel()->fixtureIds().isEmpty())
+    {
+        if (m_monitorProps != NULL && !m_monitorProps->fixtureItemsID().isEmpty())
+            spatialModel()->migrateFromMonitorProperties(m_monitorProps);
+    }
+
+    m_loadStatus = Loaded;
+    emit loaded();
+
+    return true;
+}
+
+void Doc::dispatchEngineChildren(QXmlStreamReader &doc, bool loadIO)
+{
     if (doc.attributes().hasAttribute(KXMLQLCStartupFunction))
     {
         quint32 sID = doc.attributes().value(KXMLQLCStartupFunction).toString().toUInt();
@@ -1334,7 +1355,6 @@ bool Doc::loadXML(QXmlStreamReader &doc, bool loadIO)
 
     while (doc.readNextStartElement())
     {
-        //qDebug() << "Doc tag:" << doc.name();
         if (doc.name() == KXMLFixture)
         {
             Fixture::loader(doc, this);
@@ -1354,7 +1374,6 @@ bool Doc::loadXML(QXmlStreamReader &doc, bool loadIO)
         }
         else if (doc.name() == KXMLQLCFunction)
         {
-            //qDebug() << doc.attributes().value("Name").toString();
             Function::loader(doc, this);
         }
         else if (doc.name() == KXMLQLCBus)
@@ -1388,20 +1407,6 @@ bool Doc::loadXML(QXmlStreamReader &doc, bool loadIO)
             doc.skipCurrentElement();
         }
     }
-
-    postLoad();
-
-    // Migrate fixture positions from MonitorProperties if no <SpatialModel> was found
-    if (m_spatialModel == NULL || spatialModel()->fixtureIds().isEmpty())
-    {
-        if (m_monitorProps != NULL && !m_monitorProps->fixtureItemsID().isEmpty())
-            spatialModel()->migrateFromMonitorProperties(m_monitorProps);
-    }
-
-    m_loadStatus = Loaded;
-    emit loaded();
-
-    return true;
 }
 
 bool Doc::hasAgentContext() const
@@ -1532,6 +1537,165 @@ bool Doc::saveXML(QXmlStreamWriter *doc) const
     doc->writeEndElement();
 
     return true;
+}
+
+// ---------------------------------------------------------------------------
+// .bhx split XML streams
+// ---------------------------------------------------------------------------
+//
+// Each helper produces a standalone <Workspace><Engine>...</Engine></Workspace>
+// document as a QByteArray. BhxIO embeds these as sibling files inside the
+// .bhx zip (programming/functions.xml, io/universes.xml, calibration/spatial.xml).
+// On reload, loadXmlStream() feeds each buffer back into the same dispatch
+// path loadXML() uses — preserving Fixture IDs and every other QLC+-native
+// detail that would be lost if we relied solely on the MVR rig half.
+
+static void writeWorkspaceHeader(QXmlStreamWriter &doc)
+{
+    doc.writeStartDocument();
+    doc.writeDTD(QString("<!DOCTYPE %1>").arg(KXMLQLCWorkspace));
+    doc.writeStartElement(KXMLQLCWorkspace);
+    doc.writeAttribute(
+        "xmlns",
+        QString("%1%2").arg(KXMLQLCplusNamespace).arg(KXMLQLCWorkspace));
+    doc.writeStartElement(KXMLQLCEngine);
+}
+
+static void writeWorkspaceFooter(QXmlStreamWriter &doc)
+{
+    doc.writeEndElement(); // </Engine>
+    doc.writeEndElement(); // </Workspace>
+    doc.writeEndDocument();
+}
+
+QByteArray Doc::saveProgrammingXmlStream() const
+{
+    QByteArray out;
+    QXmlStreamWriter doc(&out);
+    doc.setAutoFormatting(true);
+    doc.setAutoFormattingIndent(1);
+
+    writeWorkspaceHeader(doc);
+
+    if (startupFunction() != Function::invalidId())
+        doc.writeAttribute(KXMLQLCStartupFunction, QString::number(startupFunction()));
+
+    m_agentContext.saveXML(&doc);
+
+    for (Fixture *fxi : fixtures())
+        fxi->saveXML(&doc);
+
+    for (FixtureGroup *grp : fixtureGroups())
+        grp->saveXML(&doc);
+
+    for (ChannelsGroup *grp : channelsGroups())
+        grp->saveXML(&doc);
+
+    for (QLCPalette *palette : palettes())
+        palette->saveXML(&doc);
+
+    for (Function *func : functions())
+        func->saveXML(&doc);
+
+    if (m_monitorProps != nullptr)
+        m_monitorProps->saveXML(&doc, this);
+
+    writeWorkspaceFooter(doc);
+    return out;
+}
+
+QByteArray Doc::saveIoXmlStream() const
+{
+    QByteArray out;
+    QXmlStreamWriter doc(&out);
+    doc.setAutoFormatting(true);
+    doc.setAutoFormattingIndent(1);
+
+    writeWorkspaceHeader(doc);
+    m_ioMap->saveXML(&doc);
+    writeWorkspaceFooter(doc);
+    return out;
+}
+
+QByteArray Doc::saveCalibrationXmlStream() const
+{
+    QByteArray out;
+    QXmlStreamWriter doc(&out);
+    doc.setAutoFormatting(true);
+    doc.setAutoFormattingIndent(1);
+
+    writeWorkspaceHeader(doc);
+
+    if (m_spatialModel != nullptr)
+        m_spatialModel->saveXML(doc);
+
+    if (m_calibrationModel != nullptr)
+        m_calibrationModel->saveXML(doc);
+
+    writeWorkspaceFooter(doc);
+    return out;
+}
+
+bool Doc::loadXmlStream(const QByteArray &stream, bool loadIO)
+{
+    QBuffer buf;
+    buf.setData(stream);
+    if (!buf.open(QIODevice::ReadOnly))
+        return false;
+
+    QXmlStreamReader doc(&buf);
+
+    // Walk to the <Workspace> root, then <Engine>.
+    if (!doc.readNextStartElement())
+    {
+        qWarning() << Q_FUNC_INFO << "empty XML stream";
+        return false;
+    }
+    if (doc.name() != KXMLQLCWorkspace)
+    {
+        qWarning() << Q_FUNC_INFO << "expected <Workspace>, got"
+                   << doc.name().toString();
+        return false;
+    }
+
+    while (doc.readNextStartElement())
+    {
+        if (doc.name() == KXMLQLCEngine)
+        {
+            dispatchEngineChildren(doc, loadIO);
+        }
+        else
+        {
+            qWarning() << Q_FUNC_INFO
+                       << "ignoring unexpected <Workspace> child:"
+                       << doc.name().toString();
+            doc.skipCurrentElement();
+        }
+    }
+
+    return !doc.hasError();
+}
+
+void Doc::beginMultiStreamLoad()
+{
+    clearErrorLog();
+    m_loadStatus = Loading;
+    emit loading();
+}
+
+void Doc::endMultiStreamLoad()
+{
+    postLoad();
+
+    // Migrate fixture positions from MonitorProperties if no <SpatialModel> was found
+    if (m_spatialModel == NULL || spatialModel()->fixtureIds().isEmpty())
+    {
+        if (m_monitorProps != NULL && !m_monitorProps->fixtureItemsID().isEmpty())
+            spatialModel()->migrateFromMonitorProperties(m_monitorProps);
+    }
+
+    m_loadStatus = Loaded;
+    emit loaded();
 }
 
 void Doc::appendToErrorLog(QString error)

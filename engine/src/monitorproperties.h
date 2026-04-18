@@ -112,7 +112,7 @@ public:
     static QVector3D zUpToLegacyGridSize(const QVector3D &grid);
 
     /** Set by App before saveXML to control output format.
-     *  true = legacy Y-up (for .qxw), false = Z-up (for .aqw). */
+     *  true = legacy Y-up (for .qxw), false = Z-up (for .bhx). */
     static bool s_saveLegacyFormat;
 
 private:

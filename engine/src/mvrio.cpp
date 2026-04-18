@@ -593,6 +593,12 @@ static QString gdtfArchiveNameForDef(const QLCFixtureDef *def)
 
 bool MvrIO::exportMvr(const QString &mvrPath)
 {
+    return exportMvrWithExtras(mvrPath, QMap<QString, QByteArray>());
+}
+
+bool MvrIO::exportMvrWithExtras(const QString &mvrPath,
+                                 const QMap<QString, QByteArray> &extraStreams)
+{
     m_lastError.clear();
     m_exportedFixtures = 0;
     m_exportedGdtfs = 0;
@@ -653,6 +659,28 @@ bool MvrIO::exportMvr(const QString &mvrPath)
         m_exportedFixtures++;
     }
 
+    // --- Embed BhxIO extension streams (programming/, console/, io/,
+    //     calibration/, manifest.json). Using AddBufferToMvrFile because it
+    //     accepts arbitrary subdir paths — the archive stays a valid MVR. ---
+    for (auto it = extraStreams.constBegin(); it != extraStreams.constEnd(); ++it)
+    {
+        // AddBufferToMvrFile wants a mutable char* (legacy signature) — copy
+        // into a local so we can hand it a non-const pointer without touching
+        // the input map.
+        QByteArray bytes = it.value();
+        const VCOMError addErr = mvr->AddBufferToMvrFile(
+            it.key().toUtf8().constData(),
+            bytes.data(),
+            static_cast<size_t>(bytes.size()));
+        if (addErr != kVCOMError_NoError)
+        {
+            m_lastError = QStringLiteral(
+                "AddBufferToMvrFile failed for %1 (err=%2)").arg(it.key()).arg(addErr);
+            mvr->Close();
+            return false;
+        }
+    }
+
     err = mvr->Close();
     if (err != kVCOMError_NoError)
     {
@@ -663,6 +691,7 @@ bool MvrIO::exportMvr(const QString &mvrPath)
     qDebug() << "[MvrIO] Exported" << mvrPath
              << "fixtures=" << m_exportedFixtures
              << "gdtfs=" << m_exportedGdtfs
+             << "extras=" << extraStreams.size()
              << "skipped=" << m_skippedOnExport;
     return true;
 }

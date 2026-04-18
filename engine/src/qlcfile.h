@@ -41,8 +41,8 @@ class QString;
 // File extensions
 #define KExtFixture          QStringLiteral(".qxf")  // 'Q'LC+ 'X'ml 'F'ixture
 #define KExtFixtureList      QStringLiteral(".qxfl") // 'Q'LC+ 'X'ml 'F'ixture 'L'ist
-#define KExtWorkspace        QStringLiteral(".qxw")  // 'Q'LC+ 'X'ml 'W'orkspace
-#define KExtAgentWorkspace   QStringLiteral(".aqw")  // 'A'gent 'Q'LC+ 'W'orkspace
+#define KExtWorkspace        QStringLiteral(".qxw")  // 'Q'LC+ 'X'ml 'W'orkspace (legacy read-only import)
+#define KExtBunnyhole        QStringLiteral(".bhx")  // Bunnyhole workspace (MVR-based zip container, native save format)
 #define KExtAgentFixture     QStringLiteral(".aqf")  // 'A'gent 'Q'LC+ 'F'ixture
 #define KExtInputProfile     QStringLiteral(".qxi")  // 'Q'LC+ 'X'ml 'I'nput profile
 #define KExtModifierTemplate QStringLiteral(".qxmt") // 'Q'LC+ 'X'ml 'M'odifier 'T'emplate
@@ -57,6 +57,7 @@ class QString;
 #endif
 
 // Generic XML tags common for all documents
+#define KXMLQLCWorkspace        QStringLiteral("Workspace")
 #define KXMLQLCCreator          QStringLiteral("Creator")
 #define KXMLQLCCreatorName      QStringLiteral("Name")
 #define KXMLQLCCreatorVersion   QStringLiteral("Version")

@@ -74,6 +74,7 @@
 #include "rgbscriptscache.h"
 #include "qlcconfig.h"
 #include "qlcfile.h"
+#include "bhxio.h"
 
 #define SETTINGS_GEOMETRY      QStringLiteral("workspace/windowrect")
 #define SETTINGS_WORKINGPATH   QStringLiteral("workspace/workingpath")
@@ -733,11 +734,20 @@ QString App::autoSaveFileName() const
     QString fName = m_fileName;
 
     if (fName.isEmpty())
-        fName = "NewProject.autosave.qxw";
+        fName = "NewProject.autosave" + KExtBunnyhole;
+    else if (fName.endsWith(KExtBunnyhole))
+    {
+        fName.chop(QString(KExtBunnyhole).length());
+        fName.append(".autosave" + KExtBunnyhole);
+    }
+    else if (fName.endsWith(KExtWorkspace))
+    {
+        fName.chop(QString(KExtWorkspace).length());
+        fName.append(".autosave" + KExtBunnyhole);
+    }
     else
     {
-        fName.remove(".qxw");
-        fName.append(".autosave.qxw");
+        fName.append(".autosave" + KExtBunnyhole);
     }
 
     return fName;
@@ -913,9 +923,17 @@ bool App::saveWorkspace(const QString &fileName)
     if (localFilename.startsWith("file:"))
         localFilename = QUrl(fileName).toLocalFile();
 
-    /* Always use a workspace suffix */
-    if (!localFilename.endsWith(KExtWorkspace) && !localFilename.endsWith(KExtAgentWorkspace))
-        localFilename += KExtWorkspace;
+    /* Always use a workspace suffix — default to .bhx (native save format).
+       .qxw is now read-only; treat saves to .qxw as upgrades to .bhx. */
+    if (localFilename.endsWith(KExtWorkspace))
+    {
+        localFilename.replace(localFilename.length() - QString(KExtWorkspace).length(),
+                              QString(KExtWorkspace).length(), KExtBunnyhole);
+    }
+    else if (!localFilename.endsWith(KExtBunnyhole))
+    {
+        localFilename += KExtBunnyhole;
+    }
 
     /* Set the workspace path before saving the new XML. In this way local files
        can be loaded even if the workspace file will be moved */
@@ -942,6 +960,10 @@ QFileDevice::FileError App::loadXML(const QString &fileName)
 
     if (fileName.isEmpty() == true)
         return QFile::OpenError;
+
+    /* .bhx is the native zip-container format — route through BhxIO */
+    if (fileName.endsWith(KExtBunnyhole))
+        return loadBhx(fileName);
 
     QXmlStreamReader *doc = QLCFile::getXMLReader(fileName);
     if (doc == nullptr || doc->device() == nullptr || doc->hasError())
@@ -1057,6 +1079,10 @@ bool App::loadXML(QXmlStreamReader &doc, bool goToConsole, bool fromMemory)
 
 QFile::FileError App::saveXML(const QString& fileName, bool autosave)
 {
+    /* .bhx is the native zip-container format — route through BhxIO */
+    if (fileName.endsWith(KExtBunnyhole))
+        return saveBhx(fileName);
+
 #if defined(Q_OS_ANDROID)
     const QString outputFileName(fileName);
 #else
@@ -1148,6 +1174,80 @@ QFile::FileError App::saveXML(const QString& fileName, bool autosave)
         m_doc->resetModified();
     }
 
+    return QFile::NoError;
+}
+
+QFile::FileError App::loadBhx(const QString& fileName)
+{
+    m_doc->setWorkspacePath(QFileInfo(fileName).absolutePath());
+
+    BhxIO io(m_doc);
+    if (!io.openBhx(fileName))
+    {
+        qWarning() << Q_FUNC_INFO << "BhxIO open failed:" << io.lastError();
+        return QFile::ReadError;
+    }
+
+    /* console/virtualconsole.xml is a self-contained <Workspace> document
+       containing <VirtualConsole>. Parse it and dispatch to the QML VC. */
+    QByteArray consoleXml = io.consoleXml();
+    if (!consoleXml.isEmpty() && m_virtualConsole != nullptr)
+    {
+        QXmlStreamReader doc(consoleXml);
+        while (!doc.atEnd())
+        {
+            if (doc.readNext() == QXmlStreamReader::DTD)
+                break;
+        }
+        if (doc.readNextStartElement() && doc.name() == KXMLQLCWorkspace)
+        {
+            while (doc.readNextStartElement())
+            {
+                if (doc.name() == KXMLQLCVirtualConsole)
+                    m_virtualConsole->loadXML(doc);
+                else
+                    doc.skipCurrentElement();
+            }
+        }
+    }
+
+    if (m_virtualConsole != nullptr)
+        m_virtualConsole->postLoad();
+
+    setFileName(fileName);
+    m_doc->resetModified();
+    return QFile::NoError;
+}
+
+QFile::FileError App::saveBhx(const QString& fileName)
+{
+    QByteArray consoleXml;
+    if (m_virtualConsole != nullptr)
+    {
+        QXmlStreamWriter doc(&consoleXml);
+        doc.setAutoFormatting(true);
+        doc.setAutoFormattingIndent(1);
+        doc.writeStartDocument();
+        doc.writeDTD(QString("<!DOCTYPE %1>").arg(KXMLQLCWorkspace));
+        doc.writeStartElement(KXMLQLCWorkspace);
+        doc.writeAttribute("xmlns",
+            QString("%1%2").arg(KXMLQLCplusNamespace).arg(KXMLQLCWorkspace));
+
+        m_virtualConsole->saveXML(&doc);
+
+        doc.writeEndElement();
+        doc.writeEndDocument();
+    }
+
+    BhxIO io(m_doc);
+    if (!io.saveBhx(fileName, consoleXml))
+    {
+        qWarning() << Q_FUNC_INFO << "BhxIO save failed:" << io.lastError();
+        return QFile::WriteError;
+    }
+
+    setFileName(fileName);
+    m_doc->resetModified();
     return QFile::NoError;
 }
 

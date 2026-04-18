@@ -51,6 +51,7 @@
 #include "vcframe.h"
 #include "app.h"
 #include "doc.h"
+#include "bhxio.h"
 
 #include "qlcfixturedefcache.h"
 #include "audioplugincache.h"
@@ -1052,8 +1053,8 @@ QFile::FileError App::slotFileOpen()
 
     /* Append file filters to the dialog */
     QStringList filters;
-    filters << tr("All Workspaces (*%1 *%2)").arg(KExtAgentWorkspace).arg(KExtWorkspace);
-    filters << tr("Agent Workspaces (*%1)").arg(KExtAgentWorkspace);
+    filters << tr("All Workspaces (*%1 *%2)").arg(KExtBunnyhole).arg(KExtWorkspace);
+    filters << tr("Bunnyhole Workspaces (*%1)").arg(KExtBunnyhole);
     filters << tr("QLC+ Workspaces (*%1)").arg(KExtWorkspace);
 #if defined(WIN32) || defined(Q_OS_WIN)
     filters << tr("All Files (*.*)");
@@ -1121,36 +1122,22 @@ QFile::FileError App::slotFileSave()
     {
         error = slotFileSaveAs();
     }
-    else if (fileName().endsWith(KExtWorkspace) && m_doc->hasAgentContext())
+    else if (fileName().endsWith(KExtWorkspace))
     {
-        /* Saving a .qxw that now has agent context — prompt to upgrade */
+        /* .qxw is a read-only legacy format — prompt to upgrade to .bhx */
         QMessageBox::StandardButton btn = QMessageBox::question(this,
-            tr("Save as Agent Workspace?"),
-            tr("This workspace contains agent notes that will be lost if saved "
-               "as a standard QLC+ file (.qxw).\n\n"
-               "Save as Agent Workspace (.aqw) to preserve them?"),
-            QMessageBox::Yes | QMessageBox::No | QMessageBox::Cancel,
+            tr("Upgrade to Bunnyhole Workspace?"),
+            tr("The .qxw format is read-only in this build. "
+               "Save this workspace as Bunnyhole (.bhx) to preserve "
+               "agent notes, spatial calibration, and other extensions.\n\n"
+               "Upgrade to .bhx now?"),
+            QMessageBox::Yes | QMessageBox::Cancel,
             QMessageBox::Yes);
 
-        if (btn == QMessageBox::Yes)
-        {
-            /* Replace .qxw extension with .aqw and save */
-            QString aqwName = fileName();
-            aqwName.replace(aqwName.length() - QString(KExtWorkspace).length(),
-                            QString(KExtWorkspace).length(), KExtAgentWorkspace);
-            error = saveXML(aqwName);
-        }
-        else if (btn == QMessageBox::No)
-        {
-            /* Save as .qxw — agent context will be stripped */
-            error = saveXML(fileName());
-        }
-        else
-        {
+        if (btn != QMessageBox::Yes)
             return QFile::NoError;
-        }
-        handleFileError(error);
-        return error;
+
+        return slotFileSaveAs();
     }
     else
     {
@@ -1176,25 +1163,25 @@ QFile::FileError App::slotFileSaveAs()
     dialog.setWindowTitle(tr("Save Workspace As"));
     dialog.setAcceptMode(QFileDialog::AcceptSave);
 
-    /* Suggest .aqw version of filename when current file is .qxw */
+    /* Suggest .bhx version of filename when current file is .qxw */
     QString suggestedName = fileName();
     if (suggestedName.endsWith(KExtWorkspace))
     {
         suggestedName.replace(suggestedName.length() - QString(KExtWorkspace).length(),
-                              QString(KExtWorkspace).length(), KExtAgentWorkspace);
+                              QString(KExtWorkspace).length(), KExtBunnyhole);
     }
     dialog.selectFile(suggestedName);
 
-    /* Append file filters to the dialog */
+    /* Append file filters to the dialog — only .bhx is writable */
     QStringList filters;
-    filters << tr("Agent Workspaces (*%1)").arg(KExtAgentWorkspace);
-    filters << tr("QLC+ Workspaces (*%1)").arg(KExtWorkspace);
+    filters << tr("Bunnyhole Workspaces (*%1)").arg(KExtBunnyhole);
 #if defined(WIN32) || defined(Q_OS_WIN)
     filters << tr("All Files (*.*)");
 #else
     filters << tr("All Files (*)");
 #endif
     dialog.setNameFilters(filters);
+    dialog.setDefaultSuffix(KExtBunnyhole.mid(1));
 
     /* Append useful URLs to the dialog */
     QList <QUrl> sidebar;
@@ -1210,9 +1197,9 @@ QFile::FileError App::slotFileSaveAs()
     if (fn.isEmpty() == true)
         return QFile::NoError;
 
-    /* Add extension if missing — default to .aqw (agent format) */
-    if (!fn.endsWith(KExtWorkspace) && !fn.endsWith(KExtAgentWorkspace))
-        fn += KExtAgentWorkspace;
+    /* Add extension if missing — .bhx is the only native save format */
+    if (!fn.endsWith(KExtBunnyhole))
+        fn += KExtBunnyhole;
 
     /* Set the workspace path before saving the new XML. In this way local files
        can be loaded even if the workspace file will be moved */
@@ -1488,11 +1475,20 @@ QString App::autoSaveFileName() const
     QString fName = m_fileName;
 
     if (fName.isEmpty())
-        fName = "NewProject.autosave.qxw";
+        fName = "NewProject.autosave" + KExtBunnyhole;
+    else if (fName.endsWith(KExtBunnyhole))
+    {
+        fName.chop(QString(KExtBunnyhole).length());
+        fName.append(".autosave" + KExtBunnyhole);
+    }
+    else if (fName.endsWith(KExtWorkspace))
+    {
+        fName.chop(QString(KExtWorkspace).length());
+        fName.append(".autosave" + KExtBunnyhole);
+    }
     else
     {
-        fName.remove(".qxw");
-        fName.append(".autosave.qxw");
+        fName.append(".autosave" + KExtBunnyhole);
     }
 
     return fName;
@@ -1504,6 +1500,10 @@ QFile::FileError App::loadXML(const QString& fileName)
 
     if (fileName.isEmpty() == true)
         return QFile::OpenError;
+
+    /* .bhx is the native zip-container format — route through BhxIO */
+    if (fileName.endsWith(KExtBunnyhole))
+        return loadBhx(fileName);
 
     QXmlStreamReader *doc = QLCFile::getXMLReader(fileName);
     if (doc == NULL || doc->device() == NULL || doc->hasError())
@@ -1631,6 +1631,10 @@ bool App::loadXML(QXmlStreamReader& doc, bool goToConsole, bool fromMemory)
 
 QFile::FileError App::saveXML(const QString& fileName, bool autosave)
 {
+    /* .bhx is the native zip-container format — route through BhxIO */
+    if (fileName.endsWith(KExtBunnyhole))
+        return saveBhx(fileName, autosave);
+
     QString tempFileName(fileName);
     tempFileName += ".temp";
     QFile file(tempFileName);
@@ -1707,6 +1711,100 @@ QFile::FileError App::saveXML(const QString& fileName, bool autosave)
         m_doc->resetModified();
     }
 
+    return QFile::NoError;
+}
+
+QFile::FileError App::loadBhx(const QString& fileName)
+{
+    m_doc->setWorkspacePath(QFileInfo(fileName).absolutePath());
+
+    BhxIO io(m_doc);
+    if (!io.openBhx(fileName))
+    {
+        qWarning() << Q_FUNC_INFO << "BhxIO open failed:" << io.lastError();
+        return QFile::ReadError;
+    }
+
+    /* Extracted console/virtualconsole.xml is a self-contained <Workspace>
+       document containing <VirtualConsole> and <SimpleDesk>. Parse it and
+       dispatch to the UI singletons. */
+    QByteArray consoleXml = io.consoleXml();
+    if (!consoleXml.isEmpty())
+    {
+        QXmlStreamReader doc(consoleXml);
+        while (!doc.atEnd())
+        {
+            if (doc.readNext() == QXmlStreamReader::DTD)
+                break;
+        }
+        if (doc.readNextStartElement() && doc.name() == KXMLQLCWorkspace)
+        {
+            while (doc.readNextStartElement())
+            {
+                if (doc.name() == KXMLQLCVirtualConsole)
+                    VirtualConsole::instance()->loadXML(doc);
+                else if (doc.name() == KXMLQLCSimpleDesk)
+                    SimpleDesk::instance()->loadXML(doc);
+                else
+                    doc.skipCurrentElement();
+            }
+        }
+    }
+
+    /* Post-load VC like the legacy path does. */
+    VirtualConsole::instance()->postLoad();
+
+    setFileName(fileName);
+    m_doc->resetModified();
+
+    if (!m_doc->errorLog().isEmpty())
+    {
+        QMessageBox msg(QMessageBox::Warning, tr("Warning"),
+                        tr("Some errors occurred while loading the project:")
+                        + "<br><br>" + m_doc->errorLog(), QMessageBox::Ok);
+        msg.setTextFormat(Qt::RichText);
+        msg.exec();
+    }
+
+    m_doc->inputOutputMap()->startUniverses();
+    return QFile::NoError;
+}
+
+QFile::FileError App::saveBhx(const QString& fileName, bool autosave)
+{
+    /* Build a standalone <Workspace> document containing VC + SimpleDesk
+       as the "console" stream. Engine streams (programming/io/calibration)
+       are written by BhxIO via Doc::save*XmlStream(). */
+    QByteArray consoleXml;
+    {
+        QXmlStreamWriter doc(&consoleXml);
+        doc.setAutoFormatting(true);
+        doc.setAutoFormattingIndent(1);
+        doc.writeStartDocument();
+        doc.writeDTD(QString("<!DOCTYPE %1>").arg(KXMLQLCWorkspace));
+        doc.writeStartElement(KXMLQLCWorkspace);
+        doc.writeAttribute("xmlns",
+            QString("%1%2").arg(KXMLQLCplusNamespace).arg(KXMLQLCWorkspace));
+
+        VirtualConsole::instance()->saveXML(&doc);
+        SimpleDesk::instance()->saveXML(&doc);
+
+        doc.writeEndElement(); // </Workspace>
+        doc.writeEndDocument();
+    }
+
+    BhxIO io(m_doc);
+    if (!io.saveBhx(fileName, consoleXml))
+    {
+        qWarning() << Q_FUNC_INFO << "BhxIO save failed:" << io.lastError();
+        return QFile::WriteError;
+    }
+
+    if (!autosave)
+    {
+        setFileName(fileName);
+        m_doc->resetModified();
+    }
     return QFile::NoError;
 }
 

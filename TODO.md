@@ -195,10 +195,10 @@ a palette reference so "aim at Point 1" also sets color/gobo/intensity.
 
 Detailed four-phase plan lives in the monorepo at `docs/PLAN-mvr.md`. Investigation notes, pseudocode, CMake/test wiring, and done-criteria are all there.
 
-- [ ] **MVR-1** — Read-only MVR import (fixtures + focus points + positions)
-- [ ] **MVR-2** — MVR export of current rig (fixtures + transforms + embedded GDTFs)
-- [ ] **MVR-3** — QXF→GDTF on-disk serialization (so QXF-only fixtures can round-trip through MVR)
-- [ ] **MVR-4** — `.bhx` file format (valid MVR zip + sibling `programming/`, `console/`, `io/`, `calibration/` folders; replaces `.aqw`)
+- [x] **MVR-1** — Read-only MVR import (fixtures + focus points + positions)
+- [x] **MVR-2** — MVR export of current rig (fixtures + transforms + embedded GDTFs)
+- [x] **MVR-3** — QXF→GDTF on-disk serialization (so QXF-only fixtures can round-trip through MVR)
+- [x] **MVR-4** — `.bhx` file format (valid MVR zip + sibling `programming/`, `console/`, `io/`, `calibration/` folders; replaces `.aqw`)
 
 Synthetic test-MVR generator moved into MVR-1's test plan (`engine/test/mvrio/`).
 

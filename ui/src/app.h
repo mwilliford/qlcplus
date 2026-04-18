@@ -49,7 +49,7 @@ class App;
  * @{
  */
 
-#define KXMLQLCWorkspace QStringLiteral("Workspace")
+// KXMLQLCWorkspace is declared in engine/src/qlcfile.h
 
 class DetachedContext final : public QMainWindow
 {
@@ -273,6 +273,15 @@ public:
      * @return QFile::NoError if successful.
      */
     QFile::FileError saveXML(const QString& fileName, bool autosave = false);
+
+private:
+    /** Load a `.bhx` archive via BhxIO, then parse extracted VC XML into
+     *  VirtualConsole::instance(). */
+    QFile::FileError loadBhx(const QString& fileName);
+
+    /** Serialize VirtualConsole + SimpleDesk to a standalone `<Workspace>`
+     *  XML blob and save engine + that blob through BhxIO. */
+    QFile::FileError saveBhx(const QString& fileName, bool autosave);
 
 public slots:
     void slotLoadDocFromMemory(QString xmlData);

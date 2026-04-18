@@ -58,7 +58,7 @@ Popup
     property string dialogTitle
     property url dialogCurrentFolder: qlcplus.workingPath
     property url dialogSelectedFile
-    property var dialogNameFilters: [ qsTr("QLC+ files") + " (*.qxw *.aqw *.qxf *.aqf)", qsTr("All files") + " (*)" ]
+    property var dialogNameFilters: [ qsTr("QLC+ files") + " (*.bhx *.qxw *.qxf *.aqf)", qsTr("All files") + " (*)" ]
     property int dialogFileMode: FileDialog.OpenFile
     property int dialogOpMode: App.OpenMode
 
@@ -76,8 +76,7 @@ Popup
                 dialogTitle = qsTr("Save project as...")
                 dialogFileMode = FileDialog.SaveFile
                 dialogNameFilters = [
-                    qsTr("Agent workspace") + " (*.aqw)",
-                    qsTr("QLC+ workspace") + " (*.qxw)",
+                    qsTr("Bunnyhole workspace") + " (*.bhx)",
                     qsTr("All files") + " (*)"
                 ]
             break

@@ -44,14 +44,53 @@
 			<key>CFBundleTypeIconFile</key>
 			<string>qlcplus.icns</string>
 			<key>CFBundleTypeName</key>
+			<string>Bunnyhole Workspace</string>
+			<key>CFBundleTypeExtensions</key>
+			<array>
+				<string>bhx</string>
+			</array>
+			<key>CFBundleTypeRole</key>
+			<string>Editor</string>
+			<key>LSHandlerRank</key>
+			<string>Owner</string>
+			<key>LSItemContentTypes</key>
+			<array>
+				<string>ai.bunnyhole.workspace</string>
+			</array>
+		</dict>
+		<dict>
+			<key>CFBundleTypeIconFile</key>
+			<string>qlcplus.icns</string>
+			<key>CFBundleTypeName</key>
 			<string>QLC+ Workspace</string>
 			<key>CFBundleTypeExtensions</key>
 			<array>
 				<string>qxw</string>
-				<string>aqw</string>
 			</array>
 			<key>CFBundleTypeRole</key>
-			<string>Editor</string>
+			<string>Viewer</string>
+		</dict>
+	</array>
+
+	<key>UTExportedTypeDeclarations</key>
+	<array>
+		<dict>
+			<key>UTTypeIdentifier</key>
+			<string>ai.bunnyhole.workspace</string>
+			<key>UTTypeDescription</key>
+			<string>Bunnyhole Workspace</string>
+			<key>UTTypeConformsTo</key>
+			<array>
+				<string>com.pkware.zip-archive</string>
+				<string>public.data</string>
+			</array>
+			<key>UTTypeTagSpecification</key>
+			<dict>
+				<key>public.filename-extension</key>
+				<array>
+					<string>bhx</string>
+				</array>
+			</dict>
 		</dict>
 	</array>
 </dict>

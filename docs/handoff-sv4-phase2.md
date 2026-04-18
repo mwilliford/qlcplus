@@ -134,7 +134,7 @@ The 9 MCP tools already work. After Phase 2, you can additionally verify:
 5. Adjust X/Y/Z spinboxes → sphere moves
 6. Select fixture 1 → "Assign selected fixture" → `[1]` badge appears
 7. "Aim" → beam swings through sphere
-8. Save `.aqw` → reload → verify focus point persists
+8. Save `.bhx` → reload → verify focus point persists
 
 ---
 

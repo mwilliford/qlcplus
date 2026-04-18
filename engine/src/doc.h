@@ -691,6 +691,63 @@ public:
     bool saveXML(QXmlStreamWriter *doc) const;
 
     /**
+     * Produce a standalone `<Workspace><Engine>...</Engine></Workspace>`
+     * document containing the "programming" subset of the Doc: Fixtures,
+     * FixtureGroups, ChannelsGroups, Palettes, Functions, AgentContext,
+     * and MonitorProperties.
+     *
+     * Used by BhxIO to split the monolithic `.qxw` XML into four sibling
+     * streams inside a `.bhx` zip. The MVR rig half of a `.bhx` is for
+     * third-party interop; this stream is the authoritative QLC+-native
+     * source on reload (preserves Fixture IDs so Function references stay
+     * intact, which a round-trip through the MVR rig would not).
+     */
+    QByteArray saveProgrammingXmlStream() const;
+
+    /**
+     * Standalone `<Workspace><Engine>` document containing only
+     * `<InputOutputMap>`. Written as `io/universes.xml` inside a `.bhx`.
+     */
+    QByteArray saveIoXmlStream() const;
+
+    /**
+     * Standalone `<Workspace><Engine>` document containing only
+     * `<SpatialModel>` and `<Calibration>`. Written as `calibration/spatial.xml`
+     * inside a `.bhx`.
+     */
+    QByteArray saveCalibrationXmlStream() const;
+
+    /**
+     * Load a standalone `<Workspace><Engine>` XML stream into this Doc.
+     * Positions a QXmlStreamReader, skips to `<Engine>`, and dispatches
+     * children through the same loaders used by loadXML().
+     *
+     * Unlike loadXML() this does NOT emit loading/loaded signals or call
+     * postLoad(). Callers that load multiple streams in a single transaction
+     * should wrap them in beginMultiStreamLoad() / endMultiStreamLoad() so
+     * status signals and post-load processing fire exactly once.
+     *
+     * @param stream Raw bytes of a `<Workspace>`-rooted XML document.
+     * @param loadIO If true, parse `<InputOutputMap>` when encountered.
+     */
+    bool loadXmlStream(const QByteArray &stream, bool loadIO);
+
+    /**
+     * Begin a multi-stream load transaction. Sets m_loadStatus to Loading,
+     * clears the error log, emits loading(). Call once before a series of
+     * loadXmlStream() calls.
+     */
+    void beginMultiStreamLoad();
+
+    /**
+     * End a multi-stream load transaction. Runs postLoad() on all functions,
+     * migrates from MonitorProperties if no SpatialModel was present, sets
+     * m_loadStatus to Loaded, emits loaded(). Call once after the last
+     * loadXmlStream() call.
+     */
+    void endMultiStreamLoad();
+
+    /**
      * Append a message to the Doc error log. This can be used to display
      * errors once a project is loaded.
      */
@@ -712,6 +769,14 @@ private:
      * to do post-load cleanup & mappings.
      */
     void postLoad();
+
+    /**
+     * Walk children of a positioned `<Engine>` element and dispatch each
+     * tag to the appropriate loader. Shared by loadXML() (single stream,
+     * postLoad + signals) and loadXmlStream() (multi-stream .bhx load,
+     * postLoad + signals handled by end-of-transaction helpers).
+     */
+    void dispatchEngineChildren(QXmlStreamReader &doc, bool loadIO);
 
     QString m_errorLog;
 };

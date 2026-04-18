@@ -51,7 +51,7 @@ class QMouseEvent;
 
 #define SETTINGS_LANGUAGE "ui/language"
 
-#define KXMLQLCWorkspace QStringLiteral("Workspace")
+// KXMLQLCWorkspace is declared in engine/src/qlcfile.h
 
 class App final : public QQuickView
 {
@@ -359,6 +359,14 @@ public:
     QFile::FileError saveXML(const QString& fileName, bool autosave = false);
 
 private:
+    /** Load a `.bhx` archive via BhxIO, then parse extracted VC XML into
+     *  the QML VirtualConsole. */
+    QFile::FileError loadBhx(const QString& fileName);
+
+    /** Serialize VirtualConsole to a standalone `<Workspace>` XML blob and
+     *  save engine + that blob through BhxIO. */
+    QFile::FileError saveBhx(const QString& fileName);
+
     /**
      * Update the list of the recently open files.
      * If filename is specified, it will be removed from the list
